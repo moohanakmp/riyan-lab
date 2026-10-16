@@ -60,7 +60,7 @@ public class AuthController {
     @PutMapping("/users/{username}/role")
     public Map<String,Boolean> role(@PathVariable String username,@RequestBody Map<String,String> body,HttpServletRequest req){
         var actor=auth.admin(req,true);
-        auth.changeRole(actor,username,body.get("role"));
+        auth.changeRole(actor,username,body.get("role"),body.get("password"));
         return Map.of("updated",true);
     }
     @PutMapping("/users/{username}/password")
