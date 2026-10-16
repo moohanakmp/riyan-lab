@@ -1,7 +1,7 @@
 name: Build and deploy Riyan Lab
 on:
   push:
-    branches: [main]
+    branches: [main, 'staging/backend-auth-20261016']
   pull_request:
     branches: [main]
 jobs:
