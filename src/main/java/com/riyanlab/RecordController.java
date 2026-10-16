@@ -44,7 +44,7 @@ public class RecordController {
         return ""+mapped;
     }
     private boolean basketType(String type) {
-        return Set.of("basket-sessions","basket-positions","basket-events").contains(type);
+        return Set.of("basket-sessions","basket-positions","basket-events","basket-replays").contains(type);
     }
     private void scope(AuthService.Identity identity,String type,String sourceId) {
         if(basketType(type) && !sourceId.startsWith(identity.username()+"--"))
