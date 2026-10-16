@@ -93,4 +93,57 @@ function extract(start,end){
  evaluate('XAUUSD');
  assert.equal(opened,1,'failed trade safety gates must prevent entries');
  console.log('PASS Low Profit entry pipeline: eligible, duplicate candle, failed feed and failed risk gates');
+
+ // Regression-test the *real* candidate engine with deterministic closed 5m
+ // candles, not a fabricated BUY sent to the app/MT5. Original setups remain
+ // active while the new continuation requires an explicit opt-in.
+ const realScanCode=extract('function scalpScan(sym,c5,c15,h1,ctx){',
+                            'function scalpLevels(sym,dir,entry,scan,c5,cfg){');
+ const levelCode=extract('function scalpLevels(sym,dir,entry,scan,c5,cfg){',
+                         'function scalpCtx(sym,now){');
+ const bars5=Array.from({length:75},(_,i)=>({
+   t:now-(75-i)*300000,o:101.05,h:101.15,l:100.90,c:101.05,v:10
+ }));
+ bars5[74]={t:now-300000,o:100.95,h:101.35,l:100.90,c:101.30,v:12};
+ const bars15=Array.from({length:60},(_,i)=>({
+   t:now-(60-i)*900000,o:101.05,h:101.3,l:100.8,c:101.1,v:30
+ }));
+ const market=vm.createContext({
+  Math,Date,Array,Object,
+  SPREAD:{XAUUSD:0.1},
+  ASSETS:{XAUUSD:{contractSz:100}},
+  atr:()=>1,
+  emaSeries:(candles,period)=>Array(candles.length).fill(period===9?101:100),
+  rsi:closes=>closes.length===75?60:55,
+  ema:(closes,period)=>period===20?101:100,
+  kmrAdx:()=>({adx:25}),
+  kmrTfBias:()=>null,
+  bbAt:()=>({l:95,m:100,u:105}),
+  kmrIstHour:()=>9,
+  fmtP:(symbol,val)=>val.toFixed(2)
+ });
+ vm.runInContext(realScanCode+'\n'+levelCode,market);
+ const realScan=vm.runInContext('scalpScan',market);
+ const liveCtx={now,events:[],isMetal:true,marketOpen:true,spread:0.1,dec:2,continuation:false};
+ const disabled=realScan('XAUUSD',bars5,bars15,null,liveCtx);
+ assert.equal(disabled.dir,null,'continuation disabled must not invent a trade');
+ assert.equal(disabled.watch.dir,'BUY','trend watch should show conditional BUY only');
+ assert(disabled.watch.level>101,'candidate must have a trigger level');
+ const enabled=realScan('XAUUSD',bars5,bars15,null,{...liveCtx,continuation:true});
+ assert.equal(enabled.dir,'BUY','retested EMA9 closed-candle continuation must qualify');
+ assert.match(enabled.setup,/EMA9 continuation/);
+ assert.equal(enabled.gatesOk,true,'preexisting news/spread/staleness gates still apply');
+ const blockedNews=realScan('XAUUSD',bars5,bars15,null,
+    {...liveCtx,continuation:true,events:[{ts:now,title:'High impact release'}]});
+ assert.equal(blockedNews.dir,'BUY','indicator pattern still exists during news');
+ assert.equal(blockedNews.gatesOk,false,'news gate must prohibit issuing an entry');
+ const levels=vm.runInContext('scalpLevels',market);
+ const rejected=levels('XAUUSD','BUY',101.3,enabled,bars5,
+    {target:1,maxLoss:.5});
+ assert(rejected.reject,'0.01 lot must be rejected when loss exceeds user max');
+ const allowed=levels('XAUUSD','BUY',101.3,enabled,bars5,
+    {target:1,maxLoss:4});
+ assert(!allowed.reject && allowed.slUsd<=4,'valid setup must respect full max loss');
+ console.log('PASS closed-candle continuation opt-in, watch-only levels, news block, strict max loss');
+
 })().catch(e=>{console.error(e);process.exitCode=1;});
