@@ -49,4 +49,42 @@ function extract(start,end){
  assert(stale.length>=55,'stale 15m provider must recover from 5m');
  assert.equal(stale[stale.length-1].c,fallback[fallback.length-1].c);
  console.log('PASS Low Profit completed 15m fallback, stale-feed recovery and closed-candle gate');
+
+ const evaluateCode=extract('function scalpEvaluate(sym){','function scalpOpen(sym,scan,lv){');
+ let opened=0, gatesOk=true,barT=now-300000;
+ const evalContext=vm.createContext({
+   Date,Math,console,
+   scalpState:{XAUUSD:{feedError:'',cooldown:0}},
+   scalpData:{XAUUSD:bars},
+   ohlcData:{XAUUSD:{'1h':[]}},
+   prices:{XAUUSD:103.09},
+   scalpCfg:{auto:true,assets:{XAUUSD:true},stopAtGoal:true,goal:10,dayStop:8},
+   scalpHist:[],
+   kmrClosed:x=>x,
+   scalpClosed15m:()=>[],
+   scalpCtx:()=>({}),
+   scalpScan:()=>({dir:'BUY',gatesOk,barT,A:1,price:103.09}),
+   scalpLevels:()=>({entry:103.09,tp:103.9,sl:102.5,lot:.01}),
+   scalpToday:()=>({goalHit:false,stopHit:false}),
+   scalpOpen:()=>{opened++}
+ });
+ vm.runInContext(evaluateCode,evalContext);
+ const evaluate=vm.runInContext('scalpEvaluate',evalContext);
+ evaluate('XAUUSD');
+ assert.equal(opened,1,'valid setup must reach entry path');
+ evaluate('XAUUSD');
+ assert.equal(opened,1,'same closed candle cannot trigger twice');
+ barT+=300000;
+ evalContext.scalpState.XAUUSD.feedError='Feed unavailable';
+ // feed error must always pause entries, even if cached candles still exist.
+ vm.runInContext('scalpState.XAUUSD.handledBar=null',evalContext);
+ // replace the test scanner closure to reference a newly closed candle
+ evalContext.scalpScan=()=>({dir:'BUY',gatesOk:true,barT:now,A:1,price:103.09});
+ evaluate('XAUUSD');
+ assert.equal(opened,1,'failed data feed must prevent entries');
+ evalContext.scalpState.XAUUSD.feedError='';
+ gatesOk=false;
+ evaluate('XAUUSD');
+ assert.equal(opened,1,'failed trade safety gates must prevent entries');
+ console.log('PASS Low Profit entry pipeline: eligible, duplicate candle, failed feed and failed risk gates');
 })().catch(e=>{console.error(e);process.exitCode=1;});
