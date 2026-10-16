@@ -1081,6 +1081,7 @@ body{background:
 <div id="evPop" class="evpop" role="status" aria-live="polite"></div>
 <button id="evFab" class="evfab" onclick="evwReopen()" aria-label="Show next event popup"></button>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script src="/basket-demo.js"></script>
 <script>
 // Init EmailJS lazily once public key is set (see saveNotifSettings)
 let emailJsInited=false;
@@ -1190,6 +1191,7 @@ async function doLogin(){
     if(currentUser.role==='admin')await riyanLoadUsers();
     errEl.style.display='none';
     revealApp();applyRoleUI();
+    basketLoad();
     await riyanRestore();
     riyanProcessQueue();
     if(!window._appBooted){window._appBooted=true;bootApp();}
@@ -1202,6 +1204,7 @@ async function doLogout(){
   try{await riyanApi('/api/v1/auth/logout',{method:'POST'});}
   catch(e){showToast('Could not revoke server session — retry logout','var(--red)');return;}
   currentUser=null;riyanCsrf='';
+  basketDemo={enabled:false,active:null,history:[],events:[],lastBars:{},replays:{}};
   document.getElementById('loginUser').value='';
   document.getElementById('loginPass').value='';
   hideApp();
@@ -4002,11 +4005,13 @@ async function scalpLoop(){
       }));
       scalpLastFetch=Date.now();
       scalpCandleCheck();
+      basketCandleCheck();
     }catch(e){console.warn('Low Profit fetch cycle failed',e);}
     finally{scalpFetchBusy=false;}
   }
   scalpManageAll();
-  SYMS.forEach(sym=>{try{scalpEvaluate(sym);}catch(e){console.warn('scalp',sym,e);}});
+  basketManage();
+  SYMS.forEach(sym=>{try{scalpEvaluate(sym);basketEvaluate(sym);}catch(e){console.warn('scalp',sym,e);}});
   if(document.getElementById('tsc')?.style.display!=='none')renderScalpLive();
 }
 // ── replay the engine over the last ~3.5 days of 5m candles (no look-ahead) ──
@@ -4064,6 +4069,7 @@ function renderScalpTab(){
     <button class="sc-switch ${c.auto?'on':''}" onclick="scalpToggleAuto()"><i></i><span>${c.auto?'AUTO ON':'AUTO OFF'}</span></button>
   </div>
   <div id="scalpLive"></div>
+  <div id="basketDemoPanel"></div>
   <div class="ic"><div class="it">⚙ Your targets</div><div class="ib">
     <div class="sc-set">
       <label>Profit per trade $<input type="number" min="0.5" step="0.5" value="${c.target}" onchange="scalpSet('target',this.value)"></label>
@@ -4082,7 +4088,7 @@ function renderScalpTab(){
     <div id="scalpBtBox"></div>
   </div></div>
   <div class="notice"><b>Read this first:</b> small targets win more often but every stop costs more than a win pays (about $${c.maxLoss} vs $${c.target}), so the engine needs to win roughly ${Math.round(c.maxLoss/(c.maxLoss+c.target)*100)}%+ of trades to make money. Check the replay before trusting it with real money, start at the minimum lot, and respect the daily stop. Not financial advice.</div>`;
-  renderScalpLive();renderScalpBt();
+  renderScalpLive();renderBasketDemo();renderScalpBt();
 }
 function renderScalpBt(){
   const box=document.getElementById('scalpBtBox');if(!box||scalpBtBusy)return;
@@ -4137,6 +4143,7 @@ function renderScalpLive(){
   if(!recent.length)h+=`<div class="kmr-empty">No scalps yet — the engine checks every 5-minute candle on all three assets.</div>`;
   else h+=`<div class="ic"><div class="ib">${recent.map(t=>`<div class="lvl-row"><span class="lvl-tag ${t.dir==='BUY'?'sup':'res'}">${t.dir}</span><span style="flex:1">${ICONS[t.sym]} ${ASSETS[t.sym].sym} <span class="sc-dim">${t.setup} · ${{TP:'TP',SL:'SL',BE:'BE',TIME:'time',MANUAL:'manual'}[t.status]||t.status} · ${new Date(t.closedAt||t.t).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</span></span><b class="${t.pnl>=0?'up':'dn'}">${t.pnl>=0?'+':'−'}$${Math.abs(t.pnl).toFixed(2)}</b></div>`).join('')}</div></div>`;
   el.innerHTML=h;
+  renderBasketDemo();
 }
 
 // ═══ POSITION SIZING — S&R BASED ══════════════════════════════════════════
@@ -5659,6 +5666,7 @@ async function initAuth(){
   await loadThemeState();
   await loadHistory();
   if(currentUser){
+    basketLoad();
     await riyanRestore();
     // Auto-login from persisted session
     revealApp();
@@ -5754,7 +5762,7 @@ function riyanFingerprint(s){
 // and represented by a deterministic SHA-256 ID in the REST path.
 async function riyanSafeRecordId(type,id){
   const raw=String(id);
-  const userScoped=type==='user-state'?
+  const userScoped=(type==='user-state'||type.startsWith('basket-'))?
     /^([A-Za-z0-9_-]{3,48}):/.exec(raw):null;
   if(!userScoped&&/^[A-Za-z0-9._-]{1,180}$/.test(raw))return raw;
   const bytes=new TextEncoder().encode(type+'\0'+raw);
@@ -5883,6 +5891,12 @@ function riyanSnapshot(){
   Object.entries(researchCache).forEach(([sym,data])=>riyanQueue('research',sym+'-'+day,{symbol:sym,...data}));
   Object.entries(newsLog).forEach(([key,data])=>riyanQueue('gold-calls',key,data));
   scalpHist.forEach(r=>riyanQueue('low-profit',String(r.id||r.t),r));
+  if(basketDemo.active)basketPersistSession(basketDemo.active);
+  basketDemo.history.slice(0,100).forEach(s=>basketPersistSession(s));
+  riyanQueue('user-state',currentUser.username+':basket-demo-settings',{
+    key:'basket-demo-settings',enabled:basketDemo.enabled,simulated:true,
+    activeBasketId:basketDemo.active?.id||null,historyCount:basketDemo.history.length
+  });
   for(const sym of SYMS){
     const state=scalpState[sym]||{};
     riyanQueue('user-state',currentUser.username+':low-profit-diagnostics-'+sym,{
