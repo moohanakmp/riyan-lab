@@ -5692,11 +5692,14 @@ function riyanFingerprint(s){
 // and represented by a deterministic SHA-256 ID in the REST path.
 async function riyanSafeRecordId(type,id){
   const raw=String(id);
-  if(/^[A-Za-z0-9._-]{1,180}$/.test(raw))return raw;
+  const userScoped=type==='user-state'?
+    /^([A-Za-z0-9_-]{3,48}):/.exec(raw):null;
+  if(!userScoped&&/^[A-Za-z0-9._-]{1,180}$/.test(raw))return raw;
   const bytes=new TextEncoder().encode(type+'\0'+raw);
   const digest=await crypto.subtle.digest('SHA-256',bytes);
   const hex=Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');
-  return 'id-'+hex;
+  // Ownership prefix survives URL-safe hashing; server validates caller identity.
+  return userScoped?userScoped[1]+'--id-'+hex:'id-'+hex;
 }
 function riyanQueue(type,id,obj){
   if(!currentUser||currentUser.role==='guest'||!id||obj==null)return;
@@ -5725,6 +5728,17 @@ async function riyanProcessQueue(){
   const failedKey='riyan_failed_'+user;
   try{
     const pending=JSON.parse(localStorage.getItem(key)||'{}');
+    const failed=JSON.parse(localStorage.getItem(failedKey)||'{}');
+    // Repair only the known historical 403 caused by hash-stripped user ownership.
+    // Move the complete payload back to the durable pending queue, never discard it.
+    for(const [k,item] of Object.entries(failed)){
+      if(item.type==='user-state'&&item.error==='HTTP 403'&&String(item.id).startsWith(user+':')){
+        if(!pending[k])pending[k]={type:item.type,id:item.id,value:item.value};
+        delete failed[k];
+      }
+    }
+    localStorage.setItem(key,JSON.stringify(pending));
+    localStorage.setItem(failedKey,JSON.stringify(failed));
     let sent=0;
     const terminal=new Set(['HTTP 400','HTTP 403','HTTP 404','HTTP 413','HTTP 422']);
     for(const [k,item] of Object.entries(pending).slice(0,100)){
