@@ -125,4 +125,98 @@ class AuthPersistenceIntegrationTest {
             }
         }
     }
+
+    @Test
+    void roleBasedPasswordPolicyWorksForCreateResetAndPromotion() throws Exception {
+        var adminLogin=mvc.perform(post("/api/v1/auth/login")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsString(java.util.Map.of(
+                "username","testadmin","password","unit-test-password-1234"))))
+            .andExpect(status().isOk()).andReturn();
+        String csrf=mapper.readTree(adminLogin.getResponse().getContentAsString()).path("csrf").asText();
+        var cookies=adminLogin.getResponse().getCookies();
+        // Admin keeps 12+ characters.
+        mvc.perform(post("/api/v1/auth/users").cookie(cookies).header("X-CSRF-Token",csrf)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsString(java.util.Map.of(
+                "username","weakadmin","role","admin","password","12345"))))
+            .andExpect(status().isBadRequest());
+
+        // Normal users can use a password of exactly 5 characters, not 4.
+        mvc.perform(post("/api/v1/auth/users").cookie(cookies).header("X-CSRF-Token",csrf)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsString(java.util.Map.of(
+                "username","shortuser","role","user","password","1234"))))
+            .andExpect(status().isBadRequest());
+        mvc.perform(post("/api/v1/auth/users").cookie(cookies).header("X-CSRF-Token",csrf)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsString(java.util.Map.of(
+                "username","shortuser","role","user","password","12345"))))
+            .andExpect(status().isOk());
+        mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsString(java.util.Map.of(
+                "username","shortuser","password","12345"))))
+            .andExpect(status().isOk());
+
+        // Guest has no minimum (even a blank password), but no write access.
+        mvc.perform(post("/api/v1/auth/users").cookie(cookies).header("X-CSRF-Token",csrf)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsString(java.util.Map.of(
+                "username","nopassguest","role","guest","password",""))))
+            .andExpect(status().isOk());
+        var guestLogin=mvc.perform(post("/api/v1/auth/login")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsString(java.util.Map.of(
+                "username","nopassguest","password",""))))
+            .andExpect(status().isOk()).andReturn();
+        String guestCsrf=mapper.readTree(guestLogin.getResponse().getContentAsString())
+            .path("csrf").asText();
+        mvc.perform(put("/api/v1/records/auto-signals/test-guest-write")
+            .cookie(guestLogin.getResponse().getCookies())
+            .header("X-CSRF-Token",guestCsrf)
+            .contentType(MediaType.APPLICATION_JSON).content("{}"))
+            .andExpect(status().isForbidden());
+
+        // Password reset obeys the existing role.
+        mvc.perform(put("/api/v1/auth/users/shortuser/password")
+            .cookie(cookies).header("X-CSRF-Token",csrf)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsString(java.util.Map.of("password","1234"))))
+            .andExpect(status().isBadRequest());
+        mvc.perform(put("/api/v1/auth/users/shortuser/password")
+            .cookie(cookies).header("X-CSRF-Token",csrf)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsString(java.util.Map.of("password","abcde"))))
+            .andExpect(status().isOk());
+
+        // Guest -> user and user -> admin require new, stronger passwords.
+        mvc.perform(put("/api/v1/auth/users/nopassguest/role")
+            .cookie(cookies).header("X-CSRF-Token",csrf)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsString(java.util.Map.of("role","user"))))
+            .andExpect(status().isBadRequest());
+        mvc.perform(put("/api/v1/auth/users/nopassguest/role")
+            .cookie(cookies).header("X-CSRF-Token",csrf)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsString(java.util.Map.of("role","user","password","abcde"))))
+            .andExpect(status().isOk());
+        mvc.perform(put("/api/v1/auth/users/shortuser/role")
+            .cookie(cookies).header("X-CSRF-Token",csrf)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsString(java.util.Map.of("role","admin","password","abcde"))))
+            .andExpect(status().isBadRequest());
+        mvc.perform(put("/api/v1/auth/users/shortuser/role")
+            .cookie(cookies).header("X-CSRF-Token",csrf)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsString(java.util.Map.of(
+                "role","admin","password","new-admin-secret-1234"))))
+            .andExpect(status().isOk());
+        var promotedLogin=mvc.perform(post("/api/v1/auth/login")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsString(java.util.Map.of(
+                "username","shortuser","password","new-admin-secret-1234"))))
+            .andExpect(status().isOk()).andReturn();
+        assertEquals("admin",mapper.readTree(promotedLogin.getResponse().getContentAsString())
+            .path("role").asText());
+    }
 }
