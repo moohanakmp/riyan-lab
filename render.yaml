@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: riyan-lab
+    name: riyan-lab-staging
     runtime: docker
     plan: free
     dockerfilePath: ./Dockerfile
@@ -13,9 +13,9 @@ services:
       - key: DB_PASSWORD
         sync: false
       - key: DB_SCHEMA
-        value: riyan_lab
+        value: riyan_lab_staging
       - key: APP_ENV
-        value: production
+        value: staging
       - key: RIYAN_BOOTSTRAP_ADMIN_USER
         sync: false
       - key: RIYAN_BOOTSTRAP_ADMIN_PASSWORD
