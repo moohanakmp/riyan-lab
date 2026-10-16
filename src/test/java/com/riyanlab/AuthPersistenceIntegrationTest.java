@@ -91,4 +91,38 @@ class AuthPersistenceIntegrationTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$[0].action").value("UPDATE"));
     }
+
+    @Test
+    void adminCanProvisionNamedUserAccountsWithoutLegacyFrontendPasswords() throws Exception {
+        var adminLogin=mvc.perform(post("/api/v1/auth/login")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsString(java.util.Map.of(
+                "username","testadmin","password","unit-test-password-1234"))))
+            .andExpect(status().isOk()).andReturn();
+        String csrf=mapper.readTree(adminLogin.getResponse().getContentAsString()).path("csrf").asText();
+        var adminCookies=adminLogin.getResponse().getCookies();
+        for(var entry:java.util.Map.of("tsuser","user","vino","user","guest","guest").entrySet()) {
+            String password="staging-new-password-"+entry.getKey()+"-123!";
+            mvc.perform(post("/api/v1/auth/users")
+                .cookie(adminCookies).header("X-CSRF-Token",csrf)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(java.util.Map.of(
+                    "username",entry.getKey(),"role",entry.getValue(),"password",password))))
+                .andExpect(status().isOk());
+            var userLogin=mvc.perform(post("/api/v1/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(java.util.Map.of(
+                    "username",entry.getKey(),"password",password))))
+                .andExpect(status().isOk()).andReturn();
+            var session=mapper.readTree(userLogin.getResponse().getContentAsString());
+            assertEquals(entry.getValue(),session.path("role").asText());
+            if("guest".equals(entry.getValue())) {
+                mvc.perform(get("/api/v1/records/pnl").cookie(userLogin.getResponse().getCookies()))
+                    .andExpect(status().isForbidden());
+            } else {
+                mvc.perform(get("/api/v1/records/pnl").cookie(userLogin.getResponse().getCookies()))
+                    .andExpect(status().isOk());
+            }
+        }
+    }
 }
