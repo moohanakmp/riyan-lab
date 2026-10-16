@@ -1273,43 +1273,72 @@ function renderAdminPanel(){
   renderThemeStudio();
   loadNotifSettings();
 }
+const RIYAN_PASSWORD_MIN={admin:12,user:5,guest:0};
+const RIYAN_ROLE_RANK={guest:1,user:2,admin:3};
+function riyanPasswordPolicy(role){
+  const len=RIYAN_PASSWORD_MIN[role]??12;
+  return len===0?'No minimum length required (blank password allowed)':
+    'Minimum '+len+' characters';
+}
 async function changeUserRole(uname,newRole){
+  const previousRole=userAccounts[uname]?.role;
+  if(!previousRole || !Object.prototype.hasOwnProperty.call(RIYAN_ROLE_RANK,newRole)){
+    renderAdminPanel();return;
+  }
+  if(RIYAN_ROLE_RANK[newRole]>RIYAN_ROLE_RANK[previousRole]){
+    riyanPasswordDialog({title:'Upgrade '+uname+' to '+newRole,
+      username:uname,roleChange:newRole});
+    renderAdminPanel();
+    return;
+  }
   try{
     await riyanApi('/api/v1/auth/users/'+encodeURIComponent(uname)+'/role',{
       method:'PUT',body:JSON.stringify({role:newRole})
     });
-    userAccounts[uname].role=newRole;renderAdminPanel();
+    await riyanLoadUsers();renderAdminPanel();
     showToast('Role changed for '+uname,'var(--grn)');
   }catch(e){showToast('Role update failed: '+e.message,'var(--red)');renderAdminPanel();}
 }
-function riyanPasswordDialog({title,username='',create=false}){
+function riyanPasswordDialog({title,username='',create=false,roleChange=null}){
   const overlay=document.createElement('div');
   overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px';
   const form=document.createElement('div');
   form.style.cssText='background:var(--card);border:1px solid var(--bdr);border-radius:15px;padding:20px;max-width:380px;width:100%;display:flex;flex-direction:column;gap:12px';
+  const roleSelected=roleChange||(!create?userAccounts[username]?.role:'user');
   form.innerHTML='<h3>'+title+'</h3>'+
     (create?'<label>Username<input id="ruName" class="login-input" maxlength="48" autocomplete="off"></label>'+
             '<label>Role<select id="ruRole" class="login-input"><option value="user">User</option><option value="guest">Guest</option><option value="admin">Admin</option></select></label>':'')+
-    '<label>New password (12+ characters)<input id="ruPassword" class="login-input" type="password" autocomplete="new-password"></label>'+
+    '<label>New password<input id="ruPassword" class="login-input" type="password" autocomplete="new-password"></label>'+
+    '<p id="ruPasswordPolicy" style="color:var(--dim);font-size:12px"></p>'+
     '<p id="ruError" style="color:var(--red);font-size:11px"></p>'+
     '<button id="ruSave" class="login-btn">Save securely</button>'+
     '<button id="ruCancel" class="anal-refresh">Cancel</button>';
   overlay.appendChild(form);document.body.appendChild(overlay);
+  const rolePicker=form.querySelector('#ruRole');
+  const updatePolicy=()=>form.querySelector('#ruPasswordPolicy').textContent=
+    riyanPasswordPolicy(rolePicker?rolePicker.value:roleSelected);
+  if(rolePicker)rolePicker.addEventListener('change',updatePolicy);
+  updatePolicy();
   form.querySelector('#ruCancel').onclick=()=>overlay.remove();
   form.querySelector('#ruSave').onclick=async()=>{
     const name=create?form.querySelector('#ruName').value.trim():username;
     const password=form.querySelector('#ruPassword').value;
-    const role=create?form.querySelector('#ruRole').value:null;
-    if(!/^[a-zA-Z0-9_-]{3,48}$/.test(name)||password.length<12){
-      form.querySelector('#ruError').textContent='Username or password invalid';return;
+    const role=create?form.querySelector('#ruRole').value:roleSelected;
+    const required=RIYAN_PASSWORD_MIN[role];
+    if(!/^[a-zA-Z0-9_-]{3,48}$/.test(name) ||
+       required==null || password.length<required || password.length>256){
+      form.querySelector('#ruError').textContent='Invalid username or password: '+riyanPasswordPolicy(role);
+      return;
     }
     try{
-      await riyanApi(create?'/api/v1/auth/users':'/api/v1/auth/users/'+encodeURIComponent(name)+'/password',{
-        method:create?'POST':'PUT',body:JSON.stringify(create?{username:name,password,role}:{password})
-      });
+      const url=create?'/api/v1/auth/users':
+        '/api/v1/auth/users/'+encodeURIComponent(name)+(roleChange?'/role':'/password');
+      const payload=create?{username:name,password,role}:
+        roleChange?{role:roleChange,password}:{password};
+      await riyanApi(url,{method:create?'POST':'PUT',body:JSON.stringify(payload)});
       await riyanLoadUsers();overlay.remove();renderAdminPanel();
-      showToast(create?'User created':'Password updated','var(--grn)');
-    }catch(e){form.querySelector('#ruError').textContent='Cannot save (HTTP error or existing username)';}
+      showToast(create?'User created':roleChange?'Role and password updated':'Password updated','var(--grn)');
+    }catch(e){form.querySelector('#ruError').textContent='Cannot save user: '+e.message;}
   };
 }
 function riyanCreateUser(){riyanPasswordDialog({title:'Create database user',create:true});}
