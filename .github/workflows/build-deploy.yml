@@ -25,7 +25,7 @@ jobs:
     steps:
       - name: Trigger Render deployment when configured
         env:
-          RENDER_DEPLOY_HOOK: \${{ secrets.RENDER_DEPLOY_HOOK }}
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
         run: |
           if [ -z "$RENDER_DEPLOY_HOOK" ]; then
             echo "Render deployment skipped: RENDER_DEPLOY_HOOK secret not configured."
