@@ -145,6 +145,15 @@ function extract(start,end){
  const allowed=levels('XAUUSD','BUY',101.3,enabled,bars5,
     {target:1,maxLoss:4});
  assert(!allowed.reject && allowed.slUsd<=4,'valid setup must respect full max loss');
- console.log('PASS closed-candle continuation opt-in, watch-only levels, news block, strict max loss');
+ assert(allowed.slDist<1,'experimental continuation stop can use actual local swing + buffer');
+ const standard=levels('XAUUSD','BUY',101.3,{...enabled,strategyVersion:'v28-original'},bars5,
+    {target:1,maxLoss:4});
+ assert(!standard.reject && standard.slDist>=1,'original setup must retain its ATR stop model');
+ const capped=levels('XAUUSD','BUY',101.3,enabled,bars5,{target:1,maxLoss:.7});
+ assert(!capped.reject && capped.slUsd<=.7,'structural swing may fit strict max loss');
+ const originalBlocked=levels('XAUUSD','BUY',101.3,{...enabled,strategyVersion:'v28-original'},bars5,
+    {target:1,maxLoss:.7});
+ assert(originalBlocked.reject,'original ATR stop cannot silently exceed strict loss cap');
+ console.log('PASS closed-candle continuation opt-in, watch-only levels, news block, strict max loss and structural stop');
 
 })().catch(e=>{console.error(e);process.exitCode=1;});
