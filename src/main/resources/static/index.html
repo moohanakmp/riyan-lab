@@ -5892,6 +5892,14 @@ function riyanSnapshot(){
       pendingSetup:state.scan?.setup||null,
       continuationEnabled:!!scalpCfg.continuation,watchCandidate:state.scan?.watch||null,
       lookingFor:state.scan?.look||null,
+      indicators:{trend15m:state.scan?.trend||null,adx:state.scan?.adx??null,
+        rsi7:state.scan?.rsi7??null,atr5m:state.scan?.A??null,
+        relVolume:state.scan?.relVol??null,ema9:state.scan?.e9??null,
+        ema21:state.scan?.e21??null},
+      projectedRisk:{rejected:state.preview?.reject||null,
+        lot:state.preview?.lot??null,stopLossUsd:state.preview?.slUsd??null,
+        takeProfitUsd:state.preview?.tpUsd??null,
+        maxLossUsd:scalpCfg.maxLoss,profitTargetUsd:scalpCfg.target},
       candles5m:scalpData[sym]?.length||0,
       gates:state.scan?.gates||[],diagnosticAt:state.scan?.barT||null
     });
