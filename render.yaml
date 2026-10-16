@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: riyan-lab
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: RIYAN_API_TOKEN
+        generateValue: true
