@@ -1082,6 +1082,7 @@ body{background:
 <button id="evFab" class="evfab" onclick="evwReopen()" aria-label="Show next event popup"></button>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script src="/basket-demo.js"></script>
+<script src="/basket-replay.js"></script>
 <script>
 // Init EmailJS lazily once public key is set (see saveNotifSettings)
 let emailJsInited=false;
@@ -1193,6 +1194,7 @@ async function doLogin(){
     revealApp();applyRoleUI();
     basketLoad();
     await riyanRestore();
+    await basketDbRestore();
     riyanProcessQueue();
     if(!window._appBooted){window._appBooted=true;bootApp();}
   }catch(e){
@@ -5668,6 +5670,7 @@ async function initAuth(){
   if(currentUser){
     basketLoad();
     await riyanRestore();
+    await basketDbRestore();
     // Auto-login from persisted session
     revealApp();
     applyRoleUI();
