@@ -36,13 +36,38 @@ public class AuthService {
     private String bootstrapUser;
     @Value("${RIYAN_BOOTSTRAP_ADMIN_PASSWORD:}")
     private String bootstrapPassword;
+    @Value("${APP_ENV:production}")
+    private String appEnvironment;
+    @Value("${RIYAN_BOOTSTRAP_ADMIN_RESET:false}")
+    private boolean stagingAdminReset;
 
     public AuthService(JdbcTemplate jdbc) { this.jdbc = jdbc; }
 
     @EventListener(ApplicationReadyEvent.class)
     public void bootstrapAdmin() {
         Integer count = jdbc.queryForObject("SELECT count(*) FROM auth_users", Integer.class);
-        if (count != null && count > 0) return;
+        // Recovery is deliberately staging-only and explicit. NEVER auto-reset live credentials.
+        if (count != null && count > 0) {
+            if (!stagingAdminReset) return;
+            if (!"staging".equalsIgnoreCase(appEnvironment)) {
+                throw new IllegalStateException("RIYAN_BOOTSTRAP_ADMIN_RESET is permitted in staging only");
+            }
+            if (!validUsername(bootstrapUser) || bootstrapPassword == null || bootstrapPassword.length() < 12) {
+                throw new IllegalStateException("Staging admin reset requires valid username and 12+ char password");
+            }
+            int updated = jdbc.update("""
+                UPDATE auth_users SET password_hash=?, active=true, failed_logins=0,
+                   locked_until=NULL, updated_at=now()
+                WHERE username=? AND role='admin'
+                """,hasher.encode(bootstrapPassword),bootstrapUser);
+            if (updated != 1) {
+                throw new IllegalStateException("Cannot recover admin: matching staging admin account not found");
+            }
+            jdbc.update("DELETE FROM auth_sessions WHERE user_id=(SELECT id FROM auth_users WHERE username=?)",bootstrapUser);
+            activity(bootstrapUser, "STAGING_ADMIN_RECOVERY", "auth_users", bootstrapUser, "{}");
+            System.out.println("Staging admin credential recovered. IMPORTANT: remove RIYAN_BOOTSTRAP_ADMIN_RESET after one successful deploy.");
+            return;
+        }
         if (!validUsername(bootstrapUser) || bootstrapPassword == null || bootstrapPassword.length() < 12) {
             System.err.println("Riyan Lab: configure RIYAN_BOOTSTRAP_ADMIN_USER and RIYAN_BOOTSTRAP_ADMIN_PASSWORD (12+ chars) to create the first admin.");
             return;
