@@ -62,7 +62,7 @@ public class NewsMonitor {
                     Instant published=null;
                     try{published=ZonedDateTime.parse(date,DateTimeFormatter.RFC_1123_DATE_TIME).toInstant();}catch(Exception ignored){}
                     jdbc.update("""
-                      INSERT INTO riyan_lab.news_feed_items(symbol,headline,source_url,source_name,published_at)
+                      INSERT INTO news_feed_items(symbol,headline,source_url,source_name,published_at)
                       VALUES(?,?,?,?,?) ON CONFLICT(symbol,source_url) DO UPDATE SET checked_at=now()
                     """,symbol,headline,url,"Google News RSS",published==null?null:java.sql.Timestamp.from(published));
                     count++;
@@ -72,7 +72,7 @@ public class NewsMonitor {
                 error=ex.getClass().getSimpleName()+": "+String.valueOf(ex.getMessage());
                 if(error.length()>480)error=error.substring(0,480);
             }
-            jdbc.update("INSERT INTO riyan_lab.news_fetch_runs(source,symbol,status,found_count,error_message) VALUES(?,?,?,?,?)",
+            jdbc.update("INSERT INTO news_fetch_runs(source,symbol,status,found_count,error_message) VALUES(?,?,?,?,?)",
                 "Google News RSS",symbol,error==null?"OK":"FAILED",count,error);
         });
     }
@@ -86,7 +86,7 @@ public class NewsMonitor {
         if(!TOPICS.containsKey(symbol))throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         return jdbc.queryForList("""
           SELECT headline,source_url AS url,source_name,published_at,checked_at
-          FROM riyan_lab.news_feed_items WHERE symbol=? ORDER BY published_at DESC NULLS LAST LIMIT 20
+          FROM news_feed_items WHERE symbol=? ORDER BY published_at DESC NULLS LAST LIMIT 20
         """,symbol);
     }
     @GetMapping("/status")
@@ -94,7 +94,7 @@ public class NewsMonitor {
         auth.admin(request,false);
         return jdbc.queryForList("""
           SELECT source,symbol,status,found_count,error_message,checked_at
-          FROM riyan_lab.news_fetch_runs ORDER BY id DESC LIMIT 30
+          FROM news_fetch_runs ORDER BY id DESC LIMIT 30
         """);
     }
 }
