@@ -81,13 +81,5 @@ public class AuthController {
         auth.setPermission(actor,(String)body.get("role"),(String)body.get("feature"),Boolean.TRUE.equals(body.get("allowed")));
         return Map.of("updated",true);
     }
-    @GetMapping("/activity")
-    public List<Map<String,Object>> activity(HttpServletRequest req,@RequestParam(defaultValue="200") int limit){
-        auth.admin(req,false);
-        return authActivity(req,limit);
-    }
-    private List<Map<String,Object>> authActivity(HttpServletRequest req,int limit) {
-        // Auditing API is provided by ActivityController; retained endpoint forwards to its service.
-        throw new ResponseStatusException(HttpStatus.NOT_IMPLEMENTED, "Use /api/v1/audit");
-    }
+
 }
