@@ -5632,8 +5632,22 @@ function riyanSnapshot(){
   Object.entries(newsLog).forEach(([key,data])=>riyanQueue('gold-calls',key,data));
   scalpHist.forEach(r=>riyanQueue('low-profit',String(r.id||r.t),r));
   signalHistory.forEach(r=>riyanQueue(r.manual?'manual-signals':'auto-signals',String(r.id),r));
-  riyanQueue('seven-day','prediction-'+day,{date:day,events:newsTrackRows(7*864e5,false)});
-  riyanQueue('pnl','daily-'+day,{date:day,signals:signalHistory.slice(0,100),scalps:scalpHist.slice(0,100)});
+  riyanQueue('seven-day','prediction-'+day,{
+    date:day,generatedAt:Date.now(),
+    forecastEvents:newsTrackRows(7*864e5,true),
+    recentActualEvents:newsTrackRows(7*864e5,false)
+  });
+  const settled=signalHistory.filter(r=>r.outcome==='WIN'||r.outcome==='LOSS');
+  riyanQueue('pnl','daily-'+day,{
+    date:day,generatedAt:Date.now(),
+    totalSignals:signalHistory.length,totalScalps:scalpHist.length,
+    closedSignals:settled.length,
+    signalProfitUsd:settled.reduce((sum,r)=>sum+(Number(r.pnlUsd)||0),0),
+    scalpProfitUsd:scalpHist.reduce((sum,r)=>sum+(Number(r.pnl)||0),0),
+    advanced:computeAdvancedStats(signalHistory),
+    recentSignalIds:signalHistory.slice(0,200).map(r=>r.id),
+    recentScalpIds:scalpHist.slice(0,200).map(r=>r.id||r.t)
+  });
 }
 async function riyanRestore(){
   if(!currentUser)return;
