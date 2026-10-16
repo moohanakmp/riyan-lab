@@ -23,7 +23,13 @@ function extract(start,end){
  assert(!/[| /%]/.test(first),'path ID cannot contain an encoded slash');
  const veryLong='news/important event'.repeat(100);
  assert.match(await safe('news-alerts',veryLong),/^id-[a-f0-9]{64}$/);
- console.log('PASS URL-safe IDs, exact CPI/m/m regression and deterministic 200-char-safe hashes');
+ const ownState=await safe('user-state','stateowner:low-profit-diagnostics-XAUUSD');
+ const secondState=await safe('user-state','stateowner:low-profit-diagnostics-XAUUSD');
+ assert.match(ownState,/^stateowner--id-[a-f0-9]{64}$/);
+ assert.equal(ownState,secondState,'owned diagnostics must keep stable safe ID');
+ assert(!/[| /:%]/.test(ownState),'owned diagnostics must be URL-safe');
+ assert.match(await safe('user-state','anotheruser:activeSignals'),/^anotheruser--id-[a-f0-9]{64}$/);
+ console.log('PASS URL-safe IDs, CPI/m/m regression, per-user diagnostics and deterministic hashes');
 
  const agg=extract('function aggMinutes(c,min){','async function scalpFetch(sym,lim){');
  const closedLine=h.match(/function kmrClosed\(arr\)\{[^\n]+\}/)?.[0];
