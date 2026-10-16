@@ -41,13 +41,13 @@ public class AuthService {
 
     @EventListener(ApplicationReadyEvent.class)
     public void bootstrapAdmin() {
-        Integer count = jdbc.queryForObject("SELECT count(*) FROM riyan_lab.auth_users", Integer.class);
+        Integer count = jdbc.queryForObject("SELECT count(*) FROM auth_users", Integer.class);
         if (count != null && count > 0) return;
         if (!validUsername(bootstrapUser) || bootstrapPassword == null || bootstrapPassword.length() < 12) {
             System.err.println("Riyan Lab: configure RIYAN_BOOTSTRAP_ADMIN_USER and RIYAN_BOOTSTRAP_ADMIN_PASSWORD (12+ chars) to create the first admin.");
             return;
         }
-        jdbc.update("INSERT INTO riyan_lab.auth_users(username,password_hash,role) VALUES(?,?,'admin') ON CONFLICT(username) DO NOTHING",
+        jdbc.update("INSERT INTO auth_users(username,password_hash,role) VALUES(?,?,'admin') ON CONFLICT(username) DO NOTHING",
             bootstrapUser, hasher.encode(bootstrapPassword));
         activity(bootstrapUser, "BOOTSTRAP_ADMIN", "auth_users", bootstrapUser, "{}");
     }
@@ -92,7 +92,7 @@ public class AuthService {
         if (username == null || password == null || password.length() > 1024)
             throw unauthorized();
         var rows = jdbc.queryForList(
-          "SELECT id, username, password_hash, role, active, failed_logins, locked_until FROM riyan_lab.auth_users WHERE username=?",
+          "SELECT id, username, password_hash, role, active, failed_logins, locked_until FROM auth_users WHERE username=?",
           username);
         if (rows.isEmpty()) throw unauthorized();
         var row = rows.get(0);
@@ -101,13 +101,13 @@ public class AuthService {
         if (!active || (until != null && until.toInstant().isAfter(Instant.now()))) throw unauthorized();
         long id = ((Number)row.get("id")).longValue();
         if (!hasher.matches(password, (String)row.get("password_hash"))) {
-            jdbc.update("UPDATE riyan_lab.auth_users SET failed_logins=failed_logins+1, locked_until=CASE WHEN failed_logins+1>=5 THEN now()+interval '15 minutes' ELSE NULL END WHERE id=?",id);
+            jdbc.update("UPDATE auth_users SET failed_logins=failed_logins+1, locked_until=CASE WHEN failed_logins+1>=5 THEN now()+interval '15 minutes' ELSE NULL END WHERE id=?",id);
             activity(username,"LOGIN_FAILED","auth_users",username,"{}");
             throw unauthorized();
         }
-        jdbc.update("UPDATE riyan_lab.auth_users SET failed_logins=0,locked_until=NULL WHERE id=?",id);
+        jdbc.update("UPDATE auth_users SET failed_logins=0,locked_until=NULL WHERE id=?",id);
         String token = randomSecret(), csrf = randomSecret();
-        jdbc.update("INSERT INTO riyan_lab.auth_sessions(token_hash,user_id,csrf_hash,expires_at) VALUES(?,?,?,?)",
+        jdbc.update("INSERT INTO auth_sessions(token_hash,user_id,csrf_hash,expires_at) VALUES(?,?,?,?)",
             digest(token),id,digest(csrf),Timestamp.from(Instant.now().plus(SESSION_SECONDS, ChronoUnit.SECONDS)));
         activity(username, "LOGIN", "auth_sessions", null, "{}");
         return Map.of("username",username,"role",row.get("role"),"token",token,"csrf",csrf,"permissions",permissions());
@@ -121,8 +121,8 @@ public class AuthService {
         if (token == null || token.isBlank()) throw unauthorized();
         var rows = jdbc.queryForList("""
             SELECT u.id,u.username,u.role,s.csrf_hash
-            FROM riyan_lab.auth_sessions s
-            JOIN riyan_lab.auth_users u ON u.id=s.user_id
+            FROM auth_sessions s
+            JOIN auth_users u ON u.id=s.user_id
             WHERE s.token_hash=? AND s.expires_at>now() AND u.active=true
             """,digest(token));
         if (rows.isEmpty()) throw unauthorized();
@@ -154,18 +154,18 @@ public class AuthService {
     }
     public void logout(HttpServletRequest req,Identity identity) {
         String token=cookie(req,"RIYAN_SESSION");
-        if(token!=null)jdbc.update("DELETE FROM riyan_lab.auth_sessions WHERE token_hash=?",digest(token));
+        if(token!=null)jdbc.update("DELETE FROM auth_sessions WHERE token_hash=?",digest(token));
         activity(identity.username(),"LOGOUT","auth_sessions",null,"{}");
     }
 
     public void activity(String username,String action,String type,String id,String json) {
-        jdbc.update("INSERT INTO riyan_lab.user_activity(username,action,entity_type,entity_id,details) VALUES(?,?,?,?,?::jsonb)",
+        jdbc.update("INSERT INTO user_activity(username,action,entity_type,entity_id,details) VALUES(?,?,?,?,?::jsonb)",
             username,action,type,id,json == null ? "{}":json);
     }
     public Map<String,Map<String,Boolean>> permissions() {
         Map<String,Map<String,Boolean>> result=new LinkedHashMap<>();
         result.put("user",new LinkedHashMap<>());result.put("guest",new LinkedHashMap<>());
-        jdbc.query("SELECT role,feature,allowed FROM riyan_lab.app_permissions",rs->{
+        jdbc.query("SELECT role,feature,allowed FROM app_permissions",rs->{
             result.computeIfAbsent(rs.getString("role"),x->new LinkedHashMap<>())
                 .put(rs.getString("feature"),rs.getBoolean("allowed"));
         });
@@ -176,39 +176,39 @@ public class AuthService {
             !Set.of("dashboard","prices","chart","signals","historyHigh","historyMed","historyOverall","analysis","session","flow","manual","research","analytics","pnlReport","info").contains(feature))
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         jdbc.update("""
-          INSERT INTO riyan_lab.app_permissions(role,feature,allowed,changed_by) VALUES(?,?,?,?)
+          INSERT INTO app_permissions(role,feature,allowed,changed_by) VALUES(?,?,?,?)
           ON CONFLICT(role,feature) DO UPDATE SET allowed=excluded.allowed, changed_by=excluded.changed_by,changed_at=now()
         """,role,feature,allowed,actor.username());
         activity(actor.username(),"UPDATE_PERMISSION","app_permissions",role+":"+feature,"{}");
     }
     public List<Map<String,Object>> users() {
-        return jdbc.queryForList("SELECT username,role,active,created_at,updated_at FROM riyan_lab.auth_users ORDER BY username");
+        return jdbc.queryForList("SELECT username,role,active,created_at,updated_at FROM auth_users ORDER BY username");
     }
     public void createUser(Identity actor,String username,String password,String role) {
         if (!validUsername(username) || password == null || password.length()<12 || password.length()>256 || !ROLES.contains(role))
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Username, role or password invalid (minimum 12 chars)");
-        jdbc.update("INSERT INTO riyan_lab.auth_users(username,password_hash,role) VALUES(?,?,?)",
+        jdbc.update("INSERT INTO auth_users(username,password_hash,role) VALUES(?,?,?)",
             username,hasher.encode(password),role);
         activity(actor.username(),"CREATE_USER","auth_users",username,"{}");
     }
     public void changeRole(Identity actor,String username,String role) {
         if (!ROLES.contains(role) || !validUsername(username) || actor.username().equals(username))
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
-        if(jdbc.update("UPDATE riyan_lab.auth_users SET role=?,updated_at=now() WHERE username=?",role,username)==0)
+        if(jdbc.update("UPDATE auth_users SET role=?,updated_at=now() WHERE username=?",role,username)==0)
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         activity(actor.username(),"CHANGE_ROLE","auth_users",username,"{}");
     }
     public void resetPassword(Identity actor,String username,String password) {
         if (!validUsername(username) || password==null || password.length()<12 || password.length()>256)
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
-        if(jdbc.update("UPDATE riyan_lab.auth_users SET password_hash=?,failed_logins=0,locked_until=NULL,updated_at=now() WHERE username=?",
+        if(jdbc.update("UPDATE auth_users SET password_hash=?,failed_logins=0,locked_until=NULL,updated_at=now() WHERE username=?",
             hasher.encode(password),username)==0)throw new ResponseStatusException(HttpStatus.NOT_FOUND);
-        jdbc.update("DELETE FROM riyan_lab.auth_sessions WHERE user_id=(SELECT id FROM riyan_lab.auth_users WHERE username=?)",username);
+        jdbc.update("DELETE FROM auth_sessions WHERE user_id=(SELECT id FROM auth_users WHERE username=?)",username);
         activity(actor.username(),"RESET_PASSWORD","auth_users",username,"{}");
     }
     public void changeOwnPassword(Identity identity,String oldPassword,String password) {
         if(password==null || password.length()<12 || password.length()>256)throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
-        String hash=jdbc.queryForObject("SELECT password_hash FROM riyan_lab.auth_users WHERE id=?",String.class,identity.id());
+        String hash=jdbc.queryForObject("SELECT password_hash FROM auth_users WHERE id=?",String.class,identity.id());
         if(!hasher.matches(oldPassword==null?"":oldPassword,hash))throw unauthorized();
         resetPassword(identity,identity.username(),password);
     }
