@@ -3717,12 +3717,57 @@ function emaSeries(C,p){const out=new Array(C.length).fill(null);if(C.length<p)r
 function bbAt(C,i,n=20,k=2){if(i<n-1)return null;const w=C.slice(i-n+1,i+1);const m=w.reduce((a,b)=>a+b,0)/n;const sd=Math.sqrt(w.reduce((a,b)=>a+(b-m)**2,0)/n);return{m,u:m+k*sd,l:m-k*sd};}
 function aggMinutes(c,min){const ms=min*60e3,m={};c.forEach(k=>{const b=Math.floor(k.t/ms)*ms;if(!m[b])m[b]={t:b,o:k.o,h:k.h,l:k.l,c:k.c,v:k.v||0,n:1};else{const x=m[b];x.h=Math.max(x.h,k.h);x.l=Math.min(x.l,k.l);x.c=k.c;x.v+=k.v||0;x.n++;}});return Object.values(m).sort((a,b)=>a.t-b.t);}
 async function scalpFetch(sym,lim){
-  let c=null;
-  try{c=sym==='BTCUSD'?await fetchBinanceKlines('BTCUSDT','5m',Math.min(lim,1000)):await fetchFapiKlines(FAPI_SYM[sym],'5m',lim);}catch(e){}
-  if((!c||c.length<50)&&sym==='XAUUSD'){try{c=await fetchBinanceKlines('PAXGUSDT','5m',Math.min(lim,1000));}catch(e){}}
-  if(!c||c.length<50)return null;
-  if(sym!=='BTCUSD'&&prices[sym]){const f=prices[sym]/c[c.length-1].c;if(f>0.9&&f<1.1)c=c.map(k=>({...k,o:k.o*f,h:k.h*f,l:k.l*f,c:k.c*f}));}
+  const state=scalpState[sym];
+  let c=null,reason='',source='';
+  try{
+    if(sym==='BTCUSD'){
+      c=await fetchBinanceKlines('BTCUSDT','5m',Math.min(lim,1000));
+      source='Binance spot BTCUSDT (BTCUSD proxy)';
+    }else{
+      c=await fetchFapiKlines(FAPI_SYM[sym],'5m',lim);
+      source='Binance futures '+FAPI_SYM[sym];
+    }
+  }catch(e){reason='Primary 5m feed unavailable: '+String(e.message||e);}
+  if((!c||c.length<60)&&sym==='XAUUSD'){
+    try{
+      c=await fetchBinanceKlines('PAXGUSDT','5m',Math.min(lim,1000));
+      source='PAXGUSDT gold proxy (not broker XAUUSD)';
+      reason='';
+    }catch(e){reason+='; gold fallback: '+String(e.message||e);}
+  }
+  if(!c||c.length<60){
+    state.feedError=reason||'Not enough 5m candles — source unavailable';
+    state.feedSource=source||'Unavailable';
+    return null;
+  }
+  if(sym!=='BTCUSD'&&prices[sym]){
+    const f=prices[sym]/c[c.length-1].c;
+    if(!(f>0.9&&f<1.1)){
+      state.feedError='Market quote and 5m feed differ by over 10%; scalp signal paused';
+      state.feedSource=source;
+      return null;
+    }
+    c=c.map(k=>({...k,o:k.o*f,h:k.h*f,l:k.l*f,c:k.c*f}));
+  }
+  state.feedError='';
+  state.feedSource=source;
+  state.feedAt=Date.now();
   return c;
+}
+// Use provider 15m candles when fresh and consistent with the same 5m market.
+// If 15m is missing/stale, aggregate only completed 5m candles. Never fabricate
+// a directional setup, discard strict risk gates, or use the unclosed 15m bar.
+function scalpClosed15m(sym,c5,now=Date.now()){
+  const primary=kmrClosed(ohlcData[sym]?.['15m']||[]);
+  const last5=c5[c5.length-1],p=primary[primary.length-1];
+  const valid=primary.length>=55&&last5&&p &&
+    Math.abs((p.t+900e3)-(last5.t+300e3))<45*60e3 &&
+    Number.isFinite(p.c)&&p.c>0&&
+    Math.abs(p.c-last5.c)/Math.max(p.c,last5.c)<0.03;
+  if(valid)return primary;
+  const aggregated=aggMinutes(c5,15).filter(k=>k.t+900e3<=now-1000);
+  if(aggregated.length>=55)return aggregated;
+  return valid?primary:[];
 }
 // ctx: {now, events, isMetal, marketOpen, spread, cfg, dec}
 function scalpScan(sym,c5,c15,h1,ctx){
@@ -3809,7 +3854,7 @@ function scalpCtx(sym,now){return{now,events:kmrNewsEvents(),isMetal:sym!=='BTCU
 function scalpEvaluate(sym){
   const st=scalpState[sym],now=Date.now();
   const c5=kmrClosed(scalpData[sym]||[]);
-  const scan=scalpScan(sym,c5,kmrClosed(ohlcData[sym]?.['15m']||[]),kmrClosed(ohlcData[sym]?.['1h']||[]),scalpCtx(sym,now));
+  const scan=scalpScan(sym,c5,scalpClosed15m(sym,c5,now),kmrClosed(ohlcData[sym]?.['1h']||[]),scalpCtx(sym,now));
   st.scan=scan;
   const live=prices[sym];
   // preview of size for the watch card
@@ -3884,8 +3929,20 @@ async function scalpLoop(){
   const boundary=Math.floor(now/300e3)*300e3;
   if(!scalpFetchBusy&&(now-scalpLastFetch>60e3||(boundary>scalpLastBoundary&&now-boundary>4e3))){
     scalpFetchBusy=true;scalpLastBoundary=boundary;
-    try{for(const sym of SYMS){const c=await scalpFetch(sym,300);if(c)scalpData[sym]=c;}scalpLastFetch=Date.now();scalpCandleCheck();}
-    catch(e){}finally{scalpFetchBusy=false;}
+    try{
+      await Promise.all(SYMS.map(async sym=>{
+        try{
+          const c=await scalpFetch(sym,300);
+          if(c)scalpData[sym]=c;
+        }catch(e){
+          scalpState[sym].feedError='5m candle fetch error: '+String(e.message||e);
+          console.warn('Low Profit data unavailable for',sym,e);
+        }
+      }));
+      scalpLastFetch=Date.now();
+      scalpCandleCheck();
+    }catch(e){console.warn('Low Profit fetch cycle failed',e);}
+    finally{scalpFetchBusy=false;}
   }
   scalpManageAll();
   SYMS.forEach(sym=>{try{scalpEvaluate(sym);}catch(e){console.warn('scalp',sym,e);}});
@@ -4005,8 +4062,9 @@ function renderScalpLive(){
     h+=`<div class="ic sc-w art-${s}"><div class="ib">
       <div class="sc-row"><b>${ICONS[s]} ${ASSETS[s].sym}</b>${chip}</div>
       ${sc&&sc.A?`<div class="sc-ind"><span>15m <b class="${sc.trend==='BULL'?'up':sc.trend==='BEAR'?'dn':''}">${sc.trend==='BULL'?'▲ up':sc.trend==='BEAR'?'▼ down':'◆ flat'}</b></span><span>ADX <b>${sc.adx!=null?sc.adx.toFixed(0):'—'}</b></span><span>RSI7 <b>${sc.rsi7!=null?sc.rsi7.toFixed(0):'—'}</b></span><span>5m ATR <b>${fmtP(s,sc.A)}</b></span></div>`:''}
-      <div class="sc-look">${st.block?st.block:fails.length?'⛔ '+fails[0].label:sc?(sc.dir?`✅ ${sc.setup}: ${sc.why.slice(0,2).join(' · ')}`:'👀 '+sc.look):'Loading…'}</div>
+      <div class="sc-look">${st.block?st.block:st.feedError?'⛔ '+st.feedError:fails.length?'⛔ '+fails[0].label:sc?(sc.dir?`✅ ${sc.setup}: ${sc.why.slice(0,2).join(' · ')}`:'👀 '+sc.look):'Loading…'}</div>
       ${pv?`<div class="sc-dim">If it triggers now: ${pv.lot} lot → TP +$${pv.tpUsd.toFixed(2)} / SL −$${pv.slUsd.toFixed(2)}</div>`:st.preview&&st.preview.reject?`<div class="sc-dim">⚠ ${st.preview.reject}</div>`:''}
+      ${st.feedSource?`<div class="sc-dim">Source: ${st.feedSource}</div>`:''}
       ${st.note?`<div class="sc-dim">ℹ ${st.note}</div>`:''}
     </div></div>`;
   });
@@ -5745,6 +5803,18 @@ function riyanSnapshot(){
   Object.entries(researchCache).forEach(([sym,data])=>riyanQueue('research',sym+'-'+day,{symbol:sym,...data}));
   Object.entries(newsLog).forEach(([key,data])=>riyanQueue('gold-calls',key,data));
   scalpHist.forEach(r=>riyanQueue('low-profit',String(r.id||r.t),r));
+  for(const sym of SYMS){
+    const state=scalpState[sym]||{};
+    riyanQueue('user-state',currentUser.username+':low-profit-diagnostics-'+sym,{
+      symbol:sym,auto:scalpCfg.auto,assetEnabled:!!scalpCfg.assets[sym],
+      lastFiveMinuteFeedAt:state.feedAt||null,feedSource:state.feedSource||null,
+      feedError:state.feedError||null,blocked:state.block||null,
+      pendingSetup:state.scan?.setup||null,
+      lookingFor:state.scan?.look||null,
+      candles5m:scalpData[sym]?.length||0,
+      gates:state.scan?.gates||[],diagnosticAt:Date.now()
+    });
+  }
   signalHistory.forEach(r=>riyanQueue(r.manual?'manual-signals':'auto-signals',String(r.id),r));
   riyanQueue('seven-day','prediction-'+day,{
     date:day,generatedAt:Date.now(),
