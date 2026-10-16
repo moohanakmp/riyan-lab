@@ -3693,7 +3693,7 @@ async function evwBackgroundNews(){
 //    stop moves to breakeven at 60% of the way to TP, 45-min time stop.
 //  • The LOT is sized so TP pays your $ target; it is cut if the stop would cost more than your max loss.
 //  • Daily goal and daily stop: the engine pauses itself when either is reached.
-const SCALP_DEF={target:2,maxLoss:4,goal:10,dayStop:8,stopAtGoal:true,auto:true,assets:{XAUUSD:true,XAGUSD:true,BTCUSD:true},timeStopMin:45};
+const SCALP_DEF={target:2,maxLoss:4,goal:10,dayStop:8,stopAtGoal:true,auto:true,continuation:false,assets:{XAUUSD:true,XAGUSD:true,BTCUSD:true},timeStopMin:45};
 let scalpCfg=(()=>{try{const c=JSON.parse(localStorage.getItem('kmr_scalp_cfg')||'null');return c?{...SCALP_DEF,...c,assets:{...SCALP_DEF.assets,...(c.assets||{})}}:{...SCALP_DEF,assets:{...SCALP_DEF.assets}};}catch(e){return{...SCALP_DEF,assets:{...SCALP_DEF.assets}};}})();
 let scalpHist=(()=>{try{return JSON.parse(localStorage.getItem('kmr_scalp_hist')||'[]');}catch(e){return[];}})();
 let scalpData={XAUUSD:[],XAGUSD:[],BTCUSD:[]},scalpState={XAUUSD:{},XAGUSD:{},BTCUSD:{}};
@@ -3822,6 +3822,51 @@ function scalpScan(sym,c5,c15,h1,ctx){
     if(trend==='BULL'&&last.c>hh&&relVol>=1.4&&last.c>last.o&&body/rng>=0.55&&(last.c-e9[n])/A<=1.2&&r7[3]<80){out.dir='BUY';out.setup='Momentum breakout';out.why=[`15m uptrend, ADX ${adx.toFixed(0)}`,`Closed above the 1-hour high ${fmtP(sym,hh)}`,`Volume ${relVol.toFixed(1)}× average`];}
     if(trend==='BEAR'&&last.c<ll&&relVol>=1.4&&last.c<last.o&&body/rng>=0.55&&(e9[n]-last.c)/A<=1.2&&r7[3]>20){out.dir='SELL';out.setup='Momentum breakout';out.why=[`15m downtrend, ADX ${adx.toFixed(0)}`,`Closed below the 1-hour low ${fmtP(sym,ll)}`,`Volume ${relVol.toFixed(1)}× average`];}
   }
+  // D — optional EMA9 continuation after a CLOSED 5m candle. This is separate
+  // from the original A/B/C strategies and OFF until the user explicitly enables.
+  // Do not turn this into an entry simply because the trend is up/down.
+  if(!out.dir&&scalpCfg.continuation&&trend!=='FLAT'&&
+     adx!=null&&adx>=20&&relVol>=0.85&&A>0){
+    const e9Prev=e9[n-1],ema21=e21[n];
+    const retest=e9Prev!=null&&e9[n]!=null&&
+      (trend==='BULL'?[n-2,n-1].some(i=>c5[i].l<=e9[i]+0.15*A):
+       [n-2,n-1].some(i=>c5[i].h>=e9[i]-0.15*A));
+    const bullish=trend==='BULL'&&e9[n]>ema21&&retest&&
+      last.c>last.o&&last.c>prev.h&&last.c>e9[n]&&
+      body/rng>=0.45&&(last.c-e9[n])/A<=0.7&&
+      (last.c-ema21)/A<=1.5&&r7[3]>=48&&r7[3]<=72&&
+      r7[3]>r7[2];
+    const bearish=trend==='BEAR'&&e9[n]<ema21&&retest&&
+      last.c<last.o&&last.c<prev.l&&last.c<e9[n]&&
+      body/rng>=0.45&&(e9[n]-last.c)/A<=0.7&&
+      (ema21-last.c)/A<=1.5&&r7[3]>=28&&r7[3]<=52&&
+      r7[3]<r7[2];
+    if(bullish||bearish){
+      out.dir=bullish?'BUY':'SELL';out.setup='EMA9 continuation (experimental)';
+      out.why=[
+        '15m '+(bullish?'uptrend':'downtrend')+' with ADX '+adx.toFixed(0),
+        '5m retested EMA9 and confirmed a close '+(bullish?'above prior high':'below prior low'),
+        'RSI7 '+r7[3].toFixed(0)+' and relative volume '+relVol.toFixed(2)+'×',
+        'Entry pending fresh quote, news gates, spread and max-loss checks'
+      ];
+      // Strategy provenance is stored with the full signal in low_profit_signals.
+      out.strategyVersion='continuation-v1-opt-in';
+    }
+  }
+  // Non-actionable price watch. Never pass this to scalpOpen directly:
+  // only a later confirmed candle and all original gates can create an entry.
+  if(!out.dir&&e9[n]!=null&&A>0){
+    if(trend==='BULL'){
+      out.watch={dir:'BUY',level:Math.max(last.h,e9[n]),setup:'EMA9 continuation watch',
+        note:'Need EMA9 retest, bullish 5m close, RSI/volume/ADX and risk approval'};
+    }else if(trend==='BEAR'){
+      out.watch={dir:'SELL',level:Math.min(last.l,e9[n]),setup:'EMA9 continuation watch',
+        note:'Need EMA9 retest, bearish 5m close, RSI/volume/ADX and risk approval'};
+    }else if(bb){
+      out.watch={dir:'NEUTRAL',lower:bb.l,upper:bb.u,setup:'Range reversal watch',
+        note:'Wait for a Bollinger-band rejection and completed 5m reversal'};
+    }
+  }
   // C — range fade
   if(!out.dir&&bb&&bbP&&(trend==='FLAT'||(adx!=null&&adx<20))){
     if((last.l<=bb.l||prev.l<=bbP.l)&&last.c>bb.l&&last.c>last.o&&lw>=rng*0.35&&Math.min(r7[1],r7[2],r7[3])<=30&&trend!=='BEAR'&&bb.m-last.c>=0.45*A){
@@ -3846,7 +3891,7 @@ function scalpLevels(sym,dir,entry,scan,c5,cfg){
   let lot=Math.max(0.01,Math.round(cfg.target/(net*cs)/0.01)*0.01);
   let slUsd=(slDist+spread)*lot*cs;
   while(slUsd>cfg.maxLoss&&lot>0.0101){lot=+(lot-0.01).toFixed(2);slUsd=(slDist+spread)*lot*cs;}
-  if(slUsd>cfg.maxLoss*1.15)return{reject:`Even 0.01 lot would risk $${slUsd.toFixed(2)} here — above your $${cfg.maxLoss} max loss`};
+  if(slUsd>cfg.maxLoss+1e-6)return{reject:`Even 0.01 lot would risk ${slUsd.toFixed(2)} here — above your ${cfg.maxLoss} max loss`};
   const units=lot*cs;
   return{entry,tp:entry+sgn*tpDist,sl:entry-sgn*slDist,beAt:entry+sgn*tpDist*0.6,lot:+lot.toFixed(2),units,tpUsd:net*units,slUsd,tpDist,slDist};
 }
@@ -3992,7 +4037,7 @@ function scalpSimulate(sym,all,cfg){
 }
 // ── UI ──
 function scalpToggleAuto(){scalpCfg.auto=!scalpCfg.auto;saveScalpCfg();renderScalpTab();}
-function scalpSet(k,v){if(k.startsWith('asset:')){scalpCfg.assets[k.slice(6)]=!!v;}else if(k==='stopAtGoal'){scalpCfg[k]=!!v;}else{const x=parseFloat(v);if(isFinite(x)&&x>0)scalpCfg[k]=x;}saveScalpCfg();renderScalpLive();}
+function scalpSet(k,v){if(k.startsWith('asset:')){scalpCfg.assets[k.slice(6)]=!!v;}else if(k==='stopAtGoal'||k==='continuation'){scalpCfg[k]=!!v;}else{const x=parseFloat(v);if(isFinite(x)&&x>0)scalpCfg[k]=x;}saveScalpCfg();renderScalpLive();}
 function scalpCloseNow(id){const t=scalpHist.find(x=>x.id===id&&x.status==='OPEN');if(t&&prices[t.sym]!=null){scalpClose(t,prices[t.sym],'MANUAL');renderScalpLive();}}
 function scalpResetToday(){if(!confirm('Clear today\'s closed scalps from the log?'))return;const dk=istDayKey(Date.now());scalpHist=scalpHist.filter(t=>t.status==='OPEN'||istDayKey(t.closedAt||t.t)!==dk);saveScalpHist();renderScalpLive();}
 function renderScalpTab(){
@@ -4012,7 +4057,8 @@ function renderScalpTab(){
       <label>Daily stop $<input type="number" min="1" step="1" value="${c.dayStop}" onchange="scalpSet('dayStop',this.value)"></label>
     </div>
     <div class="sc-chk">${SYMS.map(s=>`<label><input type="checkbox" ${c.assets[s]?'checked':''} onchange="scalpSet('asset:${s}',this.checked)"> ${ICONS[s]} ${ASSETS[s].sym}</label>`).join('')}
-      <label><input type="checkbox" ${c.stopAtGoal?'checked':''} onchange="scalpSet('stopAtGoal',this.checked)"> Pause when the daily goal is hit</label></div>
+      <label><input type="checkbox" ${c.stopAtGoal?'checked':''} onchange="scalpSet('stopAtGoal',this.checked)"> Pause when the daily goal is hit</label>
+      <label><input type="checkbox" ${c.continuation?'checked':''} onchange="scalpSet('continuation',this.checked)"> Experimental EMA9 continuation entries (opt in)</label></div>
     <div class="sc-note">The lot is sized from these numbers: TP pays about your profit target after spread; if the stop would cost more than your max loss, the lot is cut (and the setup skipped if even 0.01 lot is too big).</div>
   </div></div>
   <div class="ic"><div class="it">🧪 Replay — how would these settings have done?</div><div class="ib">
@@ -4065,6 +4111,7 @@ function renderScalpLive(){
       ${sc&&sc.A?`<div class="sc-ind"><span>15m <b class="${sc.trend==='BULL'?'up':sc.trend==='BEAR'?'dn':''}">${sc.trend==='BULL'?'▲ up':sc.trend==='BEAR'?'▼ down':'◆ flat'}</b></span><span>ADX <b>${sc.adx!=null?sc.adx.toFixed(0):'—'}</b></span><span>RSI7 <b>${sc.rsi7!=null?sc.rsi7.toFixed(0):'—'}</b></span><span>5m ATR <b>${fmtP(s,sc.A)}</b></span></div>`:''}
       <div class="sc-look">${st.block?st.block:st.feedError?'⛔ '+st.feedError:fails.length?'⛔ '+fails[0].label:sc?(sc.dir?`✅ ${sc.setup}: ${sc.why.slice(0,2).join(' · ')}`:'👀 '+sc.look):'Loading…'}</div>
       ${pv?`<div class="sc-dim">If it triggers now: ${pv.lot} lot → TP +$${pv.tpUsd.toFixed(2)} / SL −$${pv.slUsd.toFixed(2)}</div>`:st.preview&&st.preview.reject?`<div class="sc-dim">⚠ ${st.preview.reject}</div>`:''}
+      ${sc?.watch?`<div class="sc-dim">⚑ WATCH ONLY — ${sc.watch.dir==='NEUTRAL'?'Range: '+fmtP(s,sc.watch.lower)+'–'+fmtP(s,sc.watch.upper):sc.watch.dir+' confirmation above/below '+fmtP(s,sc.watch.level)} · ${sc.watch.note}</div>`:''}
       ${st.feedSource?`<div class="sc-dim">Source: ${st.feedSource}</div>`:''}
       ${st.note?`<div class="sc-dim">ℹ ${st.note}</div>`:''}
     </div></div>`;
@@ -5828,6 +5875,7 @@ function riyanSnapshot(){
       lastFiveMinuteBarAt:scalpData[sym]?.at(-1)?.t||null,feedSource:state.feedSource||null,
       feedError:state.feedError||null,blocked:state.block||null,
       pendingSetup:state.scan?.setup||null,
+      continuationEnabled:!!scalpCfg.continuation,watchCandidate:state.scan?.watch||null,
       lookingFor:state.scan?.look||null,
       candles5m:scalpData[sym]?.length||0,
       gates:state.scan?.gates||[],diagnosticAt:state.scan?.barT||null
