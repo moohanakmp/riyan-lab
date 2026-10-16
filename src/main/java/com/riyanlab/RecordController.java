@@ -27,7 +27,10 @@ public class RecordController {
         Map.entry("research","research_reports"),
         Map.entry("tab-state","tab_states"),
         Map.entry("news-alerts","news_alerts"),
-        Map.entry("user-state","user_states")
+        Map.entry("user-state","user_states"),
+        Map.entry("basket-sessions","basket_scalp_sessions"),
+        Map.entry("basket-positions","basket_scalp_positions"),
+        Map.entry("basket-events","basket_scalp_events")
     );
     private final JdbcTemplate jdbc;
     private final AuthService auth;
@@ -39,7 +42,12 @@ public class RecordController {
         if(mapped==null)throw new ResponseStatusException(HttpStatus.NOT_FOUND,"Unknown record type");
         return ""+mapped;
     }
+    private boolean basketType(String type) {
+        return Set.of("basket-sessions","basket-positions","basket-events").contains(type);
+    }
     private void scope(AuthService.Identity identity,String type,String sourceId) {
+        if(basketType(type) && !sourceId.startsWith(identity.username()+"--"))
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Basket paper ledger is user-owned");
         if("user-state".equals(type) && !"admin".equals(identity.role()) &&
             !sourceId.startsWith(identity.username()+":") &&
             !sourceId.matches(java.util.regex.Pattern.quote(identity.username())+"--id-[a-f0-9]{64}"))
@@ -55,7 +63,7 @@ public class RecordController {
         auth.mayRead(identity,type);
         String sql="SELECT source_id,payload::text AS payload,created_by,updated_by,created_at,updated_at FROM "
             +table(type);
-        if ("user-state".equals(type) && !"admin".equals(identity.role()))
+        if (("user-state".equals(type) || basketType(type)) && !"admin".equals(identity.role()))
             return jdbc.queryForList(sql+" WHERE created_by=? ORDER BY updated_at DESC LIMIT ?",
                 identity.username(),Math.max(1,Math.min(limit,1000)));
         return jdbc.queryForList(sql+" ORDER BY updated_at DESC LIMIT ?",Math.max(1,Math.min(limit,1000)));
