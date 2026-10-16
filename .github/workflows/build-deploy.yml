@@ -39,6 +39,8 @@ jobs:
         run: mvn -B verify
       - name: Check frontend syntax
         run: node scripts/check-frontend.cjs
+      - name: Check sync IDs and Low Profit fallback
+        run: node scripts/check-sync-scalp.cjs
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build
