@@ -4125,7 +4125,7 @@ function renderScalpLive(){
       <div class="sc-row"><b>${ICONS[s]} ${ASSETS[s].sym}</b>${chip}</div>
       ${sc&&sc.A?`<div class="sc-ind"><span>15m <b class="${sc.trend==='BULL'?'up':sc.trend==='BEAR'?'dn':''}">${sc.trend==='BULL'?'▲ up':sc.trend==='BEAR'?'▼ down':'◆ flat'}</b></span><span>ADX <b>${sc.adx!=null?sc.adx.toFixed(0):'—'}</b></span><span>RSI7 <b>${sc.rsi7!=null?sc.rsi7.toFixed(0):'—'}</b></span><span>5m ATR <b>${fmtP(s,sc.A)}</b></span></div>`:''}
       <div class="sc-look">${st.block?st.block:st.feedError?'⛔ '+st.feedError:fails.length?'⛔ '+fails[0].label:sc?(sc.dir?`✅ ${sc.setup}: ${sc.why.slice(0,2).join(' · ')}`:'👀 '+sc.look):'Loading…'}</div>
-      ${pv?`<div class="sc-dim">If it triggers now: ${pv.lot} lot → TP +$${pv.tpUsd.toFixed(2)} / SL −$${pv.slUsd.toFixed(2)}</div>`:st.preview&&st.preview.reject?`<div class="sc-dim">⚠ ${st.preview.reject}</div>`:''}
+      ${pv?`<div class="sc-dim">${sc?.dir?'Setup risk preview':'Hypothetical only (no entry)'}: ${pv.lot} lot → TP +$${pv.tpUsd.toFixed(2)} / SL −$${pv.slUsd.toFixed(2)}</div>`:st.preview&&st.preview.reject?`<div class="sc-dim">⚠ ${st.preview.reject}</div>`:''}
       ${sc?.watch?`<div class="sc-dim">⚑ WATCH ONLY — ${sc.watch.dir==='NEUTRAL'?'Range: '+fmtP(s,sc.watch.lower)+'–'+fmtP(s,sc.watch.upper):(sc.watch.dir==='BUY'?'BUY if a closed 5m candle confirms above ':'SELL if a closed 5m candle confirms below ')+fmtP(s,sc.watch.level)} · ${sc.watch.note}</div>`:''}
       ${st.feedSource?`<div class="sc-dim">Source: ${st.feedSource}</div>`:''}
       ${st.note?`<div class="sc-dim">ℹ ${st.note}</div>`:''}
