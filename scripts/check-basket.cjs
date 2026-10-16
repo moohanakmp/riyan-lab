@@ -109,5 +109,39 @@ assert(results.baskets>0,'replay should close and report at least one basket');
 assert(results.assumptions.some(x=>x.includes('no MT5'))===false || true);
 assert(!source.includes('mt5_executor')&&!source.includes('execute-demo'),
  'paper mode must not call MT5');
+
+// Three safety regressions: corrupt saved positions cannot bypass combined risk,
+// the configured +$2 NET target exits all simulated positions, and no real orders.
+context.corruptSession={sym:'XAUUSD',dir:'BUY',status:'OPEN',positions:[
+ {dir:'BUY',entry:100,sl:NaN,units:1}
+]};
+assert.equal(run("basketCanAdd(corruptSession,plan,105,scalpCfg)").ok,false,
+ 'invalid restored stop must fail closed instead of returning NaN risk');
+const targetSession={
+ id:'basket-target-test',sym:'XAUUSD',dir:'BUY',status:'OPEN',
+ createdAt:now-2*60000,lastCheckedBar:0,
+ positions:[
+  {id:'basket-tp-1',dir:'BUY',entry:100,sl:99.5,units:1,lot:0.01,status:'OPEN'},
+  {id:'basket-tp-2',dir:'BUY',entry:100,sl:99.5,units:1,lot:0.01,status:'OPEN'}
+ ]
+};
+context.basketDemo.active=targetSession;
+context.basketDemo.enabled=true;
+context.scalpState.XAUUSD.feedAt=Date.now();
+context.scalpState.XAUUSD.feedError='';
+context.prices.XAUUSD=101.5;
+run('basketManage()');
+assert.equal(context.basketDemo.active,null,
+ 'basket +$2 target closes all positions, not a partial order');
+const netClosed=context.basketDemo.history[0];
+assert.equal(netClosed.id,'basket-target-test');
+assert.equal(netClosed.positions.length,2);
+assert(netClosed.positions.every(p=>p.status==='CLOSED'),'both paper positions must close');
+assert(netClosed.netPnl>=2,'net after modeled spread must meet $2');
+assert.equal(netClosed.closeReason,'NET_TP');
+assert(queued.filter(x=>x.type==='basket-positions').length>=3,
+ 'all position state transitions must queue for PostgreSQL');
+console.log('PASS: +$2 NET closes entire basket, corrupt risk fails closed, audit events persist');
+
 console.log('PASS: paper-only basket entries, 0.01 sizing, combined risk, non-losing additions, five-position cap');
 console.log('PASS: conservative stop before profit, owner-scoped audit ledger, next-bar replay summary');
