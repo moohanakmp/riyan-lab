@@ -41,7 +41,8 @@ public class RecordController {
     }
     private void scope(AuthService.Identity identity,String type,String sourceId) {
         if("user-state".equals(type) && !"admin".equals(identity.role()) &&
-            !sourceId.startsWith(identity.username()+":"))
+            !sourceId.startsWith(identity.username()+":") &&
+            !sourceId.matches(java.util.regex.Pattern.quote(identity.username())+"--id-[a-f0-9]{64}"))
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,"User-scoped key required");
     }
     @GetMapping("/health")
