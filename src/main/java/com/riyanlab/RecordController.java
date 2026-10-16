@@ -30,7 +30,8 @@ public class RecordController {
         Map.entry("user-state","user_states"),
         Map.entry("basket-sessions","basket_scalp_sessions"),
         Map.entry("basket-positions","basket_scalp_positions"),
-        Map.entry("basket-events","basket_scalp_events")
+        Map.entry("basket-events","basket_scalp_events"),
+        Map.entry("basket-replays","basket_scalp_replays")
     );
     private final JdbcTemplate jdbc;
     private final AuthService auth;
