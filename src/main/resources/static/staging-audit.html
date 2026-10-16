@@ -58,12 +58,12 @@ button.onclick=async()=>{
  }catch(e){add('Authenticated backend session',false,e.message)}
  if(me?.role==='admin'&&me.csrf){
   const marker='audit-smoke-'+Date.now().toString(36);
-  const types=['auto-signals','manual-signals','low-profit','analysis','seven-day','pnl','gold-calls','research','tab-state','user-state','news-alerts'];
+  const types=['auto-signals','manual-signals','low-profit','analysis','seven-day','pnl','gold-calls','research','tab-state','user-state','news-alerts','basket-sessions','basket-positions','basket-events','basket-replays'];
   for(const type of types){
-   const id=(type==='user-state'?me.username+':':'')+marker;
+   const id=(type==='user-state'?me.username+':':type.startsWith('basket-')?me.username+'--':'')+marker;
    const path='/api/v1/records/'+encodeURIComponent(type)+'/'+encodeURIComponent(id);
    const sample={symbol:'XAUUSD',direction:'BUY',status:'TEST_ONLY',reason:'staging diagnostics — no trades',
-    timeframe:'5m',entry:1,sl:.9,tp1:1.1,tp2:1.2,conditions:{smoke:true,simulated:true},ts:Date.now()};
+    timeframe:'5m',entry:1,sl:.9,tp1:1.1,tp2:1.2,lot:0.01,paperOnly:true,brokerOrderId:null,positions:[],conditions:{smoke:true,simulated:true},ts:Date.now()};
    try{
     const response=await api(path,{method:'PUT',headers:{'Content-Type':'application/json','X-CSRF-Token':me.csrf},body:JSON.stringify(sample)});
     add('PostgreSQL write: '+type,response.ok,'HTTP '+response.status);
