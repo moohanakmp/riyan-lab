@@ -113,12 +113,12 @@ async function basketRunReplay(){
 }
 function basketReplayHtml(){
   var b=basketDemo.replays||{},html='<div class="sec-ttl">🧪 Paper basket replay</div>';
-  html+='<div class="sc-note">3.5-day approximate per-symbol replay. '+
+  html+='<div class="sc-note">Approximate per-symbol replay (~2.8 traded days after 200 warm-up bars). '+
     'Uses next-bar openings and conservative stops but excludes news pauses, actual broker costs, '+
     'network latency and multi-asset overlap. Backtest results are NOT live profits.</div>';
   html+='<button class="anal-refresh" onclick="basketRunReplay()"'+
     (basketReplayBusy?' disabled':'')+'>'+
-    (basketReplayBusy?'Replaying paper baskets…':'Replay baskets (last ~3.5 days)')+
+    (basketReplayBusy?'Replaying paper baskets…':'Replay baskets (~2.8 traded days)')+
     '</button>';
   for(var sym of SYMS){
     var result=b[sym];if(!result)continue;
