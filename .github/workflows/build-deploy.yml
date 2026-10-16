@@ -41,6 +41,11 @@ jobs:
         run: node scripts/check-frontend.cjs
       - name: Check sync IDs and Low Profit fallback
         run: node scripts/check-sync-scalp.cjs
+      - name: Verify paper basket and replay
+        run: |
+          node --check src/main/resources/static/basket-demo.js
+          node --check src/main/resources/static/basket-replay.js
+          node scripts/check-basket.cjs
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build
