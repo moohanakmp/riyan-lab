@@ -68,13 +68,13 @@ function basketPersistSession(session){
   if(!currentUser||currentUser.role==='guest'||!session)return;
   riyanQueue('basket-sessions',basketRecordId(session.id),Object.assign({},
     session,{symbol:session.sym,owner:currentUser.username,paperOnly:true,
-      source:'browser-basket-demo',updatedAt:Date.now()}));
+      source:'browser-basket-demo',updatedAt:session.updatedAt||session.createdAt}));
 }
 function basketPersistPosition(session,p){
   if(!currentUser||currentUser.role==='guest')return;
   riyanQueue('basket-positions',basketRecordId(p.id),Object.assign({},
     p,{basketId:session.id,symbol:session.sym,owner:currentUser.username,
-      paperOnly:true,source:'browser-basket-demo',updatedAt:Date.now()}));
+      paperOnly:true,source:'browser-basket-demo',updatedAt:p.updatedAt||p.openedAt}));
 }
 function basketEvent(session,action,details){
   var e={id:'ev-'+Date.now()+'-'+Math.floor(Math.random()*100000),
@@ -88,9 +88,9 @@ function basketEvent(session,action,details){
 function basketClose(price,why,time){
   var s=basketDemo.active;if(!s)return;
   var at=time||Date.now(),net=basketPnlAt(s.positions,price,s.sym);
-  s.status='CLOSED';s.exit=price;s.closedAt=at;s.closeReason=why;s.netPnl=+net.toFixed(4);
+  s.status='CLOSED';s.exit=price;s.closedAt=at;s.updatedAt=at;s.closeReason=why;s.netPnl=+net.toFixed(4);
   for(var p of s.positions){
-    p.status='CLOSED';p.exit=price;p.closedAt=at;p.closeReason=why;
+    p.status='CLOSED';p.exit=price;p.closedAt=at;p.updatedAt=at;p.closeReason=why;
     p.pnl=+((price-p.entry)*(p.dir==='BUY'?1:-1)*p.units-
       (SPREAD[s.sym]||0)*p.units).toFixed(4);
     basketPersistPosition(s,p);
@@ -189,7 +189,7 @@ function basketEvaluate(sym){
     conditions:{trend:scan.trend,adx:scan.adx,rsi7:scan.rsi7,relVolume:scan.relVol,
       atr5m:scan.A,gates:scan.gates,strategyVersion:scan.strategyVersion||'v28-original'},
     feedSource:st.feedSource||'unknown',paperOnly:true,brokerOrderId:null};
-  session.positions.push(pos);basketDemo.lastBars[sym]=scan.barT;
+  session.positions.push(pos);session.updatedAt=Date.now();basketDemo.lastBars[sym]=scan.barT;
   basketDemo.blockReason='';
   basketEvent(session,'OPEN_POSITION',{positionId:pos.id,entry:quote,sl:pos.sl,
     risk:plan.riskUsd,combinedRisk:decision.totalRiskUsd,conditions:pos.conditions});
@@ -197,6 +197,35 @@ function basketEvaluate(sym){
   showToast('🧺 PAPER '+scan.dir+' '+sym+' 0.01 lot ('+
     session.positions.length+'/5) · basket risk $'+decision.totalRiskUsd.toFixed(2),
     'var(--acc)');
+}
+async function basketDbRestore(){
+  if(!currentUser||currentUser.role==='guest')return;
+  try{
+    var rows=await riyanApi('/api/v1/records/basket-sessions?limit=1000');
+    if(!Array.isArray(rows))return;
+    var parsed=rows.map(r=>{try{return typeof r.payload==='string'?JSON.parse(r.payload):r.payload;}catch(e){return null;}})
+      .filter(s=>s&&s.id&&s.paperOnly&&s.owner===currentUser.username);
+    var latest=new Map((basketDemo.history||[]).map(s=>[s.id,s]));
+    for(var s of parsed.filter(s=>s.status==='CLOSED')){
+      var prev=latest.get(s.id);
+      if(!prev||(s.updatedAt||s.closedAt||0)>(prev.updatedAt||prev.closedAt||0))latest.set(s.id,s);
+    }
+    basketDemo.history=[...latest.values()].sort((a,b)=>(b.closedAt||0)-(a.closedAt||0)).slice(0,100);
+    var sessions=parsed.filter(s=>s.status==='OPEN').sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+    if(sessions.length>1){
+      basketDemo.enabled=false;
+      basketDemo.conflict='Multiple open baskets in DB; disabled pending reconciliation';
+    }else if(sessions.length===1){
+      var remote=sessions[0],local=basketDemo.active;
+      if(!local || (local.id===remote.id&&(remote.updatedAt||0)>(local.updatedAt||0))){
+        basketDemo.active=remote;
+      }else if(local.id!==remote.id){
+        basketDemo.enabled=false;
+        basketDemo.conflict='Local/DB active basket mismatch; disabled pending reconciliation';
+      }
+    }
+    basketSave();
+  }catch(e){console.warn('Paper basket DB restore skipped; retaining local cache',e);}
 }
 function basketToggle(){
   if(!currentUser||currentUser.role==='guest'){
@@ -243,6 +272,7 @@ function renderBasketDemo(){
     }
     html+='<button class="anal-refresh" onclick="basketCloseNow()">Close entire PAPER basket</button>';
   }else html+='<div class="sc-note">No paper positions. Enable PAPER and AUTO; wait for a real, confirmed closed-candle setup that fits the risk budget.</div>';
+  if(b.conflict)html+='<div class="sc-note">⚠ '+basketTxt(b.conflict)+'</div>';
   if(b.blockReason)html+='<div class="sc-note">Last rejected entry: '+
     basketTxt(b.blockReason)+'</div>';
   if(b.history.length){
@@ -254,5 +284,6 @@ function renderBasketDemo(){
         basketMoney(item.netPnl)+'</b></div>';
     }
   }
+  if(typeof basketReplayHtml==='function')html+=basketReplayHtml();
   root.innerHTML=html+'</div></div>';
 }
