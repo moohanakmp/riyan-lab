@@ -3861,6 +3861,7 @@ function scalpEvaluate(sym){
   if(scan.A&&live){const pv=scalpLevels(sym,scan.dir||(scan.trend==='BEAR'?'SELL':'BUY'),live,scan,c5,scalpCfg);st.preview=pv;}
   const day=scalpToday();
   st.block=!scalpCfg.auto?'Auto scalping is OFF':!scalpCfg.assets[sym]?'This asset is switched off':
+    st.feedError?'Candle feed unavailable — '+st.feedError:
     scalpHist.some(t=>t.status==='OPEN'&&t.sym===sym)?'A scalp is already open on this asset':
     now<(st.cooldown||0)?`Cooldown ${Math.ceil((st.cooldown-now)/60e3)} min after the last trade`:
     scalpCfg.stopAtGoal&&day.goalHit?`🎯 Daily goal $${scalpCfg.goal} reached — paused until tomorrow`:
