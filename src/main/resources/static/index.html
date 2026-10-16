@@ -1260,7 +1260,7 @@ function renderAdminPanel(){
     const roleCls=acc.role==='admin'?'role-admin':acc.role==='user'?'role-user':'role-guest';
     return `<div class="admin-user-row">
       <div class="admin-user-info"><div class="admin-username">${uname}<span class="role-pill ${roleCls}">${acc.role.toUpperCase()}</span></div></div>
-      ${uname===currentUser.username?'<span style="font-size:10px;color:var(--dim)">Current admin</span>':`<select class="role-select" onchange="changeUserRole('${uname}',this.value)">
+      <button class="anal-refresh" onclick="riyanResetPassword('${uname}')">Reset password</button> ${uname===currentUser.username?'<span style="font-size:10px;color:var(--dim)">Current admin</span>':`<select class="role-select" onchange="changeUserRole('${uname}',this.value)">
         <option value="user" ${acc.role==='user'?'selected':''}>User</option>
         <option value="guest" ${acc.role==='guest'?'selected':''}>Guest</option>
         <option value="admin" ${acc.role==='admin'?'selected':''}>Admin</option>
@@ -1281,19 +1281,38 @@ async function changeUserRole(uname,newRole){
     showToast('Role changed for '+uname,'var(--grn)');
   }catch(e){showToast('Role update failed: '+e.message,'var(--red)');renderAdminPanel();}
 }
-async function riyanCreateUser(){
-  const username=prompt('New username (letters, numbers, underscore)');
-  if(!username)return;
-  const password=prompt('Password for '+username+' (12 or more characters)');
-  if(!password)return;
-  const role=prompt('Role: user, guest or admin','user');
-  if(!role)return;
-  try{
-    await riyanApi('/api/v1/auth/users',{method:'POST',
-      body:JSON.stringify({username,password,role})});
-    await riyanLoadUsers();renderAdminPanel();showToast('User created','var(--grn)');
-  }catch(e){showToast('Cannot create user (check name, password and role)','var(--red)');}
+function riyanPasswordDialog({title,username='',create=false}){
+  const overlay=document.createElement('div');
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px';
+  const form=document.createElement('div');
+  form.style.cssText='background:var(--card);border:1px solid var(--bdr);border-radius:15px;padding:20px;max-width:380px;width:100%;display:flex;flex-direction:column;gap:12px';
+  form.innerHTML='<h3>'+title+'</h3>'+
+    (create?'<label>Username<input id="ruName" class="login-input" maxlength="48" autocomplete="off"></label>'+
+            '<label>Role<select id="ruRole" class="login-input"><option value="user">User</option><option value="guest">Guest</option><option value="admin">Admin</option></select></label>':'')+
+    '<label>New password (12+ characters)<input id="ruPassword" class="login-input" type="password" autocomplete="new-password"></label>'+
+    '<p id="ruError" style="color:var(--red);font-size:11px"></p>'+
+    '<button id="ruSave" class="login-btn">Save securely</button>'+
+    '<button id="ruCancel" class="anal-refresh">Cancel</button>';
+  overlay.appendChild(form);document.body.appendChild(overlay);
+  form.querySelector('#ruCancel').onclick=()=>overlay.remove();
+  form.querySelector('#ruSave').onclick=async()=>{
+    const name=create?form.querySelector('#ruName').value.trim():username;
+    const password=form.querySelector('#ruPassword').value;
+    const role=create?form.querySelector('#ruRole').value:null;
+    if(!/^[a-zA-Z0-9_-]{3,48}$/.test(name)||password.length<12){
+      form.querySelector('#ruError').textContent='Username or password invalid';return;
+    }
+    try{
+      await riyanApi(create?'/api/v1/auth/users':'/api/v1/auth/users/'+encodeURIComponent(name)+'/password',{
+        method:create?'POST':'PUT',body:JSON.stringify(create?{username:name,password,role}:{password})
+      });
+      await riyanLoadUsers();overlay.remove();renderAdminPanel();
+      showToast(create?'User created':'Password updated','var(--grn)');
+    }catch(e){form.querySelector('#ruError').textContent='Cannot save (HTTP error or existing username)';}
+  };
 }
+function riyanCreateUser(){riyanPasswordDialog({title:'Create database user',create:true});}
+function riyanResetPassword(username){riyanPasswordDialog({title:'Reset password for '+username,username});}
 async function riyanLoadUsers(){
   const rows=await riyanApi('/api/v1/auth/users');
   userAccounts=Object.fromEntries(rows.map(u=>[u.username,{role:u.role}]));
