@@ -3886,7 +3886,15 @@ function scalpLevels(sym,dir,entry,scan,c5,cfg){
   if(scan.tpCap)tpDist=Math.min(tpDist,Math.max(scan.tpCap,0.45*A));
   const last3=c5.slice(-3);
   const ext=dir==='BUY'?Math.min(...last3.map(k=>k.l)):Math.max(...last3.map(k=>k.h));
-  let slDist=Math.min(Math.max(Math.abs(entry-ext)+0.15*A,1.0*A),1.6*A);
+  // Existing A/B/C SL models retain their original ATR sizing.
+  // Experimental EMA9 continuation uses a structural stop beyond the recent
+  // swing plus 0.15 ATR. Never clip an excessively wide structural stop inward.
+  const experimental=scan.strategyVersion==='continuation-v1-opt-in';
+  const swingDistance=Math.abs(entry-ext)+0.15*A;
+  if(experimental&&swingDistance>1.3*A)
+    return{reject:'Continuation swing stop exceeds 1.3× ATR — wait for a closer entry'};
+  const slDist=experimental?Math.max(0.45*A,swingDistance):
+    Math.min(Math.max(swingDistance,1.0*A),1.6*A);
   const net=tpDist-spread;if(net<=0)return{reject:'Spread eats the whole target'};
   let lot=Math.max(0.01,Math.round(cfg.target/(net*cs)/0.01)*0.01);
   let slUsd=(slDist+spread)*lot*cs;
@@ -3922,8 +3930,15 @@ function scalpEvaluate(sym){
   scalpOpen(sym,scan,lv);
 }
 function scalpOpen(sym,scan,lv){
-  const t={id:Date.now()+Math.floor(Math.random()*1000),sym,dir:scan.dir,setup:scan.setup,why:scan.why,entry:lv.entry,tp:lv.tp,sl:lv.sl,slNow:lv.sl,beAt:lv.beAt,beMoved:false,
-    lot:lv.lot,units:lv.units,tpUsd:lv.tpUsd,slUsd:lv.slUsd,t:Date.now(),status:'OPEN',lastBar:scan.barT};
+  const t={id:Date.now()+Math.floor(Math.random()*1000),sym,dir:scan.dir,setup:scan.setup,reason:scan.setup,
+    why:scan.why,entry:lv.entry,tp:lv.tp,sl:lv.sl,slNow:lv.sl,beAt:lv.beAt,beMoved:false,
+    lot:lv.lot,units:lv.units,tpUsd:lv.tpUsd,slUsd:lv.slUsd,t:Date.now(),status:'OPEN',lastBar:scan.barT,
+    timeframe:'5m',signalType:'low-profit',paperOnly:true,brokerOrderId:null,
+    marketDataSource:scalpState[sym]?.feedSource||null,
+    strategyVersion:scan.strategyVersion||'v28-original',
+    conditions:{closed5mBarAt:scan.barT,trend15m:scan.trend,ADX:scan.adx,RSI7:scan.rsi7,
+      ATR5m:scan.A,relativeVolume:scan.relVol,gates:scan.gates,ema9:scan.e9,
+      ema21:scan.e21,maxLoss:scalpCfg.maxLoss,target:scalpCfg.target}};
   scalpHist.unshift(t);saveScalpHist();
   const col=t.dir==='BUY'?'var(--grn)':'var(--red)';
   showToast(`💵 <b style="color:${col}">${t.dir}</b> ${ASSETS[sym].sym} scalp · ${t.lot} lot<br>TP ${fmtP(sym,t.tp)} (+$${t.tpUsd.toFixed(2)}) · SL ${fmtP(sym,t.sl)} (−$${t.slUsd.toFixed(2)})`,col);
@@ -4059,7 +4074,7 @@ function renderScalpTab(){
     <div class="sc-chk">${SYMS.map(s=>`<label><input type="checkbox" ${c.assets[s]?'checked':''} onchange="scalpSet('asset:${s}',this.checked)"> ${ICONS[s]} ${ASSETS[s].sym}</label>`).join('')}
       <label><input type="checkbox" ${c.stopAtGoal?'checked':''} onchange="scalpSet('stopAtGoal',this.checked)"> Pause when the daily goal is hit</label>
       <label><input type="checkbox" ${c.continuation?'checked':''} onchange="scalpSet('continuation',this.checked)"> Experimental EMA9 continuation entries (opt in)</label></div>
-    <div class="sc-note">The lot is sized from these numbers: TP pays about your profit target after spread; if the stop would cost more than your max loss, the lot is cut (and the setup skipped if even 0.01 lot is too big).</div>
+    <div class="sc-note">The lot is sized from these numbers: TP pays about your profit target after spread; if the stop would cost more than your max loss, the lot is cut (and the setup skipped if even 0.01 lot is too big). EMA9 continuation is optional/experimental: its stop uses the last closed swing plus ATR buffer and can be hit more often. Preview is not a signal.</div>
   </div></div>
   <div class="ic"><div class="it">🧪 Replay — how would these settings have done?</div><div class="ib">
     <div class="sc-note" style="margin-bottom:8px">Runs this exact engine over the last ~3.5 days of real 5-minute candles, candle by candle, with no peeking ahead. News pauses aren't replayed, so live results can differ.</div>
