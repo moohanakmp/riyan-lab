@@ -3825,7 +3825,7 @@ function scalpScan(sym,c5,c15,h1,ctx){
   // D — optional EMA9 continuation after a CLOSED 5m candle. This is separate
   // from the original A/B/C strategies and OFF until the user explicitly enables.
   // Do not turn this into an entry simply because the trend is up/down.
-  if(!out.dir&&scalpCfg.continuation&&trend!=='FLAT'&&
+  if(!out.dir&&ctx.continuation===true&&trend!=='FLAT'&&
      adx!=null&&adx>=20&&relVol>=0.85&&A>0){
     const e9Prev=e9[n-1],ema21=e21[n];
     const retest=e9Prev!=null&&e9[n]!=null&&
@@ -3853,6 +3853,14 @@ function scalpScan(sym,c5,c15,h1,ctx){
       out.strategyVersion='continuation-v1-opt-in';
     }
   }
+  // C — range fade
+  if(!out.dir&&bb&&bbP&&(trend==='FLAT'||(adx!=null&&adx<20))){
+    if((last.l<=bb.l||prev.l<=bbP.l)&&last.c>bb.l&&last.c>last.o&&lw>=rng*0.35&&Math.min(r7[1],r7[2],r7[3])<=30&&trend!=='BEAR'&&bb.m-last.c>=0.45*A){
+      out.dir='BUY';out.setup='Range fade';out.tpCap=bb.m-last.c;out.why=[`Ranging (ADX ${adx!=null?adx.toFixed(0):'—'})`,`Tagged the lower Bollinger band ${fmtP(sym,bb.l)} and closed back inside`,`Target: middle band ${fmtP(sym,bb.m)}`];}
+    else if((last.h>=bb.u||prev.h>=bbP.u)&&last.c<bb.u&&last.c<last.o&&uw>=rng*0.35&&Math.max(r7[1],r7[2],r7[3])>=70&&trend!=='BULL'&&last.c-bb.m>=0.45*A){
+      out.dir='SELL';out.setup='Range fade';out.tpCap=last.c-bb.m;out.why=[`Ranging (ADX ${adx!=null?adx.toFixed(0):'—'})`,`Tagged the upper Bollinger band ${fmtP(sym,bb.u)} and closed back inside`,`Target: middle band ${fmtP(sym,bb.m)}`];}
+    else if(!out.look)out.look=`Range — waiting for a tag of ${fmtP(sym,bb.l)} (buy) or ${fmtP(sym,bb.u)} (sell)`;
+  }
   // Non-actionable price watch. Never pass this to scalpOpen directly:
   // only a later confirmed candle and all original gates can create an entry.
   if(!out.dir&&e9[n]!=null&&A>0){
@@ -3867,15 +3875,7 @@ function scalpScan(sym,c5,c15,h1,ctx){
         note:'Wait for a Bollinger-band rejection and completed 5m reversal'};
     }
   }
-  // C — range fade
-  if(!out.dir&&bb&&bbP&&(trend==='FLAT'||(adx!=null&&adx<20))){
-    if((last.l<=bb.l||prev.l<=bbP.l)&&last.c>bb.l&&last.c>last.o&&lw>=rng*0.35&&Math.min(r7[1],r7[2],r7[3])<=30&&trend!=='BEAR'&&bb.m-last.c>=0.45*A){
-      out.dir='BUY';out.setup='Range fade';out.tpCap=bb.m-last.c;out.why=[`Ranging (ADX ${adx!=null?adx.toFixed(0):'—'})`,`Tagged the lower Bollinger band ${fmtP(sym,bb.l)} and closed back inside`,`Target: middle band ${fmtP(sym,bb.m)}`];}
-    else if((last.h>=bb.u||prev.h>=bbP.u)&&last.c<bb.u&&last.c<last.o&&uw>=rng*0.35&&Math.max(r7[1],r7[2],r7[3])>=70&&trend!=='BULL'&&last.c-bb.m>=0.45*A){
-      out.dir='SELL';out.setup='Range fade';out.tpCap=last.c-bb.m;out.why=[`Ranging (ADX ${adx!=null?adx.toFixed(0):'—'})`,`Tagged the upper Bollinger band ${fmtP(sym,bb.u)} and closed back inside`,`Target: middle band ${fmtP(sym,bb.m)}`];}
-    else if(!out.look)out.look=`Range — waiting for a tag of ${fmtP(sym,bb.l)} (buy) or ${fmtP(sym,bb.u)} (sell)`;
-  }
-  if(!out.look)out.look=trend==='FLAT'?'No trend and no band tag yet':'Trend present — waiting for the pullback';
+  if(!out.look)out.look=trend==='FLAT'?'No trend and no band tag yet':ctx.continuation?'Watching for EMA9 continuation or EMA21 pullback':'Trend present — waiting for the pullback';
   if(out.dir&&b1)out.why.push(b1===(out.dir==='BUY'?'BULL':'BEAR')?`1H agrees (${b1})`:`1H is ${b1} — smaller edge`);
   out.gatesOk=out.gates.every(x=>x.ok);
   return out;
@@ -3895,7 +3895,7 @@ function scalpLevels(sym,dir,entry,scan,c5,cfg){
   const units=lot*cs;
   return{entry,tp:entry+sgn*tpDist,sl:entry-sgn*slDist,beAt:entry+sgn*tpDist*0.6,lot:+lot.toFixed(2),units,tpUsd:net*units,slUsd,tpDist,slDist};
 }
-function scalpCtx(sym,now){return{now,events:kmrNewsEvents(),isMetal:sym!=='BTCUSD',marketOpen:sym==='BTCUSD'||isMetalsMarketOpen(),spread:SPREAD[sym]||0,dec:ASSETS[sym].dec};}
+function scalpCtx(sym,now){return{now,events:kmrNewsEvents(),isMetal:sym!=='BTCUSD',marketOpen:sym==='BTCUSD'||isMetalsMarketOpen(),spread:SPREAD[sym]||0,dec:ASSETS[sym].dec,continuation:!!scalpCfg.continuation};}
 function scalpEvaluate(sym){
   const st=scalpState[sym],now=Date.now();
   const c5=kmrClosed(scalpData[sym]||[]);
@@ -3912,7 +3912,7 @@ function scalpEvaluate(sym){
     scalpCfg.stopAtGoal&&day.goalHit?`🎯 Daily goal $${scalpCfg.goal} reached — paused until tomorrow`:
     day.stopHit?`🛑 Daily stop −$${scalpCfg.dayStop} hit — paused until tomorrow`:null;
   if(!scan.dir||!scan.gatesOk||st.block||live==null)return;
-  if(st.handledBar===scan.barT)return;
+  if(st.handledBar===scan.barT||scalpHist.some(t=>t.sym===sym&&t.lastBar===scan.barT))return;
   st.handledBar=scan.barT;
   const sgn=scan.dir==='BUY'?1:-1,ran=sgn*(live-scan.price);
   if(ran>0.4*scan.A){st.note=`Missed a ${scan.dir} — price ran ${(ran/scan.A).toFixed(1)}× ATR before the check`;return;}
@@ -4013,7 +4013,7 @@ function scalpSimulate(sym,all,cfg){
     if(i<cool){i++;continue;}
     const win=all.slice(0,i+1),endT=all[i].t+300e3;
     const c15=aggMinutes(win,15).filter(k=>k.t+900e3<=endT);
-    const scan=scalpScan(sym,win,c15,null,{now:endT,events:[],isMetal:sym!=='BTCUSD',marketOpen:true,spread,dec:ASSETS[sym].dec});
+    const scan=scalpScan(sym,win,c15,null,{now:endT,events:[],isMetal:sym!=='BTCUSD',marketOpen:true,spread,dec:ASSETS[sym].dec,continuation:!!cfg.continuation});
     if(!scan.dir||!scan.gatesOk){i++;continue;}
     const lv=scalpLevels(sym,scan.dir,all[i].c,scan,win,cfg);
     if(lv.reject){i++;continue;}
@@ -4111,7 +4111,7 @@ function renderScalpLive(){
       ${sc&&sc.A?`<div class="sc-ind"><span>15m <b class="${sc.trend==='BULL'?'up':sc.trend==='BEAR'?'dn':''}">${sc.trend==='BULL'?'▲ up':sc.trend==='BEAR'?'▼ down':'◆ flat'}</b></span><span>ADX <b>${sc.adx!=null?sc.adx.toFixed(0):'—'}</b></span><span>RSI7 <b>${sc.rsi7!=null?sc.rsi7.toFixed(0):'—'}</b></span><span>5m ATR <b>${fmtP(s,sc.A)}</b></span></div>`:''}
       <div class="sc-look">${st.block?st.block:st.feedError?'⛔ '+st.feedError:fails.length?'⛔ '+fails[0].label:sc?(sc.dir?`✅ ${sc.setup}: ${sc.why.slice(0,2).join(' · ')}`:'👀 '+sc.look):'Loading…'}</div>
       ${pv?`<div class="sc-dim">If it triggers now: ${pv.lot} lot → TP +$${pv.tpUsd.toFixed(2)} / SL −$${pv.slUsd.toFixed(2)}</div>`:st.preview&&st.preview.reject?`<div class="sc-dim">⚠ ${st.preview.reject}</div>`:''}
-      ${sc?.watch?`<div class="sc-dim">⚑ WATCH ONLY — ${sc.watch.dir==='NEUTRAL'?'Range: '+fmtP(s,sc.watch.lower)+'–'+fmtP(s,sc.watch.upper):sc.watch.dir+' confirmation above/below '+fmtP(s,sc.watch.level)} · ${sc.watch.note}</div>`:''}
+      ${sc?.watch?`<div class="sc-dim">⚑ WATCH ONLY — ${sc.watch.dir==='NEUTRAL'?'Range: '+fmtP(s,sc.watch.lower)+'–'+fmtP(s,sc.watch.upper):(sc.watch.dir==='BUY'?'BUY if a closed 5m candle confirms above ':'SELL if a closed 5m candle confirms below ')+fmtP(s,sc.watch.level)} · ${sc.watch.note}</div>`:''}
       ${st.feedSource?`<div class="sc-dim">Source: ${st.feedSource}</div>`:''}
       ${st.note?`<div class="sc-dim">ℹ ${st.note}</div>`:''}
     </div></div>`;
