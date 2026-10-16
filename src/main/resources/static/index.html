@@ -2393,6 +2393,9 @@ function recordHourSample(sym,atrPct){
 function flushHourStats(){
   if(!hourStatsDirty)return;
   try{localStorage.setItem('kmr_hour_stats',JSON.stringify(hourStats));hourStatsDirty=false;}catch(e){}
+  if(currentUser&&currentUser.role!=='guest')
+    riyanQueue('user-state',currentUser.username+':flow-hour-stats',
+      {key:'flow-hour-stats',stats:hourStats,updatedAt:Date.now()});
 }
 setInterval(flushHourStats,60000);
 
