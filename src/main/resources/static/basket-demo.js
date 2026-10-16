@@ -28,14 +28,24 @@ function basketPnlAt(positions,price,sym){
     (price-p.entry)*(p.dir==='BUY'?1:-1)*p.units-spread*p.units,0);
 }
 function basketRiskAtStops(positions,sym){
-  var spread=SPREAD[sym]||0;
-  return positions.reduce((sum,p)=>sum+Math.max(0,
-    (p.entry-p.sl)*(p.dir==='BUY'?1:-1)*p.units+spread*p.units),0);
+  var spread=SPREAD[sym];
+  if(!Number.isFinite(spread)||spread<0||!Array.isArray(positions))return NaN;
+  return positions.reduce((sum,p)=>{
+    if(!p||!['BUY','SELL'].includes(p.dir)||
+       !Number.isFinite(p.entry)||!Number.isFinite(p.sl)||
+       !Number.isFinite(p.units)||p.entry<=0||p.sl<=0||p.units<=0||
+       (p.dir==='BUY'&&p.sl>=p.entry)||
+       (p.dir==='SELL'&&p.sl<=p.entry))return NaN;
+    var risk=(p.entry-p.sl)*(p.dir==='BUY'?1:-1)*p.units+spread*p.units;
+    return sum+Math.max(0,risk);
+  },0);
 }
 // Always start at 0.01 lot; adding positions is not a way to evade max risk.
 function basketPlan(sym,scan,entry,c5,cfg){
-  if(!scan||!scan.dir||!scan.gatesOk||!Number.isFinite(entry)||entry<=0||
-    !c5||c5.length<3||!Number.isFinite(scan.A)||scan.A<=0)return{reject:'Unverified setup'};
+  if(!scan||!['BUY','SELL'].includes(scan.dir)||!scan.gatesOk||
+    !Number.isFinite(entry)||entry<=0||!Array.isArray(c5)||c5.length<3||
+    !Number.isFinite(scan.A)||scan.A<=0||!cfg||
+    !Number.isFinite(cfg.maxLoss)||cfg.maxLoss<=0)return{reject:'Unverified setup'};
   var units=0.01*ASSETS[sym].contractSz,sgn=scan.dir==='BUY'?1:-1;
   var A=scan.A,spread=SPREAD[sym]||0;
   var last3=c5.slice(-3),ext=sgn>0?
@@ -45,20 +55,27 @@ function basketPlan(sym,scan,entry,c5,cfg){
   if(experimental&&swingDistance>1.3*A)return{reject:'EMA9 swing stop too wide'};
   var dist=experimental?Math.max(0.45*A,swingDistance):
     Math.min(Math.max(swingDistance,A),1.6*A);
-  if(!(dist>0&&units>0))return{reject:'Invalid stop distance'};
+  if(!Number.isFinite(dist)||!Number.isFinite(units)||!Number.isFinite(ext)||
+     !(dist>0&&units>0))return{reject:'Invalid stop distance'};
   var sl=entry-sgn*dist,riskUsd=(dist+spread)*units;
   if(riskUsd>cfg.maxLoss+1e-6)return{reject:
     '0.01 lot stop risk $'+riskUsd.toFixed(2)+' exceeds the $'+cfg.maxLoss+' basket cap'};
   return{entry,sl,dir:scan.dir,lot:0.01,units,riskUsd,sym};
 }
 function basketCanAdd(session,plan,price,cfg){
-  if(plan.reject)return{ok:false,reason:plan.reject};
+  if(!plan||plan.reject)return{ok:false,reason:plan?.reject||'No valid entry plan'};
+  if(!cfg||!Number.isFinite(cfg.maxLoss)||cfg.maxLoss<=0||
+     !Number.isFinite(price)||price<=0)
+    return{ok:false,reason:'Invalid quote or basket risk limit'};
+  if(session&&(!Array.isArray(session.positions)||session.status&&session.status!=='OPEN'))
+    return{ok:false,reason:'Invalid or closed basket session'};
   if(session&&session.positions.length>=5)return{ok:false,reason:'Five positions reached'};
   if(session&&(session.sym!==plan.sym||session.dir!==plan.dir))
     return{ok:false,reason:'Only one symbol/direction in a basket'};
   if(session&&basketPnlAt(session.positions,price,session.sym)<-1e-8)
     return{ok:false,reason:'No averaging down: existing basket must be non-losing'};
   var total=basketRiskAtStops([...(session?session.positions:[]),plan],plan.sym);
+  if(!Number.isFinite(total))return{ok:false,reason:'Invalid position data: risk cannot be verified'};
   if(total>cfg.maxLoss+1e-6)return{ok:false,
     reason:'Combined stop risk $'+total.toFixed(2)+' exceeds $'+cfg.maxLoss};
   return{ok:true,totalRiskUsd:total};
@@ -143,6 +160,10 @@ function basketManage(){
   }
   s.warning='';
   var net=basketPnlAt(s.positions,quote,s.sym);
+  if(!Number.isFinite(net)||!Number.isFinite(basketRiskAtStops(s.positions,s.sym))){
+    s.warning='Saved position data invalid — paper basket paused; inspect audit';
+    basketDemo.enabled=false;basketSave();return;
+  }
   if(s.positions.some(p=>s.dir==='BUY'?quote<=p.sl:quote>=p.sl)){
     basketClose(quote,'POSITION_STOP');return;
   }
