@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Riyan Lab — Staging Audit</title>
+<style>
+:root{color-scheme:dark}body{max-width:900px;margin:0 auto;background:#0a101a;color:#e7eaf0;font:15px/1.55 system-ui,sans-serif;padding:26px 16px}
+h1{font-size:23px}button{background:#2a7fd3;color:white;font-weight:700;border:0;border-radius:10px;padding:13px 19px;cursor:pointer}
+button:disabled{opacity:.55;cursor:wait}a{color:#8ebdf4}.sub{color:#afbfce}.note{border-left:3px solid #edac46;padding:12px;background:#201d19}
+table{border-collapse:collapse;width:100%;margin-top:22px;font-size:12px}th,td{border-bottom:1px solid #263447;padding:8px;text-align:left;word-break:break-word}
+.pass{color:#58d68d}.fail{color:#ff7777}.warn{color:#ffd37a}.skip{color:#a0abbc}
+</style></head>
+<body>
+<h1>Riyan Lab — staging audit</h1>
+<p class="sub">Run while signed into the staging application as administrator. This tool checks authenticated APIs, writes clearly labeled TEST records into the staging schema, and checks news feeds and static assets.</p>
+<p class="note"><strong>No MT5 orders or market signals are triggered.</strong> Database test records and their audit events remain for traceability. No password, session cookie or CSRF token is printed. Do not run against production.</p>
+<p><a href="/">Return to app</a> · <a href="https://github.com/moohanakmp/riyan-lab/issues/4">Full manual acceptance checklist</a></p>
+<button id="run">Run staging diagnostics</button>
+<p id="progress"></p>
+<table><thead><tr><th>Check</th><th>Result</th><th>Details</th></tr></thead><tbody id="results"></tbody></table>
+<script>
+(async()=>{
+'use strict';
+const button=document.getElementById('run'),body=document.getElementById('results'),progress=document.getElementById('progress');
+const results=[];
+function add(name,ok,detail=''){
+ const result=ok===true?'PASS':ok===false?'FAIL':ok;
+ results.push({check:name,result,detail:String(detail).slice(0,180)});
+ const tr=document.createElement('tr');
+ for(const value of [name,result,detail]){
+  const td=document.createElement('td');td.textContent=String(value);
+  if(value===result)td.className=String(result).toLowerCase();
+  tr.appendChild(td);
+ }
+ body.appendChild(tr);
+ progress.textContent=results.filter(x=>x.result==='PASS').length+' passed, '+results.filter(x=>x.result==='FAIL').length+' failed, '+results.filter(x=>x.result==='WARN').length+' warnings';
+}
+async function api(url,init={}){
+ const resp=await fetch(url,{credentials:'same-origin',cache:'no-store',...init,headers:{'Accept':'application/json',...(init.headers||{})}});
+ let data;try{data=await resp.json()}catch(e){}
+ return {ok:resp.ok,status:resp.status,data};
+}
+button.onclick=async()=>{
+ if(location.hostname!=='riyan-lab-staging.onrender.com'){add('STAGING HOST',false,'STOP: unexpected host');return;}
+ button.disabled=true;body.replaceChildren();results.length=0;progress.textContent='Running safe staging diagnostics…';
+ let me;
+ try{
+  const health=await api('/api/v1/health');
+  add('Java health endpoint',health.ok&&health.data?.status==='UP','HTTP '+health.status);
+ }catch(e){add('Java health endpoint',false,e.message)}
+ try{
+  const unauth=await fetch('/api/v1/records/auto-signals',{credentials:'omit',cache:'no-store'});
+  add('Reject unauthenticated API',unauth.status===401,'HTTP '+unauth.status);
+ }catch(e){add('Reject unauthenticated API',false,e.message)}
+ try{
+  const r=await api('/api/v1/auth/me');
+  me=r.ok?r.data:null;
+  add('Authenticated backend session',!!me?.role,'HTTP '+r.status+(me?.role?' — role '+me.role:''));
+ }catch(e){add('Authenticated backend session',false,e.message)}
+ if(me?.role==='admin'&&me.csrf){
+  const marker='audit-smoke-'+Date.now().toString(36);
+  const types=['auto-signals','manual-signals','low-profit','analysis','seven-day','pnl','gold-calls','research','tab-state','user-state','news-alerts'];
+  for(const type of types){
+   const id=(type==='user-state'?me.username+':':'')+marker;
+   const path='/api/v1/records/'+encodeURIComponent(type)+'/'+encodeURIComponent(id);
+   const sample={symbol:'XAUUSD',direction:'BUY',status:'TEST_ONLY',reason:'staging diagnostics — no trades',
+    timeframe:'5m',entry:1,sl:.9,tp1:1.1,tp2:1.2,conditions:{smoke:true,simulated:true},ts:Date.now()};
+   try{
+    const response=await api(path,{method:'PUT',headers:{'Content-Type':'application/json','X-CSRF-Token':me.csrf},body:JSON.stringify(sample)});
+    add('PostgreSQL write: '+type,response.ok,'HTTP '+response.status);
+    if(response.ok){
+     const check=await api('/api/v1/records/'+encodeURIComponent(type)+'?limit=1000');
+     add('PostgreSQL read: '+type,check.ok&&Array.isArray(check.data)&&check.data.some(r=>r.source_id===id),'HTTP '+check.status);
+     if(type==='auto-signals'){
+      const change=await api(path,{method:'PUT',headers:{'Content-Type':'application/json','X-CSRF-Token':me.csrf},
+       body:JSON.stringify({...sample,status:'TEST_CLOSED',reason:'diagnostic status update'})});
+      add('Auto signal status update',change.ok,'HTTP '+change.status);
+     }
+    }
+   }catch(e){add('PostgreSQL write/read: '+type,false,e.message)}
+  }
+  try{
+   const audit=await api('/api/v1/audit?limit=1000');
+   const count=Array.isArray(audit.data)?audit.data.filter(x=>String(x.source_id||'').includes(marker)).length:0;
+   add('Before/after audit events',audit.ok&&count>=12,'HTTP '+audit.status+'; matching events '+count);
+  }catch(e){add('Before/after audit events',false,e.message)}
+  try{const a=await api('/api/v1/activity?limit=10');add('User activity journal',a.ok&&Array.isArray(a.data),'HTTP '+a.status)}
+  catch(e){add('User activity journal',false,e.message)}
+ }else add('Database write and audit checks','SKIP','Log into staging app as admin first; refresh this page.');
+ for(const sym of ['XAUUSD','XAGUSD','BTCUSD']){
+  try{
+   const r=await api('/api/v1/news/latest?symbol='+sym);
+   add('RSS news API: '+sym,r.ok&&Array.isArray(r.data),'HTTP '+r.status+'; articles '+(Array.isArray(r.data)?r.data.length:'unknown'));
+  }catch(e){add('RSS news API: '+sym,false,e.message)}
+ }
+ if(me?.role==='admin'){
+  try{
+   const r=await api('/api/v1/news/status');
+   const n=Array.isArray(r.data)?r.data.length:0;
+   add('Background internet news polls',r.ok&&n>0?'PASS':'WARN','HTTP '+r.status+'; poll entries '+n+'; failed '+(Array.isArray(r.data)?r.data.filter(x=>x.status!=='OK').length:'?'));
+  }catch(e){add('Background internet news polls',false,e.message)}
+ }
+ for(const asset of ['/icon-192.png','/icon-512.png','/happy.mp4','/bull.mp4','/bear.mp4','/art/art-btc.svg','/art/art-gold.svg','/art/art-silver.svg','/art/art-candles.svg']){
+  try{const r=await fetch(asset,{method:'HEAD',credentials:'same-origin',cache:'no-store'});add('PWA/static asset: '+asset,r.ok,'HTTP '+r.status)}
+  catch(e){add('PWA/static asset: '+asset,false,e.message)}
+ }
+ button.disabled=false;
+ const counts={};for(const row of results)counts[row.result]=(counts[row.result]||0)+1;
+ progress.textContent='Completed: '+JSON.stringify(counts)+'. Database TEST records are intentionally retained.';
+ window.riyanAuditSafeResults=results.map(x=>({...x}));
+ console.table(results);
+};
+})();
+</script>
+</body></html>
