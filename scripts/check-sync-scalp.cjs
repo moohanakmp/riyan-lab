@@ -79,7 +79,7 @@ function extract(start,end){
  // feed error must always pause entries, even if cached candles still exist.
  vm.runInContext('scalpState.XAUUSD.handledBar=null',evalContext);
  // replace the test scanner closure to reference a newly closed candle
- evalContext.scalpScan=()=>({dir:'BUY',gatesOk:true,barT:now,A:1,price:103.09});
+ evalContext.scalpScan=()=>({dir:'BUY',gatesOk,barT:now,A:1,price:103.09});
  evaluate('XAUUSD');
  assert.equal(opened,1,'failed data feed must prevent entries');
  evalContext.scalpState.XAUUSD.feedError='';
