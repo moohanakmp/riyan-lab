@@ -37,7 +37,7 @@ public class RecordController {
     private String table(String type) {
         String mapped=TABLES.get(type);
         if(mapped==null)throw new ResponseStatusException(HttpStatus.NOT_FOUND,"Unknown record type");
-        return "riyan_lab."+mapped;
+        return ""+mapped;
     }
     private void scope(AuthService.Identity identity,String type,String sourceId) {
         if("user-state".equals(type) && !"admin".equals(identity.role()) &&
@@ -126,7 +126,7 @@ public class RecordController {
             number(payload,"tp1","takeProfit1","tp"),number(payload,"tp2","takeProfit2"),
             number(payload,"tp3","takeProfit3"),conditions);
         jdbc.update("""
-            INSERT INTO riyan_lab.audit_events(record_type,source_id,action,actor,old_payload,new_payload)
+            INSERT INTO audit_events(record_type,source_id,action,actor,old_payload,new_payload)
             VALUES(?,?,?, ?,?::jsonb,?::jsonb)
             """,type,sourceId,previous.isEmpty()?"CREATE":"UPDATE",identity.username(),
             previous.isEmpty()?null:previous.get(0),raw);
@@ -140,7 +140,7 @@ public class RecordController {
         auth.admin(request,false);
         return jdbc.queryForList("""
            SELECT record_type,source_id,action,actor,event_time,old_payload::text AS old_payload,
-                  new_payload::text AS new_payload FROM riyan_lab.audit_events
+                  new_payload::text AS new_payload FROM audit_events
            ORDER BY id DESC LIMIT ?
            """,Math.max(1,Math.min(limit,1000)));
     }
@@ -149,7 +149,7 @@ public class RecordController {
         auth.admin(request,false);
         return jdbc.queryForList("""
            SELECT username,action,entity_type,entity_id,details::text AS details,created_at
-           FROM riyan_lab.user_activity ORDER BY id DESC LIMIT ?
+           FROM user_activity ORDER BY id DESC LIMIT ?
            """,Math.max(1,Math.min(limit,1000)));
     }
 }
