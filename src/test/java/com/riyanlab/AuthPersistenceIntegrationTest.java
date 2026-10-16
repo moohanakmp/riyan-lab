@@ -61,4 +61,34 @@ class AuthPersistenceIntegrationTest {
         mvc.perform(get("/api/v1/records/auto-signals").cookie(authCookies))
             .andExpect(status().isUnauthorized());
     }
+
+    @Test
+    void allTradingTabsWriteIntoRiyanLabAndAuditUpdates() throws Exception {
+        var login=mvc.perform(post("/api/v1/auth/login")
+           .contentType(MediaType.APPLICATION_JSON)
+           .content("{\\"username\\":\\"testadmin\\",\\"password\\":\\"unit-test-password-1234\\"}"))
+           .andExpect(status().isOk()).andReturn();
+        JsonNode session=mapper.readTree(login.getResponse().getContentAsString());
+        String csrf=session.path("csrf").asText();
+        var cookies=login.getResponse().getCookies();
+        for(String type:new String[]{"auto-signals","manual-signals","low-profit","analysis","seven-day",
+                                     "pnl","gold-calls","research","news-alerts","tab-state","user-state"}) {
+            String id="ci-"+type;
+            mvc.perform(put("/api/v1/records/"+type+"/"+id)
+                .cookie(cookies).header("X-CSRF-Token",csrf)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\\"symbol\\":\\"XAUUSD\\",\\"status\\":\\"OPEN\\",\\"timeframe\\":\\"5m\\",\\"entry\\":5000,\\"sl\\":4980,\\"tp1\\":5010,\\"tp2\\":5020,\\"reason\\":\\"EMA20\\",\\"conditions\\":{\\"trend\\":\\"BULL\\",\\"adx\\":24}}"))
+                .andExpect(status().isOk());
+            mvc.perform(get("/api/v1/records/"+type).cookie(cookies))
+                .andExpect(status().isOk());
+        }
+        mvc.perform(put("/api/v1/records/auto-signals/ci-auto-signals")
+            .cookie(cookies).header("X-CSRF-Token",csrf)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\\"symbol\\":\\"XAUUSD\\",\\"status\\":\\"CLOSED\\",\\"reason\\":\\"TP1 reached\\"}"))
+            .andExpect(status().isOk());
+        mvc.perform(get("/api/v1/audit").cookie(cookies))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].action").value("UPDATE"));
+    }
 }
