@@ -100,6 +100,22 @@ public class RecordController {
         scope(identity,type,sourceId);
         if(sourceId.isBlank()||sourceId.length()>200 || !payload.isObject() ||
            payload.toString().length()>1_000_000) return ResponseEntity.badRequest().build();
+        if(basketType(type)) {
+            // Basket endpoints are an isolated simulation ledger, not an order API.
+            if(!payload.path("paperOnly").asBoolean(false) ||
+                (!payload.path("brokerOrderId").isMissingNode() &&
+                 !payload.path("brokerOrderId").isNull()))
+                return ResponseEntity.badRequest().build();
+            if("basket-sessions".equals(type) &&
+                (!payload.path("positions").isMissingNode() &&
+                 (!payload.path("positions").isArray() ||
+                  payload.path("positions").size()>5)))
+                return ResponseEntity.badRequest().build();
+            if("basket-positions".equals(type) &&
+                number(payload,"lot")!=null &&
+                number(payload,"lot").compareTo(new BigDecimal("0.01"))!=0)
+                return ResponseEntity.badRequest().build();
+        }
         String target=table(type),raw=payload.toString();
         List<String> previous=jdbc.query("SELECT payload::text FROM "+target+" WHERE source_id=? FOR UPDATE",
             (rs,rowNum)->rs.getString(1),sourceId);
