@@ -219,4 +219,54 @@ class AuthPersistenceIntegrationTest {
         assertEquals("admin",mapper.readTree(promotedLogin.getResponse().getContentAsString())
             .path("role").asText());
     }
+
+    @Test
+    void nonAdminCanSaveOnlyOwnHashedLowProfitDiagnostics() throws Exception {
+        var adminLogin=mvc.perform(post("/api/v1/auth/login")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsString(java.util.Map.of(
+                "username","testadmin","password","unit-test-password-1234"))))
+            .andExpect(status().isOk()).andReturn();
+        String adminCsrf=mapper.readTree(adminLogin.getResponse().getContentAsString())
+            .path("csrf").asText();
+        mvc.perform(post("/api/v1/auth/users")
+            .cookie(adminLogin.getResponse().getCookies())
+            .header("X-CSRF-Token",adminCsrf)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsString(java.util.Map.of(
+                "username","stateowner","role","user","password","abcde"))))
+            .andExpect(status().isOk());
+        var login=mvc.perform(post("/api/v1/auth/login")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsString(java.util.Map.of(
+                "username","stateowner","password","abcde"))))
+            .andExpect(status().isOk()).andReturn();
+        String csrf=mapper.readTree(login.getResponse().getContentAsString())
+            .path("csrf").asText();
+        var cookies=login.getResponse().getCookies();
+        String hash="a".repeat(64);
+        String ownId="stateowner--id-"+hash;
+        String otherId="otheruser--id-"+hash;
+        mvc.perform(put("/api/v1/records/user-state/"+ownId)
+            .cookie(cookies).header("X-CSRF-Token",csrf)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsString(java.util.Map.of(
+                "symbol","XAUUSD","blocked","5m data stale",
+                "originalSourceId","stateowner:low-profit-diagnostics-XAUUSD"))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.saved").value(true));
+        mvc.perform(get("/api/v1/records/user-state").cookie(cookies))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].source_id").value(ownId));
+        mvc.perform(put("/api/v1/records/user-state/"+otherId)
+            .cookie(cookies).header("X-CSRF-Token",csrf)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"symbol\":\"BTCUSD\"}"))
+            .andExpect(status().isForbidden());
+        mvc.perform(put("/api/v1/records/user-state/stateowner--not-a-hash")
+            .cookie(cookies).header("X-CSRF-Token",csrf)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"symbol\":\"BTCUSD\"}"))
+            .andExpect(status().isForbidden());
+    }
 }
