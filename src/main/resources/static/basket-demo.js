@@ -151,6 +151,9 @@ function basketManage(){
     basketClose(quote,'DAILY_STOP');return;
   }
   if(net>=scalpCfg.target){basketClose(quote,'NET_TP');return;}
+  if(scalpCfg.stopAtGoal&&scalpToday().pnl+basketToday().pnl+net>=scalpCfg.goal){
+    basketClose(quote,'DAILY_GOAL');return;
+  }
   if(Date.now()-s.createdAt>=scalpCfg.timeStopMin*60000){
     basketClose(quote,'TIME_STOP');return;
   }
@@ -173,6 +176,7 @@ function basketEvaluate(sym){
   if(!decision.ok){basketDemo.blockReason=decision.reason;return;}
   var day=scalpToday(),basketDay=basketToday();
   if(day.stopHit||(day.goalHit&&scalpCfg.stopAtGoal)||
+     (scalpCfg.stopAtGoal&&day.pnl+basketDay.pnl>=scalpCfg.goal)||
      day.pnl+basketDay.pnl<=-scalpCfg.dayStop)return;
   var session=s;
   if(!session){
