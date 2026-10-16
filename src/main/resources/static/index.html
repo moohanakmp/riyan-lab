@@ -1111,12 +1111,7 @@ const SIG_TUNE={
 };
 
 // ═══ AUTH & PERMISSIONS SYSTEM ═════════════════════════════════════════════
-const DEFAULT_USERS={
-  kalai:  {password:'Kalai123!@#', role:'admin'},
-  tsuser: {password:'Tsuser123@',  role:'user'},
-  vino:   {password:'Vino123!@#',  role:'user'},
-  guest:  {password:'guest',       role:'guest'},
-};
+const DEFAULT_USERS={}; // Credentials are exclusively managed by the Java API.
 
 // Feature keys controlled by admin toggles
 const FEATURES=['dashboard','prices','chart','signals','historyHigh','historyMed','historyOverall','analysis','session','flow','manual','research','analytics','pnlReport','info'];
@@ -1160,7 +1155,9 @@ const DEFAULT_PERMS={
   guest:{dashboard:true, prices:true, chart:false, signals:true, historyHigh:true, historyMed:false, historyOverall:false, analysis:false, session:false, flow:false, manual:false, research:false, analytics:false, pnlReport:false, info:false},
 };
 
-let currentUser=null; // {username, role}
+let currentUser=null; // Server-authenticated {username, role}
+let riyanCsrf='';
+
 let rolePerms={...JSON.parse(JSON.stringify(DEFAULT_PERMS))};
 let userAccounts={...JSON.parse(JSON.stringify(DEFAULT_USERS))};
 let permRoleTab='user';
@@ -1177,25 +1174,36 @@ async function doLogin(){
   const u=document.getElementById('loginUser').value.trim();
   const p=document.getElementById('loginPass').value;
   const errEl=document.getElementById('loginError');
-  const acct=userAccounts[u];
-  if(!acct||acct.password!==p){
-    errEl.style.display='block';
-    errEl.textContent='Invalid username or password';
-    return;
-  }
-  errEl.style.display='none';
-  currentUser={username:u, role:acct.role};
-  try{await dbPut('state',{key:'currentUser',value:currentUser});}catch(e){}
-  revealApp();
-  applyRoleUI();
-  if(!window._appBooted){window._appBooted=true;bootApp();}
+  try{
+    const res=await fetch('/api/v1/auth/login',{
+      method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({username:u,password:p})
+    });
+    if(!res.ok)throw Error(res.status===401?'Invalid username or password (or temporarily locked)':'Login unavailable (HTTP '+res.status+')');
+    const data=await res.json();
+    riyanCsrf=data.csrf;
+    currentUser={username:data.username,role:data.role};
+    riyanApplyPerms(data.permissions);
+    // Remove legacy cached credentials. They are never used for authentication.
+    try{await dbPut('state',{key:'userAccounts',value:null});await dbPut('state',{key:'currentUser',value:null});}catch(e){}
+    if(currentUser.role==='admin')await riyanLoadUsers();
+    errEl.style.display='none';
+    revealApp();applyRoleUI();
+    await riyanRestore();
+    riyanProcessQueue();
+    if(!window._appBooted){window._appBooted=true;bootApp();}
+  }catch(e){
+    currentUser=null;riyanCsrf='';
+    errEl.style.display='block';errEl.textContent=e.message;
+  }finally{document.getElementById('loginPass').value='';}
 }
-function doLogout(){
-  currentUser=null;
+async function doLogout(){
+  try{await riyanApi('/api/v1/auth/logout',{method:'POST'});}catch(e){console.warn('Logout failed:',e);}
+  currentUser=null;riyanCsrf='';
   document.getElementById('loginUser').value='';
   document.getElementById('loginPass').value='';
   hideApp();
-  try{dbPut('state',{key:'currentUser',value:null});}catch(e){}
 }
 function revealApp(){
   document.getElementById('loginScreen').style.display='none';
@@ -1252,23 +1260,43 @@ function renderAdminPanel(){
     const roleCls=acc.role==='admin'?'role-admin':acc.role==='user'?'role-user':'role-guest';
     return `<div class="admin-user-row">
       <div class="admin-user-info"><div class="admin-username">${uname}<span class="role-pill ${roleCls}">${acc.role.toUpperCase()}</span></div></div>
-      ${uname==='kalai'?'<span style="font-size:10px;color:var(--dim)">Owner</span>':`<select class="role-select" onchange="changeUserRole('${uname}',this.value)">
+      ${uname===currentUser.username?'<span style="font-size:10px;color:var(--dim)">Current admin</span>':`<select class="role-select" onchange="changeUserRole('${uname}',this.value)">
         <option value="user" ${acc.role==='user'?'selected':''}>User</option>
         <option value="guest" ${acc.role==='guest'?'selected':''}>Guest</option>
         <option value="admin" ${acc.role==='admin'?'selected':''}>Admin</option>
       </select>`}
     </div>`;
   }).join('');
-  document.getElementById('adminUserList').innerHTML=list;
+  document.getElementById('adminUserList').innerHTML=list+'<button class="anal-refresh" onclick="riyanCreateUser()">+ Create DB user</button>';
   renderPermGrid();
   renderThemeStudio();
   loadNotifSettings();
 }
 async function changeUserRole(uname,newRole){
-  userAccounts[uname].role=newRole;
-  await dbPut('state',{key:'userAccounts',value:userAccounts});
-  renderAdminPanel();
-  showToast(`${uname} role changed to ${newRole.toUpperCase()}`,'var(--acc)');
+  try{
+    await riyanApi('/api/v1/auth/users/'+encodeURIComponent(uname)+'/role',{
+      method:'PUT',body:JSON.stringify({role:newRole})
+    });
+    userAccounts[uname].role=newRole;renderAdminPanel();
+    showToast('Role changed for '+uname,'var(--grn)');
+  }catch(e){showToast('Role update failed: '+e.message,'var(--red)');renderAdminPanel();}
+}
+async function riyanCreateUser(){
+  const username=prompt('New username (letters, numbers, underscore)');
+  if(!username)return;
+  const password=prompt('Password for '+username+' (12 or more characters)');
+  if(!password)return;
+  const role=prompt('Role: user, guest or admin','user');
+  if(!role)return;
+  try{
+    await riyanApi('/api/v1/auth/users',{method:'POST',
+      body:JSON.stringify({username,password,role})});
+    await riyanLoadUsers();renderAdminPanel();showToast('User created','var(--grn)');
+  }catch(e){showToast('Cannot create user (check name, password and role)','var(--red)');}
+}
+async function riyanLoadUsers(){
+  const rows=await riyanApi('/api/v1/auth/users');
+  userAccounts=Object.fromEntries(rows.map(u=>[u.username,{role:u.role}]));
 }
 function selectPermRole(role,el){
   permRoleTab=role;
@@ -1288,30 +1316,27 @@ function renderPermGrid(){
   document.getElementById('permGrid').innerHTML=html;
 }
 async function togglePerm(role,feature,val){
-  rolePerms[role][feature]=val;
-  await dbPut('state',{key:'rolePerms',value:rolePerms});
-  showToast(`${FEATURE_LABELS[feature]} ${val?'enabled':'disabled'} for ${role.toUpperCase()}`,val?'var(--grn)':'var(--red)');
-  // If currently logged in as this role, refresh UI live
-  if(currentUser&&currentUser.role===role)applyRoleUI();
+  try{
+    await riyanApi('/api/v1/auth/permissions',{method:'PUT',
+      body:JSON.stringify({role,feature,allowed:val})});
+    rolePerms[role][feature]=val;
+    showToast('Role permission updated','var(--grn)');
+    if(currentUser&&currentUser.role===role)applyRoleUI();
+  }catch(e){showToast('Permission update failed','var(--red)');renderPermGrid();}
+}
+function riyanApplyPerms(overrides){
+  rolePerms=JSON.parse(JSON.stringify(DEFAULT_PERMS));
+  for(const role of ['user','guest'])
+    rolePerms[role]={...rolePerms[role],...(overrides?.[role]||{})};
 }
 async function loadAuthState(){
-  try{const u=await dbGet('state','userAccounts');if(u&&u.value)userAccounts={...userAccounts,...u.value};}catch(e){}
-  // Deep-merge per role: a shallow {...rolePerms,...p.value} would let an OLD saved
-  // rolePerms.user object (from before a new tab/feature existed) completely replace the
-  // new default, silently hiding brand-new features (like this Session tab) from non-admin
-  // users forever — since admin bypasses hasAccess() entirely, that bug is invisible during
-  // admin-only testing but real for everyone else. Merge each role's keys individually so
-  // new DEFAULT_PERMS keys survive alongside whatever the admin has actually customized.
-  try{const p=await dbGet('state','rolePerms');if(p&&p.value){
-    const merged={};
-    for(const role of Object.keys(rolePerms))merged[role]={...rolePerms[role],...(p.value[role]||{})};
-    rolePerms=merged;
-  }}catch(e){}
-  try{const cu=await dbGet('state','currentUser');if(cu&&cu.value){
-    // Verify user still exists with matching role
-    const acc=userAccounts[cu.value.username];
-    if(acc&&acc.role===cu.value.role){currentUser=cu.value;}
-  }}catch(e){}
+  try{
+    const session=await riyanApi('/api/v1/auth/me');
+    currentUser={username:session.username,role:session.role};
+    riyanCsrf=session.csrf;riyanApplyPerms(session.permissions);
+    try{await dbPut('state',{key:'userAccounts',value:null});await dbPut('state',{key:'currentUser',value:null});}catch(e){}
+    if(currentUser.role==='admin')await riyanLoadUsers();
+  }catch(e){currentUser=null;riyanCsrf='';}
 }
 
 // Typical spreads (USD) per asset
@@ -1340,7 +1365,18 @@ let deferredInstall=null,audioCtx=null;
 // ═══ INDEXEDDB ════════════════════════════════════════════════════════════
 const DB_NAME='KMR2',DB_VER=1;let db=null;
 function openDB(){return new Promise((res,rej)=>{const req=indexedDB.open(DB_NAME,DB_VER);req.onupgradeneeded=e=>{const d=e.target.result;if(!d.objectStoreNames.contains('signals'))d.createObjectStore('signals',{keyPath:'id'});if(!d.objectStoreNames.contains('state'))d.createObjectStore('state',{keyPath:'key'});};req.onsuccess=e=>{db=e.target.result;res(db);};req.onerror=()=>rej(req.error);});}
-function dbPut(store,val){if(!db)return Promise.resolve();return new Promise((res,rej)=>{const tx=db.transaction(store,'readwrite');tx.objectStore(store).put(val);tx.oncomplete=()=>res();tx.onerror=()=>rej();});}
+function dbPut(store,val){
+  if(!db)return Promise.resolve();
+  return new Promise((res,rej)=>{
+    const tx=db.transaction(store,'readwrite');
+    tx.objectStore(store).put(val);tx.oncomplete=()=>res();tx.onerror=()=>rej();
+  }).then(()=>{
+    if(!currentUser||currentUser.role==='guest')return;
+    if(store==='signals')riyanQueue(val.manual?'manual-signals':'auto-signals',String(val.id),val);
+    if(store==='state'&&['activeSignals','sigCooldown','themeSettings','userTheme','hourStats'].includes(val.key))
+      riyanQueue('user-state',currentUser.username+':'+val.key,{key:val.key,value:val.value});
+  });
+}
 function dbGetAll(store){if(!db)return Promise.resolve([]);return new Promise((res,rej)=>{const tx=db.transaction(store,'readonly');const req=tx.objectStore(store).getAll();req.onsuccess=()=>res(req.result||[]);req.onerror=()=>rej();});}
 function dbGet(store,key){if(!db)return Promise.resolve(null);return new Promise((res,rej)=>{const tx=db.transaction(store,'readonly');const req=tx.objectStore(store).get(key);req.onsuccess=()=>res(req.result);req.onerror=()=>rej();});}
 function dbClear(store){if(!db)return Promise.resolve();return new Promise((res,rej)=>{const tx=db.transaction(store,'readwrite');tx.objectStore(store).clear();tx.oncomplete=()=>res();tx.onerror=()=>rej();});}
@@ -2780,6 +2816,7 @@ async function runManualFor(sym){
     // from whenever the app was last idle on a different tab.
     await Promise.all([fetchLiveCrypto(),fetchLiveMetals()]);
     manualResults[sym]=runManualAnalysis(sym);
+    if(currentUser&&currentUser.role!=='guest')riyanQueue('manual-signals',sym+'-'+Date.now(),{...manualResults[sym],symbol:sym,generatedAt:Date.now(),generator:currentUser.username,source:'manual-analysis'});
   }finally{
     if(btn){btn.disabled=false;btn.textContent='🧭 Analyze';}
     renderManualTab();
@@ -3193,7 +3230,11 @@ try{newsLog=JSON.parse(localStorage.getItem('kmr_news_log')||'{}');}catch(e){new
 const NEWS_GRADE_DELAY_MS=45*60*1000; // wait 45min after the event before grading, to let the market react
 const NEWS_LOG_RETENTION_MS=8*24*3600*1000; // prune anything older than ~8 days
 function newsLogKey(ev){return `${ev.country}|${ev.title||ev.event}|${ev.ts}`;}
-function saveNewsLog(){try{localStorage.setItem('kmr_news_log',JSON.stringify(newsLog));}catch(e){}}
+function saveNewsLog(){
+  try{localStorage.setItem('kmr_news_log',JSON.stringify(newsLog));}catch(e){}
+  if(currentUser&&currentUser.role!=='guest')
+    Object.entries(newsLog).forEach(([key,item])=>riyanQueue('gold-calls',key,item));
+}
 function pipSizeFor(sym){return sym==='XAUUSD'?0.01:sym==='XAGUSD'?0.001:1;}
 // Called whenever the calendar refreshes — logs new upcoming predictions, and grades any
 // that have passed the grading delay using real XAUUSD price action.
@@ -3229,6 +3270,7 @@ function recordHeadlines(sym,items){
   newsToneStore=newsToneStore.filter(h=>h.ts>cut).slice(-300);
   try{localStorage.setItem('kmr_news_tone',JSON.stringify(newsToneStore));}catch(e){}
   updateNewsLog();
+  if(currentUser&&currentUser.role!=='guest')items.forEach(a=>{if(a&&a.title)riyanQueue('news-alerts',sym+'-'+String(a.title).slice(0,145),{symbol:sym,...a,checkedAt:Date.now()});});
 }
 function parseEconNum(s){
   if(s==null)return null;
@@ -3575,7 +3617,12 @@ let scalpHist=(()=>{try{return JSON.parse(localStorage.getItem('kmr_scalp_hist')
 let scalpData={XAUUSD:[],XAGUSD:[],BTCUSD:[]},scalpState={XAUUSD:{},XAGUSD:{},BTCUSD:{}};
 let scalpLastFetch=0,scalpFetchBusy=false,scalpLastBoundary=0,scalpBt={},scalpBtBusy=false;
 function saveScalpCfg(){try{localStorage.setItem('kmr_scalp_cfg',JSON.stringify(scalpCfg));}catch(e){}}
-function saveScalpHist(){scalpHist=scalpHist.slice(0,400);try{localStorage.setItem('kmr_scalp_hist',JSON.stringify(scalpHist));}catch(e){}}
+function saveScalpHist(){
+  scalpHist=scalpHist.slice(0,400);
+  try{localStorage.setItem('kmr_scalp_hist',JSON.stringify(scalpHist));}catch(e){}
+  if(currentUser&&currentUser.role!=='guest')
+    scalpHist.forEach(r=>riyanQueue('low-profit',String(r.id||r.t),r));
+}
 function istDayKey(t){return Math.floor((t+5.5*3600e3)/864e5);}
 function scalpToday(){
   const dk=istDayKey(Date.now());
@@ -3750,6 +3797,7 @@ function scalpCandleCheck(){
   saveScalpHist();
 }
 async function scalpLoop(){
+  if(!currentUser)return;
   const now=Date.now();
   const boundary=Math.floor(now/300e3)*300e3;
   if(!scalpFetchBusy&&(now-scalpLastFetch>60e3||(boundary>scalpLastBoundary&&now-boundary>4e3))){
@@ -4033,6 +4081,7 @@ function calcPos(sym,price,dir,candles,lot,atrVal,sr){
 // why Telegram/Email alerts often never fired.)
 let lastGuardToast={};
 function evaluateSignals(manual){
+  if(!currentUser)return;
   const fired=[];
   SYMS.forEach(sym=>{
     const scan=computeSignal(sym); // always run: keeps marketTrend[sym] fresh for the strip + flip check
@@ -4904,6 +4953,15 @@ async function fetchNews(sym){
     if(data){feedError.news=null;return a.map(data);}
     lastErr=error;
   }
+  // The server stores its own internet RSS checks as a fallback when browser feeds fail.
+  try{
+    const r=await riyanApi('/api/v1/news/latest?symbol='+encodeURIComponent(sym));
+    if(Array.isArray(r)&&r.length){
+      feedError.news=null;
+      return r.slice(0,6).map(a=>({title:a.headline,url:a.url,domain:a.source_name||'RSS',
+        seen:a.published_at||a.checked_at,sent:tagSentiment(a.headline)}));
+    }
+  }catch(e){}
   feedError.news=lastErr;
   return null;
 }
@@ -5152,6 +5210,7 @@ async function refreshAnalysis(force){
   const[news,]=await Promise.all([fetchNews(sym),fetchEconCalendar(force)]);
   if(news)recordHeadlines(sym,news);
   analysisCache[sym]={news,at:Date.now()};
+  if(currentUser&&currentUser.role!=='guest')riyanQueue('analysis',sym+'-'+analysisCache[sym].at,{symbol:sym,...analysisCache[sym]});
   analysisLoading[sym]=false;
   if(analysisAsset===sym)renderAnalysis();
 }
@@ -5397,6 +5456,7 @@ async function initAuth(){
   await loadThemeState();
   await loadHistory();
   if(currentUser){
+    await riyanRestore();
     // Auto-login from persisted session
     revealApp();
     applyRoleUI();
@@ -5429,6 +5489,8 @@ async function bootApp(){
     if(document.getElementById('tdb').style.display!=='none')renderDashboard();
   },5000);
   setInterval(()=>{resyncOHLC().then(()=>{evaluateSignals();}).catch(()=>{});},180000);
+  setInterval(()=>{riyanSnapshot();riyanProcessQueue();},60000);
+  setTimeout(()=>{riyanSnapshot();riyanProcessQueue();},12000);
   // Event watch: calendar + gold headlines in the background so the popup works on any tab
   setTimeout(()=>{evwBackgroundFeeds();setTimeout(evwBackgroundNews,8000);},3000);
   setInterval(evwBackgroundFeeds,15*60e3);
@@ -5468,50 +5530,96 @@ document.addEventListener('visibilitychange',async()=>{
   }catch(e){}
 });
 
-// Riyan Lab server persistence: supplements, and does not replace, the original browser engine.
-function riyanToken(){try{return sessionStorage.getItem('riyan_api_token')||'';}catch(e){return '';}}
-async function riyanSave(type,id,obj){
-  if(!riyanToken()||!id||obj===undefined)return false;
-  const response=await fetch('/api/v1/records/'+encodeURIComponent(type)+'/'+encodeURIComponent(id),{
-    method:'PUT',headers:{'Content-Type':'application/json',Authorization:'Bearer '+riyanToken()},
-    body:JSON.stringify(obj)
-  });
-  if(!response.ok)throw new Error(type+' save failed (HTTP '+response.status+')');
-  return true;
+// Server sessions own identity. Browser cache is only an offline/compatibility buffer.
+async function riyanApi(path,opts={}){
+  const headers={'Accept':'application/json',...(opts.headers||{})};
+  if(opts.body)headers['Content-Type']='application/json';
+  if(opts.method&&opts.method!=='GET')headers['X-CSRF-Token']=riyanCsrf;
+  const response=await fetch(path,{...opts,credentials:'same-origin',cache:'no-store',headers});
+  if(!response.ok)throw Error('HTTP '+response.status);
+  return response.status===204?null:response.json();
+}
+function riyanQueue(type,id,obj){
+  if(!currentUser||!id||obj==null)return;
+  try{
+    const data=JSON.stringify(obj);
+    if(data.length>950000)return console.warn('DB payload too large:',type,id);
+    const key='riyan_pending_'+currentUser.username;
+    const pending=JSON.parse(localStorage.getItem(key)||'{}');
+    const token=type+'|'+encodeURIComponent(String(id));
+    if(pending[token]?.value!==data)pending[token]={type,id:String(id),value:data};
+    const keys=Object.keys(pending);
+    if(keys.length>4000)keys.slice(0,keys.length-4000).forEach(k=>delete pending[k]);
+    localStorage.setItem(key,JSON.stringify(pending));
+  }catch(e){console.warn('Failed to queue DB record',e);}
+}
+let riyanSyncing=false;
+async function riyanProcessQueue(){
+  if(!currentUser||currentUser.role==='guest'||riyanSyncing)return;
+  riyanSyncing=true;
+  const user=currentUser.username,key='riyan_pending_'+user;
+  try{
+    const pending=JSON.parse(localStorage.getItem(key)||'{}');
+    let sent=0;
+    for(const [k,item] of Object.entries(pending).slice(0,50)){
+      if(!currentUser||currentUser.username!==user)break;
+      try{
+        await riyanApi('/api/v1/records/'+encodeURIComponent(item.type)+'/'+encodeURIComponent(item.id),
+          {method:'PUT',body:item.value});
+        // Remove only if the payload did not change while this request was pending.
+        const latest=JSON.parse(localStorage.getItem(key)||'{}');
+        if(latest[k]&&latest[k].value===item.value){delete latest[k];localStorage.setItem(key,JSON.stringify(latest));}
+        sent++;
+      }catch(e){
+        console.warn('Riyan DB sync deferred:',item.type,e);
+        if(e.message==='HTTP 401')showToast('DB session expired: please log in again','var(--red)');
+        break;
+      }
+    }
+    const n=Object.keys(JSON.parse(localStorage.getItem(key)||'{}')).length;
+    const badge=document.getElementById('riyanSyncBtn');
+    if(badge)badge.textContent=n?'☁ Pending '+n:'☁ DB Synced';
+  }finally{riyanSyncing=false;}
+}
+function riyanSnapshot(){
+  if(!currentUser||currentUser.role==='guest')return;
+  const day=new Date().toISOString().slice(0,10);
+  Object.entries(analysisCache).forEach(([sym,data])=>riyanQueue('analysis',sym+'-'+(data.at||day),{symbol:sym,...data}));
+  Object.entries(researchCache).forEach(([sym,data])=>riyanQueue('research',sym+'-'+day,{symbol:sym,...data}));
+  Object.entries(newsLog).forEach(([key,data])=>riyanQueue('gold-calls',key,data));
+  scalpHist.forEach(r=>riyanQueue('low-profit',String(r.id||r.t),r));
+  signalHistory.forEach(r=>riyanQueue(r.manual?'manual-signals':'auto-signals',String(r.id),r));
+  riyanQueue('seven-day','prediction-'+day,{date:day,events:newsTrackRows(7*864e5,false)});
+  riyanQueue('pnl','daily-'+day,{date:day,signals:signalHistory.slice(0,100),scalps:scalpHist.slice(0,100)});
+}
+async function riyanRestore(){
+  if(!currentUser)return;
+  try{
+    const rows=await Promise.all(['auto-signals','manual-signals','low-profit','gold-calls']
+      .map(type=>riyanApi('/api/v1/records/'+type+'?limit=1000')));
+    const parse=r=>{try{return typeof r.payload==='string'?JSON.parse(r.payload):r.payload;}catch(e){return null;}};
+    const merged=new Map(signalHistory.map(r=>[String(r.id),r]));
+    rows[0].concat(rows[1]).map(parse).filter(Boolean).forEach(r=>{
+      if(r.id!=null&&!merged.has(String(r.id)))merged.set(String(r.id),r);
+    });
+    signalHistory=[...merged.values()].sort((a,b)=>(b.id||0)-(a.id||0));
+    const scalpMap=new Map(scalpHist.map(r=>[String(r.id||r.t),r]));
+    rows[2].map(parse).filter(Boolean).forEach(r=>scalpMap.set(String(r.id||r.t),r));
+    scalpHist=[...scalpMap.values()].sort((a,b)=>(b.t||0)-(a.t||0)).slice(0,400);
+    rows[3].forEach(r=>{const item=parse(r);if(item&&!newsLog[r.source_id])newsLog[r.source_id]=item;});
+    for(const r of signalHistory)try{await dbPut('signals',r);}catch(e){}
+  }catch(e){console.warn('DB restore unavailable, retained browser cache',e);}
 }
 async function riyanConnect(){
-  const supplied=prompt('Enter the Riyan Lab API token (kept only in this browser tab)');
-  if(!supplied)return;
-  try{
-    sessionStorage.setItem('riyan_api_token',supplied);
-    const check=await fetch('/api/v1/records/auto-signals?limit=1',{headers:{Authorization:'Bearer '+supplied}});
-    if(!check.ok)throw new Error('HTTP '+check.status);
-    let successes=0,errors=0;
-    async function upload(type,id,data){
-      try{if(await riyanSave(type,String(id),data))successes++;}
-      catch(e){errors++;console.warn('Riyan Lab sync failed:',e);}
-    }
-    for(const r of signalHistory)await upload(r.manual?'manual-signals':'auto-signals',r.id,r);
-    for(const r of scalpHist)await upload('low-profit',r.id,r);
-    for(const [key,r] of Object.entries(newsLog))await upload('gold-calls',key,r);
-    for(const [sym,r] of Object.entries(researchCache))await upload('research',sym+'-'+(r.updatedAt||Date.now()),r);
-    for(const [sym,r] of Object.entries(analysisCache))await upload('analysis',sym+'-'+(r.at||Date.now()),r);
-    await upload('pnl','snapshot-'+new Date().toISOString().slice(0,10),
-        {generatedAt:Date.now(),signals:signalHistory,scalps:scalpHist});
-    await upload('seven-day','snapshot-'+new Date().toISOString().slice(0,10),
-        {generatedAt:Date.now(),events:typeof newsTrackRows==='function'?newsTrackRows(7*864e5,false):[]});
-    if(errors)showToast('DB Sync partial: '+successes+' saved, '+errors+' failed','var(--red)');
-    else showToast('DB Sync complete: '+successes+' records saved','var(--grn)');
-  }catch(e){
-    sessionStorage.removeItem('riyan_api_token');
-    console.warn('Riyan Lab connection failed',e);
-    showToast('DB connection failed: '+e.message,'var(--red)');
-  }
+  if(!currentUser)return showToast('Log in first','var(--red)');
+  riyanSnapshot();await riyanProcessQueue();
+  const pending=Object.keys(JSON.parse(localStorage.getItem('riyan_pending_'+currentUser.username)||'{}')).length;
+  showToast(pending?'DB sync queued: '+pending+' pending records':'Database synchronized',pending?'var(--red)':'var(--grn)');
 }
 
 initAuth();
 </script>
 
-<button type="button" onclick="riyanConnect()" style="position:fixed;bottom:8px;right:8px;z-index:9999;padding:7px 11px;border-radius:15px;background:#284f72;color:white;border:1px solid #8ac8e7;font-size:11px">☁ DB Sync</button>
+<button id="riyanSyncBtn" type="button" onclick="riyanConnect()" style="position:fixed;bottom:8px;right:8px;z-index:9999;padding:7px 11px;border-radius:15px;background:#284f72;color:white;border:1px solid #8ac8e7;font-size:11px">☁ DB Sync</button>
 </body>
 </html>
