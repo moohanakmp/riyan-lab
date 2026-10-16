@@ -12,5 +12,4 @@ services:
         sync: false
       - key: DB_PASSWORD
         sync: false
-      - key: RIYAN_API_TOKEN
-        generateValue: true
+      - key: RIYAN_BOOTSTRAP_ADMIN_USER\n        sync: false\n      - key: RIYAN_BOOTSTRAP_ADMIN_PASSWORD\n        sync: false
