@@ -41,7 +41,7 @@ function extract(start,end){
  assert(fallback.length>=55,'derived 15m must have enough candle history');
  assert(fallback.every(x=>x.t+900000<=now-1000),'fallback only uses closed 15m bars');
  const synthetic=Array.from({length:90},(_,i)=>({
-   t:now-(90-i)*900000,o:102,h:103,l:101,c:102,v:12
+   t:now-3*3600000-(90-i)*900000,o:102,h:103,l:101,c:102,v:12
  }));
  context.ohlcData.XAUUSD['15m']=synthetic;
  // Provider 15m has correct scale but its last bar is stale.
