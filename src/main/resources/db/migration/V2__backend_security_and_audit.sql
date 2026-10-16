@@ -55,7 +55,10 @@ CREATE TABLE IF NOT EXISTS riyan_lab.news_fetch_runs (
   error_message TEXT,
   checked_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE TABLE IF NOT EXISTS riyan_lab.user_states (\n  LIKE riyan_lab.auto_signals INCLUDING CONSTRAINTS INCLUDING INDEXES INCLUDING DEFAULTS\n);\nCREATE TABLE IF NOT EXISTS riyan_lab.news_alerts (
+CREATE TABLE IF NOT EXISTS riyan_lab.user_states (
+  LIKE riyan_lab.auto_signals INCLUDING CONSTRAINTS INCLUDING INDEXES INCLUDING DEFAULTS
+);
+CREATE TABLE IF NOT EXISTS riyan_lab.news_alerts (
   LIKE riyan_lab.auto_signals INCLUDING CONSTRAINTS INCLUDING INDEXES INCLUDING DEFAULTS
 );
 -- Record full signal conditions (and retain the original JSONB verbatim).
