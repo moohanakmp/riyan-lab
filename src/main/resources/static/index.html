@@ -5742,6 +5742,9 @@ async function riyanProcessQueue(){
           const sentKey='riyan_sent_'+user,saved=JSON.parse(localStorage.getItem(sentKey)||'{}');
           saved[k]=riyanFingerprint(item.value);
           localStorage.setItem(sentKey,JSON.stringify(saved));
+          // A formerly rejected record may have synced after a code fix.
+          const failed=JSON.parse(localStorage.getItem(failedKey)||'{}');
+          if(failed[k]){delete failed[k];localStorage.setItem(failedKey,JSON.stringify(failed));}
         }
         sent++;
       }catch(e){
@@ -5807,12 +5810,12 @@ function riyanSnapshot(){
     const state=scalpState[sym]||{};
     riyanQueue('user-state',currentUser.username+':low-profit-diagnostics-'+sym,{
       symbol:sym,auto:scalpCfg.auto,assetEnabled:!!scalpCfg.assets[sym],
-      lastFiveMinuteFeedAt:state.feedAt||null,feedSource:state.feedSource||null,
+      lastFiveMinuteBarAt:scalpData[sym]?.at(-1)?.t||null,feedSource:state.feedSource||null,
       feedError:state.feedError||null,blocked:state.block||null,
       pendingSetup:state.scan?.setup||null,
       lookingFor:state.scan?.look||null,
       candles5m:scalpData[sym]?.length||0,
-      gates:state.scan?.gates||[],diagnosticAt:Date.now()
+      gates:state.scan?.gates||[],diagnosticAt:state.scan?.barT||null
     });
   }
   signalHistory.forEach(r=>riyanQueue(r.manual?'manual-signals':'auto-signals',String(r.id),r));
