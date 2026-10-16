@@ -209,30 +209,72 @@ public class AuthService {
     public List<Map<String,Object>> users() {
         return jdbc.queryForList("SELECT username,role,active,created_at,updated_at FROM auth_users ORDER BY username");
     }
+    // Policy applies to creating, resetting and changing passwords. A guest
+    // password can be empty (no minimum/complexity rule), but remains BCrypt-hashed.
+    private int minimumPasswordLength(String role) {
+        return switch(role) {
+            case "admin" -> 12;
+            case "user" -> 5;
+            case "guest" -> 0;
+            default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Invalid role");
+        };
+    }
+    private void validatePassword(String role, String password) {
+        int required=minimumPasswordLength(role);
+        if(password == null || password.length()<required || password.length()>256)
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                "Password for "+role+" must contain at least "+required+" characters (maximum 256)");
+    }
     public void createUser(Identity actor,String username,String password,String role) {
-        if (!validUsername(username) || password == null || password.length()<12 || password.length()>256 || !ROLES.contains(role))
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Username, role or password invalid (minimum 12 chars)");
+        if (!validUsername(username) || !ROLES.contains(role))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Invalid username or role");
+        validatePassword(role,password);
         jdbc.update("INSERT INTO auth_users(username,password_hash,role) VALUES(?,?,?)",
             username,hasher.encode(password),role);
         activity(actor.username(),"CREATE_USER","auth_users",username,"{}");
     }
-    public void changeRole(Identity actor,String username,String role) {
+    private int rank(String role) {
+        return switch(role) {
+            case "admin" -> 3;
+            case "user" -> 2;
+            case "guest" -> 1;
+            default -> 0;
+        };
+    }
+    // Elevated permissions always require a NEW password satisfying the target
+    // role's policy. Existing sessions are invalidated when roles change.
+    public void changeRole(Identity actor,String username,String role,String newPassword) {
         if (!ROLES.contains(role) || !validUsername(username) || actor.username().equals(username))
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
-        if(jdbc.update("UPDATE auth_users SET role=?,updated_at=now() WHERE username=?",role,username)==0)
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        String oldRole=jdbc.query("SELECT role FROM auth_users WHERE username=?",
+            rs->rs.next()?rs.getString(1):null,username);
+        if(oldRole==null)throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        if(rank(role)>rank(oldRole)) {
+            validatePassword(role,newPassword);
+            jdbc.update("""
+                UPDATE auth_users SET role=?,password_hash=?,failed_logins=0,locked_until=NULL,updated_at=now()
+                WHERE username=?
+                """,role,hasher.encode(newPassword),username);
+        } else {
+            jdbc.update("UPDATE auth_users SET role=?,updated_at=now() WHERE username=?",role,username);
+        }
+        jdbc.update("DELETE FROM auth_sessions WHERE user_id=(SELECT id FROM auth_users WHERE username=?)",username);
         activity(actor.username(),"CHANGE_ROLE","auth_users",username,"{}");
     }
     public void resetPassword(Identity actor,String username,String password) {
-        if (!validUsername(username) || password==null || password.length()<12 || password.length()>256)
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
-        if(jdbc.update("UPDATE auth_users SET password_hash=?,failed_logins=0,locked_until=NULL,updated_at=now() WHERE username=?",
-            hasher.encode(password),username)==0)throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        if (!validUsername(username)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        String role=jdbc.query("SELECT role FROM auth_users WHERE username=?",
+            rs->rs.next()?rs.getString(1):null,username);
+        if(role==null)throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        validatePassword(role,password);
+        jdbc.update("UPDATE auth_users SET password_hash=?,failed_logins=0,locked_until=NULL,updated_at=now() WHERE username=?",
+            hasher.encode(password),username);
         jdbc.update("DELETE FROM auth_sessions WHERE user_id=(SELECT id FROM auth_users WHERE username=?)",username);
         activity(actor.username(),"RESET_PASSWORD","auth_users",username,"{}");
     }
     public void changeOwnPassword(Identity identity,String oldPassword,String password) {
-        if(password==null || password.length()<12 || password.length()>256)throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        String role=jdbc.queryForObject("SELECT role FROM auth_users WHERE id=?",String.class,identity.id());
+        validatePassword(role,password);
         String hash=jdbc.queryForObject("SELECT password_hash FROM auth_users WHERE id=?",String.class,identity.id());
         if(!hasher.matches(oldPassword==null?"":oldPassword,hash))throw unauthorized();
         resetPassword(identity,identity.username(),password);
