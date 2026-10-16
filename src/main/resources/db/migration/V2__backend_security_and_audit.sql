@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS riyan_lab.news_fetch_runs (
   error_message TEXT,
   checked_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE TABLE IF NOT EXISTS riyan_lab.news_alerts (
+CREATE TABLE IF NOT EXISTS riyan_lab.user_states (\n  LIKE riyan_lab.auto_signals INCLUDING CONSTRAINTS INCLUDING INDEXES INCLUDING DEFAULTS\n);\nCREATE TABLE IF NOT EXISTS riyan_lab.news_alerts (
   LIKE riyan_lab.auto_signals INCLUDING CONSTRAINTS INCLUDING INDEXES INCLUDING DEFAULTS
 );
 -- Record full signal conditions (and retain the original JSONB verbatim).
@@ -65,7 +65,7 @@ BEGIN
   FOREACH t IN ARRAY ARRAY[
     'auto_signals','manual_signals','low_profit_signals','analysis_reports',
     'seven_day_predictions','pnl_reports','gold_predictions_actuals',
-    'research_reports','tab_states','news_alerts'
+    'research_reports','tab_states','news_alerts','user_states'
   ] LOOP
     EXECUTE format('ALTER TABLE riyan_lab.%I ADD COLUMN IF NOT EXISTS created_by VARCHAR(64)',t);
     EXECUTE format('ALTER TABLE riyan_lab.%I ADD COLUMN IF NOT EXISTS updated_by VARCHAR(64)',t);
