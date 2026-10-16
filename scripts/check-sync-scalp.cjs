@@ -60,6 +60,7 @@ function extract(start,end){
  let opened=0, gatesOk=true,barT=now-300000;
  const evalContext=vm.createContext({
    Date,Math,console,
+   basketDemo:{enabled:false,active:null},
    scalpState:{XAUUSD:{feedError:'',cooldown:0}},
    scalpData:{XAUUSD:bars},
    ohlcData:{XAUUSD:{'1h':[]}},
