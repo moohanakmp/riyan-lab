@@ -3924,6 +3924,9 @@ function scalpEvaluate(sym){
     now<(st.cooldown||0)?`Cooldown ${Math.ceil((st.cooldown-now)/60e3)} min after the last trade`:
     scalpCfg.stopAtGoal&&day.goalHit?`🎯 Daily goal $${scalpCfg.goal} reached — paused until tomorrow`:
     day.stopHit?`🛑 Daily stop −$${scalpCfg.dayStop} hit — paused until tomorrow`:null;
+  // Paper basket mode is mutually exclusive with new baseline scalp entries.
+  // Existing baseline positions still receive their normal stop/TP management.
+  if(basketDemo.enabled||basketDemo.active)return;
   if(!scan.dir||!scan.gatesOk||st.block||live==null)return;
   if(st.handledBar===scan.barT||scalpHist.some(t=>t.sym===sym&&t.lastBar===scan.barT))return;
   st.handledBar=scan.barT;
