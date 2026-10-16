@@ -269,4 +269,61 @@ class AuthPersistenceIntegrationTest {
             .content("{\"symbol\":\"BTCUSD\"}"))
             .andExpect(status().isForbidden());
     }
+
+    @Test
+    void basketPaperLedgerIsAuditedAndUserScoped() throws Exception {
+        var login=mvc.perform(post("/api/v1/auth/login")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsString(java.util.Map.of(
+                "username","testadmin","password","unit-test-password-1234"))))
+            .andExpect(status().isOk()).andReturn();
+        var adminCookies=login.getResponse().getCookies();
+        String adminCsrf=mapper.readTree(login.getResponse().getContentAsString())
+            .path("csrf").asText();
+        mvc.perform(post("/api/v1/auth/users")
+            .cookie(adminCookies).header("X-CSRF-Token",adminCsrf)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsString(java.util.Map.of(
+                "username","basketowner","role","user","password","abcde"))))
+            .andExpect(status().isOk());
+        var ownLogin=mvc.perform(post("/api/v1/auth/login")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsString(java.util.Map.of(
+                "username","basketowner","password","abcde"))))
+            .andExpect(status().isOk()).andReturn();
+        var ownerCookies=ownLogin.getResponse().getCookies();
+        String csrf=mapper.readTree(ownLogin.getResponse().getContentAsString())
+            .path("csrf").asText();
+        String ownId="basketowner--id-"+"b".repeat(64);
+        String alienId="otheruser--id-"+"c".repeat(64);
+        for(String type:java.util.List.of("basket-sessions","basket-positions",
+                "basket-events","basket-replays")) {
+            String path="/api/v1/records/"+type+"/"+ownId;
+            String paperJson=mapper.writeValueAsString(java.util.Map.of(
+                "symbol","XAUUSD","direction","BUY","status","OPEN",
+                "paperOnly",true,"reason","confirmed 5m demo only",
+                "conditions",java.util.Map.of("maxBasketRiskUsd",4,"lot",0.01)));
+            mvc.perform(put(path).cookie(ownerCookies)
+                .header("X-CSRF-Token",csrf).contentType(MediaType.APPLICATION_JSON)
+                .content(paperJson)).andExpect(status().isOk());
+            mvc.perform(get("/api/v1/records/"+type).cookie(ownerCookies))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].source_id").value(ownId));
+            mvc.perform(put("/api/v1/records/"+type+"/"+alienId)
+                .cookie(ownerCookies).header("X-CSRF-Token",csrf)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(paperJson)).andExpect(status().isForbidden());
+        }
+        mvc.perform(put("/api/v1/records/basket-sessions/"+ownId)
+            .cookie(ownerCookies).header("X-CSRF-Token",csrf)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsString(java.util.Map.of(
+                "symbol","XAUUSD","status","CLOSED",
+                "paperOnly",true,"closeReason","NET_TP",
+                "netPnl",2.03)))).andExpect(status().isOk());
+        mvc.perform(get("/api/v1/audit?limit=1000").cookie(adminCookies))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].record_type").value("basket-sessions"))
+            .andExpect(jsonPath("$[0].action").value("UPDATE"));
+    }
 }
