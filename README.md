@@ -69,3 +69,16 @@ SELECT source_id,symbol,status,reason,timeframe,entry_price,stop_loss,
 - Frontend access toggles are synchronized to `app_permissions`; rigorous back-end feature authorization, notification secret migration, encryption-at-rest of integration tokens, and user-specific signal ownership policies need further design and testing before claiming the whole platform is secured.
 - Some legacy UI artwork/media was not in the original GitHub commit. Existing Netlify IndexedDB/localStorage cannot automatically be read on Render's different origin; export/import from the old origin requires a dedicated migration path.
 - A successful CI integration test on PostgreSQL does not prove Render production database permissions, broker trading outcomes, live feed availability, or full visual regression. Keep the Netlify version as a fallback throughout staging and regression testing.
+
+
+### Password policy (staging verification)
+
+| Role | Minimum length | Notes |
+| --- | --- | --- |
+| Admin | 12 | Required when creating/resetting an admin or promoting another account to admin. Bootstrap follows this rule. |
+| User | 5 | No character composition rule; any five characters accepted. |
+| Guest | 0 | No length or composition check. Even blank credentials can be configured (not recommended for public deployments). The guest role remains read-only and feature-restricted. |
+
+All account passwords are still BCrypt-hashed in PostgreSQL, never stored in clear text. Account creation and reset in the Admin tab use the server-side role policy. Promoting a guest to user or user to admin requires a new password meeting the higher role minimum and revokes existing sessions; demotion revokes sessions as well. The change does not automatically create old KMR frontend users. Sign in as `kalai` and add `tsuser`, `vino`, and `guest` through the Admin tab.
+
+**Security note:** A blank guest password means anyone can log in with that guest username and read all guest-accessible signal data. Use a simple nonblank password if you want to keep guest access private.
