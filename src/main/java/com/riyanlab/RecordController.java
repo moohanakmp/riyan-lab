@@ -99,6 +99,14 @@ public class RecordController {
             if(Boolean.TRUE.equals(unchanged)) return ResponseEntity.ok(Map.of("saved",true,"unchanged",true,"sourceId",sourceId));
         }
         String conditions=payload.path("conditions").isMissingNode()?null:payload.path("conditions").toString();
+        String reason=field(payload,"reason","strategy");
+        if(reason==null && payload.path("conditions").isArray()) {
+            List<String> explanations=new ArrayList<>();
+            for(JsonNode condition:payload.path("conditions"))
+                if(explanations.size()<12)explanations.add(condition.isTextual()?condition.asText():condition.toString());
+            reason=String.join("; ",explanations);
+        }
+        if(reason==null)reason=field(payload,"why","setup");
         String sym=field(payload,"sym","symbol");
         String dir=field(payload,"dir","direction");
         String state=field(payload,"outcome","status");
@@ -113,8 +121,8 @@ public class RecordController {
                  take_profit_3=EXCLUDED.take_profit_3,signal_conditions=EXCLUDED.signal_conditions,updated_at=now()
             """.formatted(target),
             sourceId,sym,dir,state,timestamp(payload),raw,identity.username(),identity.username(),
-            field(payload,"reason","why","setup","strategy"),field(payload,"tf","timeframe"),
-            number(payload,"entry","entryPrice"),number(payload,"sl","stopLoss"),
+            reason,field(payload,"tf","timeframe"),
+            number(payload,"entry","entryPrice","price"),number(payload,"sl","stopLoss"),
             number(payload,"tp1","takeProfit1","tp"),number(payload,"tp2","takeProfit2"),
             number(payload,"tp3","takeProfit3"),conditions);
         jdbc.update("""
