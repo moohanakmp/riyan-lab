@@ -1199,7 +1199,8 @@ async function doLogin(){
   }finally{document.getElementById('loginPass').value='';}
 }
 async function doLogout(){
-  try{await riyanApi('/api/v1/auth/logout',{method:'POST'});}catch(e){console.warn('Logout failed:',e);}
+  try{await riyanApi('/api/v1/auth/logout',{method:'POST'});}
+  catch(e){showToast('Could not revoke server session — retry logout','var(--red)');return;}
   currentUser=null;riyanCsrf='';
   document.getElementById('loginUser').value='';
   document.getElementById('loginPass').value='';
