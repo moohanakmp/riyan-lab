@@ -120,7 +120,8 @@ function extract(start,end){
   kmrTfBias:()=>null,
   bbAt:()=>({l:95,m:100,u:105}),
   kmrIstHour:()=>9,
-  fmtP:(symbol,val)=>val.toFixed(2)
+  fmtP:(symbol,val)=>val.toFixed(2),
+  ev2txt:()=>"(event in progress)"
  });
  vm.runInContext(realScanCode+'\n'+levelCode,market);
  const realScan=vm.runInContext('scalpScan',market);
