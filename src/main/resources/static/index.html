@@ -1267,7 +1267,7 @@ function renderAdminPanel(){
       </select>`}
     </div>`;
   }).join('');
-  document.getElementById('adminUserList').innerHTML=list+'<button class="anal-refresh" onclick="riyanCreateUser()">+ Create DB user</button>';
+  document.getElementById('adminUserList').innerHTML=list+'<button class="anal-refresh" onclick="riyanCreateUser()">+ Create DB user</button> <button class="anal-refresh" onclick="riyanShowAudit()">View DB audit</button> <button class="anal-refresh" onclick="riyanShowNewsChecks()">News feed health</button>';
   renderPermGrid();
   renderThemeStudio();
   loadNotifSettings();
@@ -1297,6 +1297,36 @@ async function riyanCreateUser(){
 async function riyanLoadUsers(){
   const rows=await riyanApi('/api/v1/auth/users');
   userAccounts=Object.fromEntries(rows.map(u=>[u.username,{role:u.role}]));
+}
+async function riyanShowAudit(){
+  try{
+    const [audit,actions]=await Promise.all([
+      riyanApi('/api/v1/audit?limit=15'),riyanApi('/api/v1/activity?limit=15')
+    ]);
+    const panel=riyanAuditPanel();
+    panel.textContent='Recent records:\n'+audit.map(a=>
+      [a.event_time,a.actor,a.record_type,a.source_id,a.action].join(' | ')
+    ).join('\n')+'\n\nUser activity:\n'+actions.map(a=>
+      [a.created_at,a.username,a.action,a.entity_type,a.entity_id].join(' | ')
+    ).join('\n');
+  }catch(e){showToast('Audit unavailable: '+e.message,'var(--red)');}
+}
+async function riyanShowNewsChecks(){
+  try{
+    const checks=await riyanApi('/api/v1/news/status');
+    riyanAuditPanel().textContent='Latest news checks:\n'+checks.map(c=>
+      [c.checked_at,c.symbol,c.status,'items='+c.found_count,c.error_message||''].join(' | ')
+    ).join('\n');
+  }catch(e){showToast('News checks unavailable: '+e.message,'var(--red)');}
+}
+function riyanAuditPanel(){
+  let p=document.getElementById('riyanAuditPanel');
+  if(!p){
+    p=document.createElement('pre');p.id='riyanAuditPanel';
+    p.style.cssText='white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;font-size:10px;color:var(--txt);padding:12px';
+    document.getElementById('adminUserList').insertAdjacentElement('afterend',p);
+  }
+  return p;
 }
 function selectPermRole(role,el){
   permRoleTab=role;
@@ -5539,6 +5569,13 @@ async function riyanApi(path,opts={}){
   if(!response.ok)throw Error('HTTP '+response.status);
   return response.status===204?null:response.json();
 }
+// Lightweight fingerprints avoid resubmitting identical snapshots every minute.
+// Actual writes remain idempotent in PostgreSQL (jsonb comparison and UNIQUE keys).
+function riyanFingerprint(s){
+  let x=2166136261;
+  for(let i=0;i<s.length;i++)x=Math.imul(x^s.charCodeAt(i),16777619);
+  return s.length+':'+(x>>>0).toString(16);
+}
 function riyanQueue(type,id,obj){
   if(!currentUser||!id||obj==null)return;
   try{
@@ -5547,9 +5584,10 @@ function riyanQueue(type,id,obj){
     const key='riyan_pending_'+currentUser.username;
     const pending=JSON.parse(localStorage.getItem(key)||'{}');
     const token=type+'|'+encodeURIComponent(String(id));
+    const digest=riyanFingerprint(data);
+    const saved=JSON.parse(localStorage.getItem('riyan_sent_'+currentUser.username)||'{}');
+    if(saved[token]===digest&&!pending[token])return;
     if(pending[token]?.value!==data)pending[token]={type,id:String(id),value:data};
-    const keys=Object.keys(pending);
-    if(keys.length>4000)keys.slice(0,keys.length-4000).forEach(k=>delete pending[k]);
     localStorage.setItem(key,JSON.stringify(pending));
   }catch(e){console.warn('Failed to queue DB record',e);}
 }
@@ -5568,7 +5606,12 @@ async function riyanProcessQueue(){
           {method:'PUT',body:item.value});
         // Remove only if the payload did not change while this request was pending.
         const latest=JSON.parse(localStorage.getItem(key)||'{}');
-        if(latest[k]&&latest[k].value===item.value){delete latest[k];localStorage.setItem(key,JSON.stringify(latest));}
+        if(latest[k]&&latest[k].value===item.value){
+          delete latest[k];localStorage.setItem(key,JSON.stringify(latest));
+          const sentKey='riyan_sent_'+user,saved=JSON.parse(localStorage.getItem(sentKey)||'{}');
+          saved[k]=riyanFingerprint(item.value);
+          localStorage.setItem(sentKey,JSON.stringify(saved));
+        }
         sent++;
       }catch(e){
         console.warn('Riyan DB sync deferred:',item.type,e);
