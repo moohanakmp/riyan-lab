@@ -21,6 +21,8 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       DATABASE_URL: jdbc:postgresql://localhost:5432/neondb
+      DB_SCHEMA: riyan_lab_staging
+      APP_ENV: staging
       DB_USER: postgres
       DB_PASSWORD: postgres
       RIYAN_BOOTSTRAP_ADMIN_USER: testadmin
