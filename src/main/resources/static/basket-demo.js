@@ -161,6 +161,7 @@ function basketManage(){
 function basketEvaluate(sym){
   if(!currentUser||currentUser.role==='guest'||!basketDemo.enabled||
      !scalpCfg.auto||!scalpCfg.assets[sym])return;
+  if(scalpHist.some(t=>t.status==='OPEN'))return;
   var s=basketDemo.active,st=scalpState[sym]||{},scan=st.scan,
     quote=prices[sym],c5=kmrClosed(scalpData[sym]||[]);
   if(!scan||!scan.dir||!scan.gatesOk||st.block||st.feedError||
@@ -235,7 +236,10 @@ function basketToggle(){
   if(!currentUser||currentUser.role==='guest'){
     showToast('User/admin login required for paper baskets','var(--red)');return;
   }
-  if(!basketDemo.enabled&&!confirm('Enable simulated basket trades? No MT5 orders will be placed. P&L is hypothetical and can lose money.'))return;
+  if(!basketDemo.enabled&&scalpHist.some(t=>t.status==='OPEN')){
+    showToast('Close existing Low Profit positions before starting Basket Demo','var(--red)');return;
+  }
+  if(!basketDemo.enabled&&!confirm('Enable simulated basket trades? New original scalps pause while this mode is selected. Existing positions remain protected. No MT5 orders. P&L is hypothetical.'))return;
   basketDemo.enabled=!basketDemo.enabled;basketSave();renderScalpTab();
 }
 function basketCloseNow(){
@@ -260,7 +264,7 @@ function renderBasketDemo(){
   html+='<div class="sc-note">Target <b>+$'+scalpCfg.target.toFixed(2)+'</b> net, '+
     'combined estimated risk <b>$'+scalpCfg.maxLoss.toFixed(2)+'</b>, '+
     'maximum <b>5 × 0.01 lot</b>. Only new confirmed setups can add. '+
-    'No averaging down, no martingale, no MT5 orders. '+
+    'No averaging down, no martingale, no MT5 orders. While PAPER ON, new regular scalps pause; existing scalps keep their stops. '+
     'Browser must remain active. Gaps/slippage may exceed simulated risk.</div>';
   if(s){
     html+='<div class="sc-row"><b>'+basketTxt(s.sym)+' '+basketTxt(s.dir)+
