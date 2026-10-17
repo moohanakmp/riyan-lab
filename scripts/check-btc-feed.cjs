@@ -43,5 +43,8 @@ vm.runInContext(source,ctx);const feed=ctx.BtcFeed;
  assert.equal(flow.slots.length,1);assert.equal(flow.slots[0].slot,12,'misaligned first candle must not shift reporting slots');
  assert.equal(flow.slots[0].avgNet,2);
  assert.equal(ctx.fmtSlotTimeGeneric(5,60),'5:30am','UTC hour candles are labelled at their actual IST boundary');
+ vm.runInContext(extract('function windowsOverlap(', '// \"Any\" mode'),ctx);
+ assert.equal(ctx.windowsOverlap(1410,1470,0,30),true,'cross-midnight ranges overlap');
+ assert.equal(ctx.windowsOverlap(1410,1470,60,90),false);
  console.log('PASS Coinbase pagination, OHLC mapping, sorted duplicates, cache isolation, partial aggregation, stale quotes, failed retry and aligned Flow buckets');
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -2766,7 +2766,7 @@ async function fetchFlowDaily(sym){
 }
 // Checks whether two [startMin,endMin) windows overlap at all (same-day wraparound not
 // needed here since ranges never cross midnight in our slot system)
-function windowsOverlap(aStart,aEnd,bStart,bEnd){return aStart<bEnd&&bStart<aEnd;}
+function windowsOverlap(aStart,aEnd,bStart,bEnd){return [-1440,0,1440].some(shift=>aStart<bEnd+shift&&bStart+shift<aEnd);}
 // "Any" mode — cross-timeframe confirmation. Runs 15m/30m/1h independently; a range that
 // clears the full bar on ONE of them is confirmed if the OTHERS at least *lean* the same
 // direction over that window too (a lower bar on the raw slot data, not requiring each
@@ -2872,7 +2872,7 @@ function flowRowHtml(r,i,sampleTxt,extra){
 function flowNowHtml(c){
   if(!c.slotsSum?.length)return'';
   const ist=new Date(Date.now()+5.5*3600*1000),m=ist.getUTCHours()*60+ist.getUTCMinutes();
-  const cur=c.slotsSum.find(s=>m>=s.startMin&&m<s.endMin);
+  const cur=c.slotsSum.find(s=>(m>=s.startMin&&m<s.endMin)||(s.endMin>1440&&m+1440>=s.startMin&&m+1440<s.endMin));
   const nxt=c.slotsSum.find(s=>s.startMin>=(cur?cur.endMin:m))||c.slotsSum[0];
   const one=(lbl,s)=>s?`<div class="flow-now-i"><span>${lbl} · ${s.from}–${s.to}</span><b class="${s.dir==='BULL'?'up':'dn'}">${s.dir==='BULL'?'▲':'▼'} ${s.cons}% ${s.dir==='BULL'?'bullish':'bearish'}</b><em>${s.n} days · ~${s.pips} pips · ${s.z>=2.58?'strong':s.z>=1.96?'leaning':'weak / coin-flip'}</em></div>`:'';
   return `<div class="flow-now">${one('NOW',cur)}${one('NEXT',nxt)}</div>`;
@@ -2890,7 +2890,7 @@ function renderFlowTab(){
     const c=flowCache[sym+'|'+flowTf];
     html+=`<div class="ic art-${sym}"><div class="it">${ICONS[sym]} ${ASSETS[sym].sym}${c?.src?` <span style="font-size:9px;color:var(--dim);font-weight:600">· ${c.src}</span>`:''}</div><div class="ib">`;
     if(!c){html+=`<span style="color:var(--dim)">Not analyzed yet at this timeframe.</span>`;}
-    else if(c.failed){html+=`<span style="color:var(--dim)">Couldn't download history for this asset: ${c.failed}. Check your connection and tap Analyze again.</span>`;}
+    else if(c.failed){html+=`<span style="color:var(--dim)">History unavailable: ${c.failed}. Provider restrictions require a supported data source; a refresh cannot resolve regional access restrictions.</span>`;}
     else if(c.mode==='weekday'){
       const rows=c.results||[];
       const sig=rows.filter(r=>r.tier>0);
@@ -2901,10 +2901,10 @@ function renderFlowTab(){
       html+=flowNowHtml(c);
       const ranges=c.ranges||[];
       if(ranges.length){
-        html+=`<div class="flow-h">Reliable windows (IST)</div>`;
+        html+=`<div class="flow-h">Historical candidate windows (IST)</div>`;
         ranges.slice(0,8).forEach((r,i)=>{const confirmTxt=r.confirmedBy?`<br><span style="color:var(--acc)">✓ ${r.confirmedBy.join('+')}</span>`:'';html+=flowRowHtml(r,i+1,`${r.days}d`,confirmTxt);});
       }else{
-        html+=`<div class="flow-none">No window passed the significance test over ${c.daysUsed} days${c.mode==='any'?' (15m/30m/1h cross-check)':''}. That's a real finding: no dependable time-of-day edge right now. Strongest tendencies (treat as weak):</div>`;
+        html+=`<div class="flow-none">${Math.max(0,...(c.slotsSum||[]).map(s=>s.n))<FLOW_MIN_SAMPLE?'Insufficient daily samples for this timeframe.':'No window passed the exploratory threshold.'} ${c.daysUsed} days inspected${c.mode==='any'?' (15m/30m/1h cross-check)':''}. Strongest tendencies, where enough samples exist:</div>`;
         (c.slotsSum||[]).filter(s=>s.n>=FLOW_MIN_SAMPLE).sort((a,b)=>b.z-a.z).slice(0,4).forEach((s,i)=>{html+=flowRowHtml({...s,tier:0},i+1,`${s.n}d`,`<br>z ${s.z}`);});
       }
       if(c.mode==='any'&&c.unconfirmed?.length){
@@ -2915,7 +2915,7 @@ function renderFlowTab(){
     }
     html+=`</div></div>`;
   });
-  html+=`<div class="notice"><b>How to read this:</b> each half-hour (IST) is tested across every day in the sample. <b>STRONG</b> = the split would happen by luck less than ~1% of the time; <b>LEANING</b> ≈ 5%; "tendency" = could easily be chance. Pips are the <i>average net</i> move in that window. Patterns fade: re-analyze weekly, and use a window only when it agrees with the Engine v3 signal.</div>`;
+  html+=`<div class="notice"><b>How to read this:</b> each half-hour (IST) is tested across every day in the sample. <b>STRONG</b> and <b>LEANING</b> describe unadjusted sample imbalances, not win probabilities. Many windows are tested and days may be correlated; these exploratory results do not establish a repeatable trading edge. "Tendency" can be chance. Pips are the <i>average net</i> move in that window. Patterns fade: re-analyze weekly, and use a window only when it agrees with the Engine v3 signal.</div>`;
   el.innerHTML=html;
 }
 
