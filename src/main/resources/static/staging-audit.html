@@ -11,8 +11,8 @@ table{border-collapse:collapse;width:100%;margin-top:22px;font-size:12px}th,td{b
 </style></head>
 <body>
 <h1>Riyan Lab — staging audit</h1>
-<p class="sub">Run while signed into the staging application as administrator. This tool checks authenticated APIs, writes clearly labeled TEST records into the staging schema, and checks news feeds and static assets.</p>
-<p class="note"><strong>No MT5 orders or market signals are triggered.</strong> Database test records and their audit events remain for traceability. No password, session cookie or CSRF token is printed. Do not run against production.</p>
+<p class="sub">Run while signed into the staging application as administrator. This read-only tool checks authenticated APIs, record access, market/news feeds and static assets. Trading writes and concurrency are tested in the isolated CI database.</p>
+<p class="note"><strong>No MT5 orders or market signals are triggered.</strong> Existing application records are only read; this tool does not create test trades. No password, session cookie or CSRF token is printed. Do not run against production.</p>
 <p><a href="/">Return to app</a> · <a href="https://github.com/moohanakmp/riyan-lab/issues/4">Full manual acceptance checklist</a></p>
 <button id="run">Run staging diagnostics</button>
 <p id="progress"></p>
@@ -56,36 +56,29 @@ button.onclick=async()=>{
   me=r.ok?r.data:null;
   add('Authenticated backend session',!!me?.role,'HTTP '+r.status+(me?.role?' — role '+me.role:''));
  }catch(e){add('Authenticated backend session',false,e.message)}
- if(me?.role==='admin'&&me.csrf){
-  const marker='audit-smoke-'+Date.now().toString(36);
+ if(me?.role){
   const types=['auto-signals','manual-signals','low-profit','analysis','seven-day','pnl','gold-calls','research','tab-state','user-state','news-alerts','basket-sessions','basket-positions','basket-events','basket-replays'];
   for(const type of types){
-   const id=(type==='user-state'?me.username+':':type.startsWith('basket-')?me.username+'--':'')+marker;
-   const path='/api/v1/records/'+encodeURIComponent(type)+'/'+encodeURIComponent(id);
-   const sample={symbol:'XAUUSD',direction:'BUY',status:'TEST_ONLY',reason:'staging diagnostics — no trades',
-    timeframe:'5m',entry:1,sl:.9,tp1:1.1,tp2:1.2,lot:0.01,paperOnly:true,brokerOrderId:null,positions:[],conditions:{smoke:true,simulated:true},ts:Date.now()};
    try{
-    const response=await api(path,{method:'PUT',headers:{'Content-Type':'application/json','X-CSRF-Token':me.csrf},body:JSON.stringify(sample)});
-    add('PostgreSQL write: '+type,response.ok,'HTTP '+response.status);
-    if(response.ok){
-     const check=await api('/api/v1/records/'+encodeURIComponent(type)+'?limit=1000');
-     add('PostgreSQL read: '+type,check.ok&&Array.isArray(check.data)&&check.data.some(r=>r.source_id===id),'HTTP '+check.status);
-     if(type==='auto-signals'){
-      const change=await api(path,{method:'PUT',headers:{'Content-Type':'application/json','X-CSRF-Token':me.csrf},
-       body:JSON.stringify({...sample,status:'TEST_CLOSED',reason:'diagnostic status update'})});
-      add('Auto signal status update',change.ok,'HTTP '+change.status);
-     }
-    }
-   }catch(e){add('PostgreSQL write/read: '+type,false,e.message)}
+    const r=await api('/api/v1/records/'+type+'?limit=1&offset=0');
+    add('Record access: '+type,r.ok&&Array.isArray(r.data),'HTTP '+r.status);
+   }catch(e){add('Record access: '+type,false,e.message)}
   }
-  try{
-   const audit=await api('/api/v1/audit?limit=1000');
-   const count=Array.isArray(audit.data)?audit.data.filter(x=>String(x.source_id||'').includes(marker)).length:0;
-   add('Before/after audit events',audit.ok&&count>=12,'HTTP '+audit.status+'; matching events '+count);
-  }catch(e){add('Before/after audit events',false,e.message)}
-  try{const a=await api('/api/v1/activity?limit=10');add('User activity journal',a.ok&&Array.isArray(a.data),'HTTP '+a.status)}
-  catch(e){add('User activity journal',false,e.message)}
- }else add('Database write and audit checks','SKIP','Log into staging app as admin first; refresh this page.');
+  const feeds={
+   'XAU quote':'https://api.gold-api.com/price/XAU',
+   'XAG quote':'https://api.gold-api.com/price/XAG',
+   'BTC candles':'https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=15m&limit=100',
+   'XAU candles':'https://fapi.binance.com/fapi/v1/klines?symbol=XAUUSDT&interval=15m&limit=100',
+   'XAG candles':'https://fapi.binance.com/fapi/v1/klines?symbol=XAGUSDT&interval=15m&limit=100'
+  };
+  for(const [name,url] of Object.entries(feeds)){
+   try{
+    const r=await api('/api/v1/market/data?url='+encodeURIComponent(url));
+    const valid=name.includes('candles')?Array.isArray(r.data)&&r.data.length>0:Number.isFinite(r.data?.price)&&r.data.price>0;
+    add('Market feed: '+name,r.ok&&valid?'PASS':'WARN','HTTP '+r.status+(r.data?.upstreamStatus?'; provider HTTP '+r.data.upstreamStatus:'')+(Array.isArray(r.data)?'; candles '+r.data.length:''));
+   }catch(e){add('Market feed: '+name,'WARN',e.message)}
+  }
+ }else add('Authenticated record/feed checks','SKIP','Sign into the staging app first.');
  for(const sym of ['XAUUSD','XAGUSD','BTCUSD']){
   try{
    const r=await api('/api/v1/news/latest?symbol='+sym);
@@ -99,13 +92,13 @@ button.onclick=async()=>{
    add('Background internet news polls',r.ok&&n>0?'PASS':'WARN','HTTP '+r.status+'; poll entries '+n+'; failed '+(Array.isArray(r.data)?r.data.filter(x=>x.status!=='OK').length:'?'));
   }catch(e){add('Background internet news polls',false,e.message)}
  }
- for(const asset of ['/icon-192.png','/icon-512.png','/happy.mp4','/bull.mp4','/bear.mp4','/art/art-btc.svg','/art/art-gold.svg','/art/art-silver.svg','/art/art-candles.svg']){
+ for(const asset of ['/icon-192.png','/icon-512.png','/trading-core.js','/paper-engine.js','/basket-demo.js','/basket-replay.js','/art/art-btc.svg','/art/art-gold.svg','/art/art-silver.svg','/art/art-candles.svg']){
   try{const r=await fetch(asset,{method:'HEAD',credentials:'same-origin',cache:'no-store'});add('PWA/static asset: '+asset,r.ok,'HTTP '+r.status)}
   catch(e){add('PWA/static asset: '+asset,false,e.message)}
  }
  button.disabled=false;
  const counts={};for(const row of results)counts[row.result]=(counts[row.result]||0)+1;
- progress.textContent='Completed: '+JSON.stringify(counts)+'. Database TEST records are intentionally retained.';
+ progress.textContent='Completed: '+JSON.stringify(counts)+'. Read-only checks; no test records were created.';
  window.riyanAuditSafeResults=results.map(x=>({...x}));
  console.table(results);
 };

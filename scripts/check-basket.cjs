@@ -146,3 +146,19 @@ console.log('PASS: +$2 NET closes entire basket, corrupt risk fails closed, audi
 
 console.log('PASS: paper-only basket entries, 0.01 sizing, combined risk, non-losing additions, five-position cap');
 console.log('PASS: conservative stop before profit, owner-scoped audit ledger, next-bar replay summary');
+
+(async()=>{
+ context.riyanReadAll=async()=>[];
+ assert.equal(await run('basketDbRestore()'),true,'empty server history is a successful restore');
+ assert.equal(context.basketDemo.active,null);
+ const position={id:'recovered',basketId:'lost-response',sym:'XAUUSD',dir:'BUY',status:'OPEN',entry:100,sl:99,units:1,openedAt:now};
+ context.riyanReadAll=async type=>type==='basket-positions'?[{payload:position}]:[];
+ assert.equal(await run('basketDbRestore()'),true);
+ assert.equal(context.basketDemo.active.id,'lost-response','committed position reconstructs missing session');
+ assert.equal(context.basketDemo.active.positions.length,1);
+ position.status='CLOSED';position.closedAt=now+1;position.pnl=1.65;
+ assert.equal(await run('basketDbRestore()'),true);
+ assert.equal(context.basketDemo.active,null);
+ assert.equal(context.basketDemo.history[0].netPnl,1.65);
+ console.log('PASS: empty basket restore, lost-response reconstruction and authoritative closed history');
+})().catch(error=>{console.error(error);process.exitCode=1;});
