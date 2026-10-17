@@ -2405,10 +2405,12 @@ function sessionActiveAt(sess,h){
   return h>=start&&h<end;
 }
 function activeSessionsNow(){
+  if(!isMetalsMarketOpen())return [];
   const h=istHourNow();
   return SESSIONS.filter(s=>sessionActiveAt(s,h)).map(s=>s.name);
 }
 function activeOverlapsNow(){
+  if(!isMetalsMarketOpen())return [];
   const h=istHourNow();
   return SESSION_OVERLAPS.filter(s=>sessionActiveAt(s,h)).map(s=>s.name);
 }
@@ -2441,6 +2443,7 @@ function flushHourStats(){
 setInterval(flushHourStats,60000);
 
 function sessionSummaryLine(){
+  if(!isMetalsMarketOpen())return 'FX/metals session closed under the modeled schedule';
   const active=activeSessionsNow(),overlaps=activeOverlapsNow();
   if(overlaps.length)return `🔥 ${overlaps[0]} — active now`;
   if(active.length)return `${active.join(' + ')} session${active.length>1?'s':''} active now`;
@@ -2454,14 +2457,14 @@ function renderSessionTab(){
 
   html+=`<div class="ic"><div class="it">🌍 Standard Market Sessions (IST)</div><div class="ib">`;
   SESSIONS.forEach(s=>{
-    const active=sessionActiveAt(s,istHourNow());
+    const active=isMetalsMarketOpen()&&sessionActiveAt(s,istHourNow());
     html+=`<div class="lvl-row"><span class="lvl-tag ${active?'sup':'res'}" style="${active?'':'background:rgba(255,255,255,.06);color:var(--dim)'}">${active?'ACTIVE':'—'}</span><span>${s.name} · ${fmtHour(s.startH)}–${fmtHour(s.endH)}</span><span style="color:var(--dim);font-size:9.5px;text-align:right;max-width:110px">${s.note}</span></div>`;
   });
   html+=`<div style="font-size:9.5px;color:var(--dim);margin-top:6px">Standard textbook FX session convention — not derived from your feed. Shifts ±1h around US/EU daylight-saving changes.</div></div></div>`;
 
   html+=`<div class="ic"><div class="it">⚡ Highest-Volume Overlaps</div><div class="ib">`;
   SESSION_OVERLAPS.forEach(s=>{
-    const active=sessionActiveAt(s,istHourNow());
+    const active=isMetalsMarketOpen()&&sessionActiveAt(s,istHourNow());
     html+=`<div class="lvl-row"><span class="lvl-tag ${active?'sup':'res'}" style="${active?'':'background:rgba(255,255,255,.06);color:var(--dim)'}">${active?'ACTIVE':'—'}</span><span>${s.name} · ${fmtHour(s.startH)}–${fmtHour(s.endH)}</span><span style="color:var(--dim);font-size:9.5px;text-align:right;max-width:110px">${s.note}</span></div>`;
   });
   html+=`</div></div>`;
@@ -3525,7 +3528,7 @@ function newsTrackHtml(){
     const p=e.pred||{goldDir:'NEUTRAL',conf:50,reasons:[]};
     const when=new Date(e.ts).toLocaleString('en-IN',{weekday:'short',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
     html+=`<div class="lvl-row nt-row" style="flex-wrap:wrap"><span style="flex:1;min-width:140px">${e.title} <span style="color:var(--dim)">(${e.country})</span><br><span style="color:var(--dim);font-size:9px">${when}${e.forecast?` · F ${e.forecast}`:''}${e.previous?` · P ${e.previous}`:''}${e.actual?` · A ${e.actual}`:''}</span></span>`;
-    html+=`<span class="sent-tag ${dirCls(p.goldDir)}">Gold call: ${p.goldDir}${p.goldDir!=='NEUTRAL'?` ${p.conf}%`:''}</span>`;
+    html+=`<span class="sent-tag ${dirCls(p.goldDir)}">Gold call: ${p.goldDir}${p.goldDir!=='NEUTRAL'?` · model score ${p.conf}/100`:''}</span>`;
     if(!e.graded)html+=`<span class="sent-tag neu">Grading ~45min after release…</span>`;
     else if(e.ungradeable)html+=`<span class="sent-tag neu">Not graded — ${e.country} event</span>`;
     else{
@@ -3541,7 +3544,7 @@ function newsTrackHtml(){
     html+=`<div class="it" style="margin-top:10px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">🔮 Next events — live gold call (updates until release)<button class="qa" style="padding:4px 10px;font-size:10.5px" onclick="evwReopen()">⚡ Open live popup</button></div>`;
     next.forEach(e=>{const p=e.pred||{goldDir:'NEUTRAL',conf:50,reasons:[]};
       const when=new Date(e.ts).toLocaleString('en-IN',{weekday:'short',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
-      html+=`<div class="lvl-row nt-row" style="flex-wrap:wrap"><span style="flex:1;min-width:140px">${e.title} <span style="color:var(--dim)">(${e.country})</span><br><span style="color:var(--dim);font-size:9px">${when}${e.forecast?` · F ${e.forecast}`:''}${e.previous?` · P ${e.previous}`:''}</span></span><span class="sent-tag ${dirCls(p.goldDir)}">Gold call: ${p.goldDir}${p.goldDir!=='NEUTRAL'?` ${p.conf}%`:''}</span><div class="nt-why">${(p.reasons||[]).map(r=>'• '+r).join('<br>')}</div></div>`;});
+      html+=`<div class="lvl-row nt-row" style="flex-wrap:wrap"><span style="flex:1;min-width:140px">${e.title} <span style="color:var(--dim)">(${e.country})</span><br><span style="color:var(--dim);font-size:9px">${when}${e.forecast?` · F ${e.forecast}`:''}${e.previous?` · P ${e.previous}`:''}</span></span><span class="sent-tag ${dirCls(p.goldDir)}">Gold call: ${p.goldDir}${p.goldDir!=='NEUTRAL'?` · model score ${p.conf}/100`:''}</span><div class="nt-why">${(p.reasons||[]).map(r=>'• '+r).join('<br>')}</div></div>`;});
   }
   html+=`<div style="font-size:9.5px;color:var(--dim);margin-top:6px">Both columns are in GOLD terms. The call uses only pre-release information (consensus forecast vs previous → USD lean, 36h gold-news tone, gold's 4h drift and 24h trend). Graded on real XAU/USD 15m candles ~45 min after release; moves smaller than 0.15 ATR count as flat.</div>`;
   html+=`</div></div>`;
@@ -3611,7 +3614,7 @@ function evwTick(force){
     items.forEach(e=>e.relPrice=rp);saveNewsLog();
   }
   const title=items.length>1?`${items.length} events at ${new Date(g.ts).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}`:`${lead.title} (${lead.country})`;
-  const callTxt=`Gold call: ${p.goldDir}${p.goldDir!=='NEUTRAL'?' '+p.conf+'%':''}`;
+  const callTxt=`Gold call: ${p.goldDir}${p.goldDir!=='NEUTRAL'?' · model score '+p.conf+'/100':''}`;
   if(phase==='watch')evwNotify(g.key,'watch',`${title} in ${fmtCountdown(diff)}`,callTxt);
   if(phase==='final')evwNotify(g.key,'final',`${title} — final 5 min`,`${callTxt}. Checking every 5 s.`);
   if(phase==='live')evwNotify(g.key,'live',`${title} released`,`Tracking gold's reaction vs the ${p.goldDir} call.`);
@@ -5333,7 +5336,7 @@ function renderAnalysis(){
   const el=document.getElementById('analysisContainer');if(!el)return;
   const bias=mtfBias(sym);
   const biasCls=bias.bias==='BULL'?'bull':bias.bias==='BEAR'?'bear':'mix';
-  const biasTxt=bias.bias==='BULL'?`▲ BULLISH BIAS (${bias.bulls}/${bias.total} timeframes)`:bias.bias==='BEAR'?`▼ BEARISH BIAS (${bias.bears}/${bias.total} timeframes)`:'◆ MIXED / RANGING — timeframes disagree';
+  const biasTxt=!bias.total?'DATA UNAVAILABLE — insufficient candle history':bias.bias==='BULL'?`▲ BULLISH BIAS (${bias.bulls}/${bias.total} timeframes)`:bias.bias==='BEAR'?`▼ BEARISH BIAS (${bias.bears}/${bias.total} timeframes)`:'◆ MIXED / RANGING — timeframes disagree';
   const lv=keyLevels(sym);
   const obs=[...orderBlocks(sym).map(o=>({...o,tf:'15m'})),...orderBlocks(sym,'1h').slice(0,2).map(o=>({...o,tf:'1H'}))];
   const eta=estimateTimeToTarget(sym);
@@ -5344,7 +5347,7 @@ function renderAnalysis(){
   html+=`<div style="display:flex;justify-content:space-between;align-items:center;font-size:10.5px;color:var(--dim);margin:-3px 0 10px"><span>🕐 ${sessionSummaryLine()}</span><a href="#" onclick="showTab('session',document.querySelector('[data-tab=session]'));return false" style="color:var(--acc2,#4fc3f7);text-decoration:none">Full session detail ↗</a></div>`;
   html+=mtfStripHtml(sym);
   const tCur=mtfTrend[sym]||{};
-  if(tCur['1m']==null||tCur['5m']==null)html+=`<div style="font-size:9.5px;color:var(--dim);margin:-3px 0 10px">1m/5m still gathering live data — resolves within ~12 minutes of keeping the app open.</div>`;
+  if(tCur['1m']==null||tCur['5m']==null)html+=`<div style="font-size:9.5px;color:var(--dim);margin:-3px 0 10px">1m/5m data is incomplete. Analysis requires a usable feed; keeping the app open alone may not resolve this.</div>`;
 
   html+=`<div class="ic"><div class="it">📐 Key Support &amp; Resistance</div><div class="ib">`;
   if(!lv.sup.length&&!lv.res.length){html+=`<span style="color:var(--dim)">Not enough candle history yet — keep the app open a few minutes.</span>`;}
@@ -5364,7 +5367,7 @@ function renderAnalysis(){
   html+=`</div></div>`;
 
   html+=`<div class="ic"><div class="it">🧱 Order Blocks (recent)</div><div class="ib">`;
-  if(!obs.length)html+=`<span style="color:var(--dim)">No unmitigated order block right now — every recent displacement zone has been broken.</span>`;
+  if(!obs.length)html+=`<span style="color:var(--dim)">No confirmed order blocks available in the loaded candle history.</span>`;
   else obs.forEach(o=>{html+=`<div class="lvl-row"><span class="lvl-tag ${o.type==='BULL'?'ob-bull':'ob-bear'}">${o.tf||'15m'} ${o.type==='BULL'?'BULL OB':'BEAR OB'}</span><span>${fmtP(sym,o.bottom)} – ${fmtP(sym,o.top)}<br><span style="font-size:9px;color:var(--dim)">${o.fresh?'🟢 fresh — untested':'🟡 tested '+o.tested+'× and held'} · impulse ${o.strength}×ATR</span></span><span style="color:var(--dim)">${new Date(o.t).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</span></div>`;});
   html+=`<div style="font-size:9.5px;color:var(--dim);margin-top:4px">Bullish OB = last down-candle before a strong up-move · Bearish OB = last up-candle before a strong down-move. Price often reacts when revisiting these zones.</div></div></div>`;
 
@@ -5761,9 +5764,13 @@ async function riyanApi(path,opts={}){
   const headers={'Accept':'application/json',...(opts.headers||{})};
   if(opts.body)headers['Content-Type']='application/json';
   if(opts.method&&opts.method!=='GET'){headers['X-CSRF-Token']=riyanCsrf;headers['X-Paper-Engine']=paperEngine.id;}
-  const response=await fetch(path,{...opts,credentials:'same-origin',cache:'no-store',headers});
-  if(!response.ok)throw Error('HTTP '+response.status);
-  return response.status===204?null:response.json();
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
+  try{
+    const response=await fetch(path,{...opts,credentials:'same-origin',cache:'no-store',headers,signal:controller.signal});
+    if(!response.ok)throw Error('HTTP '+response.status);
+    return response.status===204?null:await response.json();
+  }catch(e){if(e.name==='AbortError')throw Error('Database request timed out');throw e;}
+  finally{clearTimeout(timer);}
 }
 // Lightweight fingerprints avoid resubmitting identical snapshots every minute.
 // Actual writes remain idempotent in PostgreSQL (jsonb comparison and UNIQUE keys).
@@ -5805,10 +5812,14 @@ function riyanQueue(type,id,obj){
     localStorage.setItem(key,JSON.stringify(pending));
   }catch(e){console.warn('Failed to queue DB record (storage unavailable):',e);}
 }
-let riyanSyncing=false;
-async function riyanProcessQueue(){
-  if(!currentUser||currentUser.role==='guest'||riyanSyncing)return;
-  riyanSyncing=true;
+let riyanSyncing=null;
+function riyanProcessQueue(){
+  if(!currentUser||currentUser.role==='guest')return Promise.resolve();
+  if(riyanSyncing)return riyanSyncing;
+  riyanSyncing=riyanDrainQueue().finally(()=>{riyanSyncing=null;});
+  return riyanSyncing;
+}
+async function riyanDrainQueue(){
   const user=currentUser.username,key='riyan_pending_'+user;
   const failedKey='riyan_failed_'+user;
   try{
@@ -5886,7 +5897,7 @@ async function riyanProcessQueue(){
     const badge=document.getElementById('riyanSyncBtn');
     if(badge)badge.textContent='☁ DB Sync error';
     return {error:String(e.message||e)};
-  }finally{riyanSyncing=false;}
+  }
 }
 async function riyanRetryFailed(){
   const user=currentUser?.username;

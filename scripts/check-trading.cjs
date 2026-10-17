@@ -67,3 +67,31 @@ context.currentUser=null;assert.equal(context.paperReady(),false);
 console.log('PASS stale/future quote, expired engine lease and logout gates');
 
 for(const file of ['trading-core.js','paper-engine.js','basket-demo.js','basket-replay.js'])new vm.Script(fs.readFileSync('src/main/resources/static/'+file,'utf8'));
+
+(async()=>{
+ const saved=new Map([['riyan_pending_syncuser',JSON.stringify({'analysis|one':{type:'analysis',id:'one',value:'{"ok":true}'}})]]);
+ let release,started,requests=0;
+ const start=new Promise(resolve=>started=resolve),gate=new Promise(resolve=>release=resolve);
+ const sync=vm.createContext({Date,JSON,Object,Set,Promise,console,encodeURIComponent,
+  currentUser:{username:'syncuser',role:'user'},paperEngine:{leaseUntil:0},
+  localStorage:{getItem:k=>saved.get(k)||null,setItem:(k,v)=>saved.set(k,v)},
+  document:{getElementById:()=>null},riyanFingerprint:()=> 'saved',
+  riyanSafeRecordId:async(type,id)=>id,
+  riyanApi:async()=>{requests++;started();await gate;},
+  showToast:()=>{},paperReconcileConflict:async()=>false});
+ vm.runInContext(extract('let riyanSyncing=', 'async function riyanRetryFailed'),sync);
+ const first=vm.runInContext('riyanProcessQueue()',sync);
+ await start;
+ const concurrent=vm.runInContext('riyanProcessQueue()',sync);
+ assert.equal(concurrent,first,'heartbeat and background sync must share the active flush');
+ release();const result=await concurrent;
+ assert.equal(result.pending,0);assert.equal(result.sent,1);assert.equal(requests,1);
+ let deadline,cleared=false;
+ const api=vm.createContext({AbortController,Error,riyanCsrf:'test',paperEngine:{id:'test'},
+  setTimeout:fn=>{deadline=fn;return 1;},clearTimeout:()=>{cleared=true;},
+  fetch:async(path,opts)=>new Promise((resolve,reject)=>opts.signal.addEventListener('abort',()=>reject(Object.assign(new Error('aborted'),{name:'AbortError'}))))});
+ vm.runInContext(extract('async function riyanApi(', '// Lightweight fingerprints'),api);
+ const pending=vm.runInContext("riyanApi('/test')",api);deadline();
+ await assert.rejects(pending,/Database request timed out/);assert(cleared);
+ console.log('PASS concurrent sync shares completion and stalled API requests time out');
+})().catch(error=>{console.error(error);process.exitCode=1;});
