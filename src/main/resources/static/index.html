@@ -778,7 +778,7 @@ body{background:
   <div class="sig-wrap">
     <div class="trend-hdr"><div class="sec-ttl" style="margin:0">Market Trend</div><button class="recheck-btn" onclick="recheckTrends()">🔄 Re-check Trend</button></div>
     <div class="trend-strip" id="trendStrip"></div>
-    <div class="notice"><b>🧠 Engine v3 — trades like a disciplined trader:</b> direction comes only from the <b>4H + 1H</b> trend (both must agree), the market must actually be <b>trending</b> (ADX&nbsp;20+), and entries happen only on a <b>pullback into value</b> (EMA20/EMA50, an order block, or right after a liquidity sweep) with a real <b>trigger candle</b>. It refuses to <b>chase</b> stretched moves, stands aside <b>30 min before / 15 min after high-impact USD news</b> and during the 02:00–04:00 IST rollover, and blocks entries when <b>volume pressure</b> is on the other side.<br><b>★ HIGH</b> (quality 84+) → 0.02 lot · <b>◆ MED</b> (70–83) → 0.01 lot · every WAIT card tells you exactly what it's waiting for.<br><b>🔒 Stable levels:</b> closed candles only, TP/SL locked at entry. <b>👀 Reversal watch</b> still scans open trades across 1m→4h.</div>
+    <div class="notice"><b>🧠 Engine v3 — trades like a disciplined trader:</b> direction comes only from the <b>4H + 1H</b> trend (both must agree), the market must actually be <b>trending</b> (ADX&nbsp;20+), and entries happen only on a <b>pullback into value</b> (EMA20/EMA50, an order block, or right after a liquidity sweep) with a real <b>trigger candle</b>. It refuses to <b>chase</b> stretched moves, stands aside <b>30 min before / 15 min after high-impact USD news</b> and during the 02:00–04:00 IST rollover, and blocks entries when <b>volume pressure</b> is on the other side.<br><b>★ HIGH</b> (quality 84+) → 0.01 paper lot · <b>◆ MED</b> (70–83) → 0.01 paper lot · every WAIT card tells you exactly what it's waiting for.<br><b>🔒 Stable levels:</b> closed candles only, TP/SL locked at entry. <b>👀 Reversal watch</b> still scans open trades across 1m→4h.</div>
     <div class="notice" style="margin-top:8px"><b>🧪 Check it yourself:</b> Analytics → <b>Run backtest</b> replays Engine v3 over the real candles on this device and shows its actual win rate and R. Use that — not hope — to judge it. Few signals is by design: the engine would rather miss a trade than take a bad one.</div>
     <div id="signalsContainer"></div>
   </div>
@@ -1043,12 +1043,12 @@ body{background:
       <b>🧭 Manual & 📉 Analytics:</b> always give a full plan — entry (market or limit at the pullback), stop beyond structure, TP1 1R / TP2 next liquidity / TP3 runner, $ risk at your lot size, and the exact price that proves the idea wrong. Graded CONFIRMED only when every gate passes; otherwise LOWER CONFIDENCE with what to wait for. Never counted in Dashboard or P&L.<br>
       <b>🧪 Backtest:</b> Analytics → Run backtest replays Engine v3 on the real candles on your device, with no look-ahead, and reports win rate, R and profit factor.<br>
       <b>🔥 Spike badge:</b> shown on the trend strip when ATR expands sharply vs its own recent average (or, for BTC, when real candle volume runs high) — a heads-up that a bigger move may be underway. Informational only — it doesn't change entries or exits.<br>
-      <b>Duplicate alerts:</b> if KMR is open in more than one tab on the same device/browser at once, only one tab sends each Telegram/email alert — the rest detect they lost the claim and stay silent. This doesn't cover different browsers or different devices open at the same time (each is a fully separate instance with nothing to coordinate through) — keep KMR open in just one place to avoid duplicates entirely.<br>
+      <b>Duplicate alerts:</b> if KMR is open in more than one tab on the same device/browser at once, only one tab sends each Telegram/email alert — the rest detect they lost the claim and stay silent. A server lease selects one active paper engine per account across browsers; durable signal keys reject duplicate entries. The engine pauses while ownership or saved records are being restored.<br>
       <b>🔒 Stability:</b> All checks run on <b>closed candles only</b> — the live forming candle is ignored, so indicators can't flicker mid-candle. Once a signal fires, entry/TP1/TP2/TP3/SL are frozen until the trade closes, followed by a 15-min cooldown per symbol.
     </div></div>
-    <div class="ic"><div class="it">💰 Dynamic Lot Sizing</div><div class="ib">
-      <b>★ HIGH (Engine v3 quality 84+, all gates passed):</b> 0.02 lot<br>
-      <b>◆ MED (quality 70–83, all gates passed):</b> 0.01 lot<br>
+    <div class="ic"><div class="it">💰 Fixed Paper Lot and Risk Limits</div><div class="ib">
+      <b>★ HIGH (Engine v3 quality 84+, all gates passed):</b> 0.01 paper lot<br>
+      <b>◆ MED (quality 70–83, all gates passed):</b> 0.01 paper lot<br>
       <b>Trade management (v2):</b> TP1 → 50% closed, SL to breakeven. TP2 → 30% closed, SL to TP1. TP3 → final 20%. A raised stop reduces risk, but gaps and execution costs can still produce a net loss. All results are paper estimates.<br>
       Both fire alerts + saved to history. MED signals clearly marked.<br>
       <b>S&R TP/SL:</b> SL below/above nearest swing level + ATR buffer. TP at next S&R zone. Min 1.5:1 R:R.
@@ -1082,10 +1082,10 @@ body{background:
 <div id="evPop" class="evpop" role="status" aria-live="polite"></div>
 <button id="evFab" class="evfab" onclick="evwReopen()" aria-label="Show next event popup"></button>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-<script src="/trading-core.js"></script>
-<script src="/paper-engine.js"></script>
-<script src="/basket-demo.js"></script>
-<script src="/basket-replay.js"></script>
+<script src="/trading-core.js?v=20261017-1"></script>
+<script src="/paper-engine.js?v=20261017-1"></script>
+<script src="/basket-demo.js?v=20261017-1"></script>
+<script src="/basket-replay.js?v=20261017-1"></script>
 <script>
 // Init EmailJS lazily once public key is set (see saveNotifSettings)
 let emailJsInited=false;
@@ -1836,8 +1836,8 @@ async function bootstrapAll(){
   await Promise.all([fetchLiveCrypto(),fetchLiveMetals()]);
   calibrateMetal('XAUUSD');calibrateMetal('XAGUSD');lastOhlcSync=Date.now();
   const t=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-  const ok=(metalsOk?2:0)+(cryptoOk?1:0);
-  setSbar(`✓ ${t} IST · ${ok}/3 live · ${signalHistory.length} signals cached`);
+  const ok=SYMS.filter(freshQuote).length;
+  setSbar(`✓ ${t} IST · ${ok}/3 fresh quotes · ${signalHistory.length} signals cached`);
   evaluateSignals();
   if(document.getElementById('ts').style.display!=='none')renderSignals();
 }
@@ -2198,7 +2198,8 @@ function computeSignal(sym){
   // (the live forming candle wiggles every tick and used to make levels "fluctuate").
   const candles=kmrClosed(getCandles(sym));
   if(!candles||candles.length<30||Date.now()-candles.at(-1).t>30*60e3){
-    return{state:'WAIT',score:0,total:8,conditions:[],reason:ASSETS[sym].isCrypto?'Loading Binance candles...':'Loading OHLC data...',lot:0,confidence:null};
+    marketTrend[sym]=null;
+    return{state:'WAIT',dataUnavailable:true,score:0,total:8,conditions:[],reason:'Complete, recent candle history unavailable — entries paused',lot:0,confidence:null};
   }
   const s=kmrScan(sym,candles);
   if(!freshQuote(sym)||calendarCache===null||Date.now()-calendarCacheAt>30*60e3)return{state:'WAIT',score:0,total:8,conditions:[],reason:!freshQuote(sym)?'Fresh quote unavailable':'Economic calendar unavailable — entries paused',lot:0,confidence:null};
@@ -4112,7 +4113,7 @@ function renderScalpTab(){
     <div class="sc-chk">${SYMS.map(s=>`<label><input type="checkbox" ${c.assets[s]?'checked':''} onchange="scalpSet('asset:${s}',this.checked)"> ${ICONS[s]} ${ASSETS[s].sym}</label>`).join('')}
       <label><input type="checkbox" ${c.stopAtGoal?'checked':''} onchange="scalpSet('stopAtGoal',this.checked)"> Pause when the daily goal is hit</label>
       <label><input type="checkbox" ${c.continuation?'checked':''} onchange="scalpSet('continuation',this.checked)"> Experimental EMA9 continuation entries (opt in)</label></div>
-    <div class="sc-note">The lot is sized from these numbers: TP pays about your profit target after spread; if the stop would cost more than your max loss, the lot is cut (and the setup skipped if even 0.01 lot is too big). EMA9 continuation is optional/experimental: its stop uses the last closed swing plus ATR buffer and can be hit more often. Preview is not a signal.</div>
+    <div class="sc-note">Paper entries use a fixed 0.01 lot. TP targets your requested profit after estimated spread. The structural stop stays intact; a setup is skipped when its planned loss exceeds your per-trade or account risk limit. EMA9 continuation is optional/experimental: its stop uses the last closed swing plus ATR buffer and can be hit more often. Preview is not a signal.</div>
   </div></div>
   <div class="ic"><div class="it">🧪 Replay — how would these settings have done?</div><div class="ib">
     <div class="sc-note" style="margin-bottom:8px">Runs this exact engine over the last ~3.5 days of real 5-minute candles, candle by candle, with no peeking ahead. News pauses aren't replayed, so live results can differ.</div>
@@ -4477,7 +4478,7 @@ function lockedCard(sym,a,r,isAdmin,isNew){
     ${qualityMeterHtml({state:r.dir,score:r.score,total:r.total,conditions:r.conditions||[],mtf:r.mtf||{},atrVal:r.atr,price:r.price,smartScore:r.smartScore},sym)}
     <div class="tp-ladder">${rung('TP1',r.tp1,r.tp1Hit)}${rung('TP2',r.tp2,r.tp2Hit)}${rung('TP3',r.tp3,false)}</div>
     <div class="tpsl-row">
-      <div class="tpsl-box"><div class="tpsl-label">STOP LOSS${r.beMoved?' · MOVED 🔓':''}</div><div class="tpsl-val ${r.beMoved?'':'sl-val'}" style="${r.beMoved?'color:var(--acc)':''}">${fmtP(sym,r.slNow!=null?r.slNow:r.sl)}</div>${r.beMoved?`<div class="tpsl-sub" style="color:var(--grn)">Breakeven — can't lose now</div>`:''}</div>
+      <div class="tpsl-box"><div class="tpsl-label">STOP LOSS${r.beMoved?' · MOVED 🔓':''}</div><div class="tpsl-val ${r.beMoved?'':'sl-val'}" style="${r.beMoved?'color:var(--acc)':''}">${fmtP(sym,r.slNow!=null?r.slNow:r.sl)}</div>${r.beMoved?`<div class="tpsl-sub" style="color:var(--grn)">Stop raised — gaps and costs can still cause a loss</div>`:''}</div>
       <div class="tpsl-box"><div class="tpsl-label">LOT · R:R</div><div class="tpsl-val">${(+r.lot).toFixed(4)} · 1:${r.rr}</div>${(r.realUsd||0)>0?`<div class="tpsl-sub" style="color:var(--grn)">Banked +$${r.realUsd.toFixed(2)}</div>`:''}</div>
     </div>
     ${adminRow}
@@ -4491,18 +4492,16 @@ function lockedCard(sym,a,r,isAdmin,isNew){
 // metals market is shut, so it's obvious nothing is being scanned right now (and why),
 // rather than showing a WAIT card with checks that implies live scanning is happening.
 function closedMarketCard(sym,a){
-  const d=new Date();const day=d.getDay();
-  const reopenTxt=day===5?'reopens Sunday evening':day===6?'reopens Sunday evening':day===0?'reopens tonight':'reopens shortly';
   return `<div class="sig-card" style="opacity:.7">
     <div class="sig-hdr">
-      <div class="sig-left"><span style="font-size:16px">${ICONS[sym]}</span><div><div class="sig-sym">${a.sym}</div><div class="sig-price">Market closed for the weekend</div></div></div>
+      <div class="sig-left"><span style="font-size:16px">${ICONS[sym]}</span><div><div class="sig-sym">${a.sym}</div><div class="sig-price">Outside modeled metals session</div></div></div>
       <div class="sig-badge" style="background:rgba(255,255,255,.08);color:var(--dim)">🔒 CLOSED</div>
     </div>
-    <div style="text-align:center;color:var(--dim);font-size:11.5px;padding:14px 8px 4px">No new ${a.sym} signals fire while the market's shut (Sat–Sun, IST) — ${reopenTxt}. BTC keeps trading and scanning as usual.</div>
+    <div style="text-align:center;color:var(--dim);font-size:11.5px;padding:14px 8px 4px">New ${a.sym} entries are paused under the New York session schedule (including its daily break). Broker hours can differ. BTC entries still require fresh quotes and complete candles.</div>
   </div>`;
 }
 function signalQuality(sig,sym){
-  if(!sig)return {score:0,label:'LOADING',chips:[]};
+  if(!sig||sig.dataUnavailable)return {score:0,label:'DATA UNAVAILABLE',gatesOk:false,chips:[['WAIT FOR DATA','warn']]};
   if(sig.smart||sig.smartScore!=null){
     const sm=sig.smart,score=sm?sm.score:sig.smartScore;
     const gk=k=>sm?sm.gates.find(g=>g.key===k):null;
@@ -4973,11 +4972,11 @@ function trendCell(sym){
   const t=marketTrend[sym];
   const spike=volSpike[sym];
   const spikeBadge=spike?.spiking?`<div class="spike-badge" title="Volatility expanding — ATR ${spike.atrRatio.toFixed(1)}x normal${spike.volRatio?` · Volume ${spike.volRatio.toFixed(1)}x`:''}">🔥 SPIKE</div>`:'';
-  if(!t)return `<div class="trend-cell"><div class="trend-vid" style="display:flex;align-items:center;justify-content:center;font-size:22px">⏳</div><div class="trend-sym">${ASSETS[sym].sym}</div><div class="trend-lbl" style="color:var(--dim)">READING</div></div>`;
+  if(!t)return `<div class="trend-cell"><div class="trend-vid" style="display:flex;align-items:center;justify-content:center;font-size:22px">⏳</div><div class="trend-sym">${ASSETS[sym].sym}</div><div class="trend-lbl" style="color:var(--dim)">DATA UNAVAILABLE</div></div>`;
   const bull=t==='BULL';
   return `<div class="trend-cell ${bull?'bull':'bear'}">
     ${spikeBadge}
-    <video class="trend-vid" src="${bull?'bull.mp4':'bear.mp4'}" autoplay loop muted playsinline></video>
+    <div class="trend-vid" style="display:flex;align-items:center;justify-content:center;font-size:22px">${bull?'▲':'▼'}</div>
     <div class="trend-sym">${ASSETS[sym].sym}</div>
     <div class="trend-lbl" style="color:var(--${bull?'grn':'red'})">${bull?'▲ BULLISH':'▼ BEARISH'}</div>
   </div>`;
@@ -5707,8 +5706,8 @@ async function bootApp(){
     await checkTrendFlips();
     if(document.getElementById('tpn').style.display!=='none')renderPnl();
     const t=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-    const ok=(metalsOk?2:0)+(cryptoOk?1:0);
-    setSbar(`✓ ${t} IST · ${ok}/3 · ${signalHistory.length} signals`);
+    const ok=SYMS.filter(freshQuote).length;
+    setSbar(`✓ ${t} IST · ${ok}/3 fresh quotes · ${signalHistory.length} signals`);
     if(document.getElementById('ts').style.display!=='none')renderSignals();
     if(document.getElementById('th').style.display!=='none')renderHistory();
     if(document.getElementById('tan').style.display!=='none')renderAnalysis();

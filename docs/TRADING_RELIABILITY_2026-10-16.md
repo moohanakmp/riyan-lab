@@ -2,7 +2,7 @@
 
 Prepared for `moohanakmp/riyan-lab`, branch `staging/backend-auth-20261016`, based on staging commit `a6a94814dcf2d7d0cc84c1420fe1f103e7e8b315`.
 
-**Release verification in progress.** The user explicitly approved pushing to the existing staging branch. The earlier publication block is superseded by that approval. No production database, broker account, or trading settings were changed during this implementation.
+**Published to staging; live verification in progress.** The user explicitly approved pushing to the existing staging branch. The earlier publication block is superseded by that approval. No production database, broker account, or trading settings were changed during this implementation.
 
 ## Changes
 
@@ -34,7 +34,15 @@ Migration V5 adds lease and deduplication tables. V1–V4 were not edited; the V
 - **8 PostgreSQL integration tests were skipped**, including the new concurrent-entry and engine-takeover tests. The local environment only maps root and does not permit creating the unprivileged process PostgreSQL requires. The existing GitHub workflow provisions PostgreSQL 17 and Java 21 and enables these tests.
 - `git diff --check` — passed.
 
-## Release gate after publication approval
+## Staging verification — 17 October 2026
+
+- Published commit `f036eb8020d38041a287afcfca95519f8248ab3b` directly to the requested staging branch.
+- GitHub Actions run `38995660944`: Java 21 / PostgreSQL 17, **15 tests passed, zero failures or skips**; all four frontend regression scripts passed.
+- Render health returned HTTP 200 and UP. The deployed index, trading-core and paper-engine files matched the published source byte for byte.
+- Authenticated reload, Signals, Low Profit and combined P&L rendered. Feed history was unavailable, so signals remained WAIT. Live paper-entry/exit scenarios cannot be certified without a usable candle feed.
+- Follow-up from live testing: version application modules to avoid mixing old and new scripts during rollout; correct fixed-lot, stop-gap, session and freshness labels. Engine restoration remains under investigation.
+
+## Remaining release gates
 
 1. Push the reviewed fixes directly to `staging/backend-auth-20261016`, as explicitly requested.
 2. Require the Java 21/PostgreSQL integration workflow and all frontend checks to pass; fix any failures before merging.
