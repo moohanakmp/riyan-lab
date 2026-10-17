@@ -2,6 +2,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
 const {webcrypto}=require('node:crypto');
+const PaperMath=require('../src/main/resources/static/trading-core.js');
 const h=fs.readFileSync('src/main/resources/static/index.html','utf8');
 function extract(start,end){
  const a=h.indexOf(start),b=h.indexOf(end,a+start.length);
@@ -40,7 +41,7 @@ function extract(start,end){
   const t=now-(300-i)*300000;
   return {t,o:100+i*.01,h:100.3+i*.01,l:99.8+i*.01,c:100.1+i*.01,v:12};
  });
- const context=vm.createContext({ohlcData:{XAUUSD:{'15m':[]}},Date,Math,Array,Object});
+ const context=vm.createContext({PaperMath,ohlcData:{XAUUSD:{'15m':[]}},Date,Math,Array,Object});
  vm.runInContext(closedLine+'\n'+agg+'\n'+select,context);
  const selector=vm.runInContext('scalpClosed15m',context);
  const fallback=selector('XAUUSD',bars,now);
@@ -56,10 +57,10 @@ function extract(start,end){
  assert.equal(stale[stale.length-1].c,fallback[fallback.length-1].c);
  console.log('PASS Low Profit completed 15m fallback, stale-feed recovery and closed-candle gate');
 
- const evaluateCode=extract('function scalpEvaluate(sym){','function scalpOpen(sym,scan,lv){');
+ const evaluateCode=extract('function scalpEvaluate(sym){','async function scalpOpen(sym,scan,lv){');
  let opened=0, gatesOk=true,barT=now-300000;
  const evalContext=vm.createContext({
-   Date,Math,console,
+   Date,Math,console,paperReady:()=>true,freshQuote:()=>true,
    basketDemo:{enabled:false,active:null},
    scalpState:{XAUUSD:{feedError:'',cooldown:0}},
    scalpData:{XAUUSD:bars},

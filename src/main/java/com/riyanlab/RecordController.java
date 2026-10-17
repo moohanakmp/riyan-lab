@@ -35,8 +35,9 @@ public class RecordController {
     );
     private final JdbcTemplate jdbc;
     private final AuthService auth;
-    public RecordController(JdbcTemplate jdbc,AuthService auth) {
-        this.jdbc=jdbc;this.auth=auth;
+    private final PaperTradingService paper;
+    public RecordController(JdbcTemplate jdbc,AuthService auth,PaperTradingService paper) {
+        this.jdbc=jdbc;this.auth=auth;this.paper=paper;
     }
     private String table(String type) {
         String mapped=TABLES.get(type);
@@ -59,20 +60,28 @@ public class RecordController {
 
     @GetMapping("/records/{type}")
     public List<Map<String,Object>> list(@PathVariable String type,HttpServletRequest request,
-               @RequestParam(defaultValue="200") int limit) {
+               @RequestParam(defaultValue="200") int limit,@RequestParam(defaultValue="0") int offset) {
         AuthService.Identity identity=auth.require(request,false);
         auth.mayRead(identity,type);
         String sql="SELECT source_id,payload::text AS payload,created_by,updated_by,created_at,updated_at FROM "
             +table(type);
-        if (("user-state".equals(type) || basketType(type)) && !"admin".equals(identity.role()))
-            return jdbc.queryForList(sql+" WHERE created_by=? ORDER BY updated_at DESC LIMIT ?",
-                identity.username(),Math.max(1,Math.min(limit,1000)));
-        return jdbc.queryForList(sql+" ORDER BY updated_at DESC LIMIT ?",Math.max(1,Math.min(limit,1000)));
+        if (PaperTradingService.isTrade(type) || (("user-state".equals(type) || basketType(type)) && !"admin".equals(identity.role())))
+            return jdbc.queryForList(sql+" WHERE created_by=? ORDER BY updated_at DESC,source_id DESC LIMIT ? OFFSET ?",
+                identity.username(),Math.max(1,Math.min(limit,1000)),Math.max(0,offset));
+        return jdbc.queryForList(sql+" ORDER BY updated_at DESC,source_id DESC LIMIT ? OFFSET ?",Math.max(1,Math.min(limit,1000)),Math.max(0,offset));
     }
 
     private String field(JsonNode node,String... keys) {
         for(String key:keys)if(node.hasNonNull(key) && !node.get(key).isContainerNode())return node.get(key).asText();
         return null;
+    }
+
+    @GetMapping("/records/{type}/{sourceId}")
+    public Map<String,Object> one(@PathVariable String type,@PathVariable String sourceId,HttpServletRequest request){
+        var identity=auth.require(request,false);auth.mayRead(identity,type);
+        var rows=jdbc.queryForList("SELECT payload::text AS payload FROM "+table(type)+" WHERE source_id=? AND created_by=?",sourceId,identity.username());
+        if(rows.isEmpty())throw new ResponseStatusException(HttpStatus.NOT_FOUND,"Record not found");
+        return rows.get(0);
     }
     private BigDecimal number(JsonNode node,String... keys) {
         String value=field(node,keys);
@@ -117,6 +126,14 @@ public class RecordController {
                 return ResponseEntity.badRequest().build();
         }
         String target=table(type),raw=payload.toString();
+        if(PaperTradingService.isTrade(type)||"basket-sessions".equals(type)) {
+            paper.lock(identity.username());
+            jdbc.queryForList("SELECT pg_advisory_xact_lock(hashtextextended(?,0))","record:"+type+":"+sourceId);
+            paper.requireLease(identity.username(),request.getHeader("X-Paper-Engine"));
+            List<String> owners=jdbc.query("SELECT created_by FROM "+target+" WHERE source_id=?",(rs,n)->rs.getString(1),sourceId);
+            if(!owners.isEmpty()&&!identity.username().equals(owners.get(0)))
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Paper ledger is user-owned");
+        }
         List<String> previous=jdbc.query("SELECT payload::text FROM "+target+" WHERE source_id=? FOR UPDATE",
             (rs,rowNum)->rs.getString(1),sourceId);
         if(!previous.isEmpty()) {
@@ -124,6 +141,7 @@ public class RecordController {
             Boolean unchanged=jdbc.queryForObject("SELECT ?::jsonb=?::jsonb",Boolean.class,previous.get(0),raw);
             if(Boolean.TRUE.equals(unchanged)) return ResponseEntity.ok(Map.of("saved",true,"unchanged",true,"sourceId",sourceId));
         }
+        paper.validate(identity.username(),type,sourceId,payload,previous.isEmpty()?null:previous.get(0));
         String conditions=payload.path("conditions").isMissingNode()?null:payload.path("conditions").toString();
         String reason=field(payload,"reason","strategy");
         if(reason==null && payload.path("conditions").isArray()) {

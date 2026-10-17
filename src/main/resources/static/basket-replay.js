@@ -4,7 +4,8 @@
 // A trigger detected at the close of bar i enters no earlier than bar i+1 open.
 function basketReplaySimulation(sym,history,cfg){
   if(!history||history.length<240)return{ok:false,reason:'Insufficient 5m candle history'};
-  var all=history.slice(0,-1),start=Math.max(200,all.length-799);
+  var all=PaperMath.closed(history,300000),start=Math.max(200,all.length-799);
+  if(all.length<240)return{ok:false,reason:'Insufficient valid closed 5m history'};
   var baskets=[],active=null,blocked=0,entries=0,maxPositions=0;
   var acceptedBars=new Set(),rejects={},daily=new Map(),cool=0;
   var countReject=reason=>{blocked++;rejects[reason]=(rejects[reason]||0)+1;};
@@ -22,7 +23,7 @@ function basketReplaySimulation(sym,history,cfg){
     cool=at+(net<0?15:5)*60000;
     active=null;
   }
-  for(var i=start;i<all.length-1;i++){
+  for(var i=start;i<all.length;i++){
     var candle=all[i],at=candle.t+300000;
     if(active&&candle.t>=active.createdAt){
       var stops=active.positions.filter(p=>
@@ -45,6 +46,7 @@ function basketReplaySimulation(sym,history,cfg){
         }
       }
     }
+    if(i===all.length-1)continue;
     if(at<cool || (active&&active.positions.length>=5))continue;
     var dayPnl=daily.get(istDayKey(at))||0;
     if(dayPnl<=-cfg.dayStop||(cfg.stopAtGoal&&dayPnl>=cfg.goal))continue;

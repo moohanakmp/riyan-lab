@@ -678,7 +678,8 @@ body{background:
 </div>
 
 <!-- ═══ LOGIN SCREEN ═══ -->
-<div id="loginScreen">
+<div id="authLoading" role="status" style="padding:40px;text-align:center">Restoring your session…</div>
+<div id="loginScreen" style="display:none">
   <div class="login-art" aria-hidden="true"><img class="b" src="art/art-btc.svg" alt=""><img class="g" src="art/art-gold.svg" alt=""></div>
   <div class="login-logo">
     <div class="klogo klogo-xl">KMR</div>
@@ -1048,7 +1049,7 @@ body{background:
     <div class="ic"><div class="it">💰 Dynamic Lot Sizing</div><div class="ib">
       <b>★ HIGH (Engine v3 quality 84+, all gates passed):</b> 0.02 lot<br>
       <b>◆ MED (quality 70–83, all gates passed):</b> 0.01 lot<br>
-      <b>Trade management (v2):</b> TP1 → 50% closed, SL to breakeven. TP2 → 30% closed, SL to TP1. TP3 → final 20%. A trade that reaches TP1 can no longer end negative.<br>
+      <b>Trade management (v2):</b> TP1 → 50% closed, SL to breakeven. TP2 → 30% closed, SL to TP1. TP3 → final 20%. A raised stop reduces risk, but gaps and execution costs can still produce a net loss. All results are paper estimates.<br>
       Both fire alerts + saved to history. MED signals clearly marked.<br>
       <b>S&R TP/SL:</b> SL below/above nearest swing level + ATR buffer. TP at next S&R zone. Min 1.5:1 R:R.
     </div></div>
@@ -1081,6 +1082,8 @@ body{background:
 <div id="evPop" class="evpop" role="status" aria-live="polite"></div>
 <button id="evFab" class="evfab" onclick="evwReopen()" aria-label="Show next event popup"></button>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script src="/trading-core.js"></script>
+<script src="/paper-engine.js"></script>
 <script src="/basket-demo.js"></script>
 <script src="/basket-replay.js"></script>
 <script>
@@ -1139,8 +1142,8 @@ const FEATURE_SUB={
   prices:'Live price cards for XAU, XAG, BTC',
   chart:'TradingView chart tab',
   signals:'BUY/SELL signal cards with TP/SL',
-  historyHigh:'★ High confidence (0.02 lot) signal log',
-  historyMed:'◆ Medium confidence (0.01 lot) signal log',
+  historyHigh:'★ High model score signal log',
+  historyMed:'◆ Medium model score signal log',
   historyOverall:'Combined signal log & filters',
   analysis:'Trend, S&R, order blocks, news & calendar',
   session:'Session times + self-learned active-hours stats',
@@ -1192,6 +1195,7 @@ async function doLogin(){
     if(currentUser.role==='admin')await riyanLoadUsers();
     errEl.style.display='none';
     revealApp();applyRoleUI();
+    signalHistory=[];scalpHist=[];activeSignals={};sigCooldown={};paperEngine.until=0;
     basketLoad();
     await riyanRestore();
     await basketDbRestore();
@@ -1205,19 +1209,22 @@ async function doLogin(){
 async function doLogout(){
   try{await riyanApi('/api/v1/auth/logout',{method:'POST'});}
   catch(e){showToast('Could not revoke server session — retry logout','var(--red)');return;}
-  currentUser=null;riyanCsrf='';
+  currentUser=null;riyanCsrf='';paperEngine.until=0;
+  signalHistory=[];scalpHist=[];activeSignals={};sigCooldown={};
   basketDemo={enabled:false,active:null,history:[],events:[],lastBars:{},replays:{}};
   document.getElementById('loginUser').value='';
   document.getElementById('loginPass').value='';
   hideApp();
 }
 function revealApp(){
+  document.getElementById('authLoading').style.display='none';
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('appRoot').style.display='block';
   document.getElementById('tabsRow').style.display='flex';
   document.getElementById('mainScroll').style.display='block';
 }
 function hideApp(){
+  document.getElementById('authLoading').style.display='none';
   document.getElementById('loginScreen').style.display='flex';
   document.getElementById('appRoot').style.display='none';
   document.getElementById('tabsRow').style.display='none';
@@ -1466,7 +1473,7 @@ function dbGet(store,key){if(!db)return Promise.resolve(null);return new Promise
 function dbClear(store){if(!db)return Promise.resolve();return new Promise((res,rej)=>{const tx=db.transaction(store,'readwrite');tx.objectStore(store).clear();tx.oncomplete=()=>res();tx.onerror=()=>rej();});}
 
 async function loadHistory(){
-  try{const rows=await dbGetAll('signals');signalHistory=rows.sort((a,b)=>b.id-a.id);}catch(e){}
+  try{const rows=await dbGetAll('signals');signalHistory=rows.filter(r=>currentUser&&r.owner===currentUser.username).sort((a,b)=>b.id-a.id);}catch(e){}
   try{const a=await dbGet('state','activeSignals');if(a&&a.value)activeSignals=a.value;}catch(e){}
   try{const c=await dbGet('state','sigCooldown');if(c&&c.value)sigCooldown=c.value;}catch(e){}
   // Drop stale active refs (record missing or already closed)
@@ -1668,27 +1675,22 @@ function loadTVChart(){
 // a fetch() can silently be answered from cache instead of hitting the network — which
 // is exactly what made Prices/Signals lag behind the TradingView chart on this build.
 function liveFetch(url){
-  return fetch(url,{cache:'no-store'});
+  return fetch('/api/v1/market/data?url='+encodeURIComponent(url),{credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(12000)});
 }
 async function fetchBinanceKlines(sym,iv,lim){
   const r=await liveFetch(`https://api.binance.com/api/v3/klines?symbol=${sym}&interval=${iv}&limit=${lim}`);
   if(!r.ok)throw new Error('B'+r.status);
   const d=await r.json();
-  return d.map(k=>({t:k[0],o:+k[1],h:+k[2],l:+k[3],c:+k[4],v:+k[5]}));
+  if(!Array.isArray(d))throw Error('Invalid candle response');
+  const ms={'1m':60000,'5m':300000,'15m':900000,'30m':1800000,'1h':3600000,'4h':14400000,'1d':86400000}[iv];
+  const bars=d.map(k=>({t:+k[0],ms,o:+k[1],h:+k[2],l:+k[3],c:+k[4],v:+k[5]}));
+  if(bars.some((k,i)=>!PaperMath.valid(k)||(i>0&&k.t<=bars[i-1].t)||k.t>Date.now()+5000))throw Error('Invalid candle values or timestamps');
+  return bars;
 }
 // Groups 15m candles into real N-hour bars — used for metals, which only have a 15m
 // source. Returns a NEW array (never shares a reference with the 15m array), so live
 // tick updates to '1h'/'4h' don't corrupt '15m' or vice versa.
-function aggregate15m(c15,hours){
-  if(!c15?.length)return[];
-  const ms=hours*3600000,m={};
-  c15.forEach(k=>{
-    const bucket=Math.floor(k.t/ms)*ms;
-    if(!m[bucket])m[bucket]={t:bucket,o:k.o,h:k.h,l:k.l,c:k.c,v:k.v||0};
-    else{m[bucket].h=Math.max(m[bucket].h,k.h);m[bucket].l=Math.min(m[bucket].l,k.l);m[bucket].c=k.c;m[bucket].v+=k.v||0;}
-  });
-  return Object.values(m).sort((a,b)=>a.t-b.t);
-}
+function aggregate15m(c15,hours){return PaperMath.aggregate(c15,hours*60,900000);}
 function setMetalAgg(sym,c){ohlcData[sym]['15m']=c;ohlcData[sym]['1h']=aggregate15m(c,1);ohlcData[sym]['4h']=aggregate15m(c,4);}
 async function loadCandles(sym,tf){
   if(!ASSETS[sym].isCrypto||ohlcData[sym][tf]?.length>10)return;
@@ -1715,7 +1717,11 @@ async function fetchFapiKlines(sym,iv,lim,endTime){
   const r=await liveFetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${sym}&interval=${iv}&limit=${Math.min(lim,1500)}${endTime?`&endTime=${endTime}`:''}`);
   if(!r.ok)throw new Error('F'+r.status);
   const d=await r.json();if(!Array.isArray(d))throw new Error('Fbad');
-  return d.map(k=>({t:k[0],o:+k[1],h:+k[2],l:+k[3],c:+k[4],v:+k[5]}));
+  if(!Array.isArray(d))throw Error('Invalid candle response');
+  const ms={'1m':60000,'5m':300000,'15m':900000,'30m':1800000,'1h':3600000,'4h':14400000,'1d':86400000}[iv];
+  const bars=d.map(k=>({t:+k[0],ms,o:+k[1],h:+k[2],l:+k[3],c:+k[4],v:+k[5]}));
+  if(bars.some((k,i)=>!PaperMath.valid(k)||(i>0&&k.t<=bars[i-1].t)||k.t>Date.now()+5000))throw Error('Invalid candle values or timestamps');
+  return bars;
 }
 function calibrateMetal(sym){
   const r=metalRaw[sym];if(!r||!r['15m']?.length)return;
@@ -1723,7 +1729,7 @@ function calibrateMetal(sym){
   let f=metalBasis[sym]?.f||1;
   if(spot&&last){const nf=spot/last;if(nf>0.9&&nf<1.1)f=nf;}
   metalBasis[sym]={f,spot,proxy:last,at:Date.now()};
-  const sc=a=>(a||[]).map(k=>({t:k.t,o:k.o*f,h:k.h*f,l:k.l*f,c:k.c*f,v:k.v}));
+  const sc=a=>(a||[]).map(k=>({...k,o:k.o*f,h:k.h*f,l:k.l*f,c:k.c*f}));
   ohlcData[sym]['15m']=sc(r['15m']);ohlcData[sym]['1h']=sc(r['1h']);ohlcData[sym]['4h']=sc(r['4h']);
   if(spot)appendLiveTick(sym,spot);
   // Day change: metals' trading day opens at 17:00 New York (the same reference TradingView's
@@ -1781,8 +1787,8 @@ function appendLiveTick(sym,price){
   Object.entries(msMap).forEach(([tf,ms])=>{
     const d=ohlcData[sym][tf];if(!d?.length)return;
     const k=Math.floor(now/ms)*ms,l=d[d.length-1];
-    if(l.t===k){l.c=price;l.h=Math.max(l.h,price);l.l=Math.min(l.l,price);}
-    else if(k>l.t){d.push({t:k,o:price,h:price,l:price,c:price,v:0});if(d.length>CANDLE_LIMIT+50)d.shift();}
+    if(l.t===k){l.complete=false;l.c=price;l.h=Math.max(l.h,price);l.l=Math.min(l.l,price);}
+    else if(k>l.t){d.push({t:k,ms,complete:false,o:price,h:price,l:price,c:price,v:0});if(d.length>CANDLE_LIMIT+50)d.shift();}
   });
 }
 function buildMetalC(sym){
@@ -1793,7 +1799,7 @@ function buildMetalC(sym){
 function getCandles(sym){
   if(ASSETS[sym].isCrypto)return ohlcData[sym]['15m']||[];
   const loaded=ohlcData[sym]['15m']||[];if(loaded.length>=10)return loaded;
-  return buildMetalC(sym);
+  return []; // Tick samples cannot substitute for verified provider candles.
 }
 // Raw tick stream for a symbol — the same ticks that already drive live prices,
 // reused here (no extra API calls) to build fast 1m/5m candles for the MTF engine.
@@ -1811,7 +1817,7 @@ async function fetchLiveCrypto(){
   try{
     const r=await liveFetch('https://api.binance.com/api/v3/ticker/24hr?symbols=["BTCUSDT"]');
     const arr=await r.json();
-    arr.forEach(t=>{const sym='BTCUSD';const p=+t.lastPrice,chg=+t.priceChangePercent;if(dayOpen[sym]===undefined)dayOpen[sym]=+t.openPrice;prev[sym]=prices[sym];prices[sym]=p;btcTicks.push({t:Date.now(),p});if(btcTicks.length>3000)btcTicks.splice(0,500);appendLiveTick(sym,p);updateCard(sym,p,chg);checkOutcome(sym,p);});
+    arr.forEach(t=>{const sym='BTCUSD';const p=+t.lastPrice,chg=+t.priceChangePercent;if(!PaperMath.positive(p)||!Number.isFinite(+t.closeTime)||Math.abs(Date.now()-(+t.closeTime))>60000)throw Error('Stale BTC quote');if(dayOpen[sym]===undefined)dayOpen[sym]=+t.openPrice;prev[sym]=prices[sym];prices[sym]=p;quoteAt[sym]=Date.now();btcTicks.push({t:Date.now(),p});if(btcTicks.length>3000)btcTicks.splice(0,500);appendLiveTick(sym,p);updateCard(sym,p,chg);checkOutcome(sym,p);});
     cryptoOk=true;
   }catch(e){cryptoOk=false;}
 }
@@ -1819,9 +1825,9 @@ async function fetchLiveMetals(){
   try{
     const[gR,sR]=await Promise.all([liveFetch('https://api.gold-api.com/price/XAU'),liveFetch('https://api.gold-api.com/price/XAG')]);
     const g=await gR.json(),s=await sR.json();const now=Date.now();
-    if(g?.price){const p=g.price;if(dayOpen.XAUUSD===undefined)dayOpen.XAUUSD=p;prev.XAUUSD=prices.XAUUSD;prices.XAUUSD=p;metalTicks.XAUUSD.push({t:now,p});if(metalTicks.XAUUSD.length>3000)metalTicks.XAUUSD.splice(0,500);appendLiveTick('XAUUSD',p);updateCard('XAUUSD',p,(p-dayOpen.XAUUSD)/dayOpen.XAUUSD*100);checkOutcome('XAUUSD',p);}
-    if(s?.price){const p=s.price;if(dayOpen.XAGUSD===undefined)dayOpen.XAGUSD=p;prev.XAGUSD=prices.XAGUSD;prices.XAGUSD=p;metalTicks.XAGUSD.push({t:now,p});if(metalTicks.XAGUSD.length>3000)metalTicks.XAGUSD.splice(0,500);appendLiveTick('XAGUSD',p);updateCard('XAGUSD',p,(p-dayOpen.XAGUSD)/dayOpen.XAGUSD*100);checkOutcome('XAGUSD',p);}
-    metalsOk=true;
+    if(PaperMath.positive(g?.price)){const p=g.price;if(dayOpen.XAUUSD===undefined)dayOpen.XAUUSD=p;prev.XAUUSD=prices.XAUUSD;prices.XAUUSD=p;quoteAt.XAUUSD=now;metalTicks.XAUUSD.push({t:now,p});if(metalTicks.XAUUSD.length>3000)metalTicks.XAUUSD.splice(0,500);appendLiveTick('XAUUSD',p);updateCard('XAUUSD',p,(p-dayOpen.XAUUSD)/dayOpen.XAUUSD*100);checkOutcome('XAUUSD',p);}
+    if(PaperMath.positive(s?.price)){const p=s.price;if(dayOpen.XAGUSD===undefined)dayOpen.XAGUSD=p;prev.XAGUSD=prices.XAGUSD;prices.XAGUSD=p;quoteAt.XAGUSD=now;metalTicks.XAGUSD.push({t:now,p});if(metalTicks.XAGUSD.length>3000)metalTicks.XAGUSD.splice(0,500);appendLiveTick('XAGUSD',p);updateCard('XAGUSD',p,(p-dayOpen.XAGUSD)/dayOpen.XAGUSD*100);checkOutcome('XAGUSD',p);}
+    metalsOk=freshQuote('XAUUSD')&&freshQuote('XAGUSD');
   }catch(e){metalsOk=false;}
 }
 async function bootstrapAll(){
@@ -2169,7 +2175,7 @@ function kmrBacktest(all,opts){
 }
 
 // ═══ APP GLUE for Smart Engine v3 ═══════════════════════════════════════════════════════
-function kmrClosed(arr){return arr&&arr.length>1?arr.slice(0,-1):(arr||[]);}
+function kmrClosed(arr){return PaperMath.closed(arr);}
 // IST hour computed explicitly from UTC, so it's right even if the phone's clock is set to
 // a different timezone (istHourNow() elsewhere uses the device's local clock).
 function kmrIstHour(t){const ms=t==null?Date.now():t;return((ms/3600000+5.5)%24+24)%24;}
@@ -2191,10 +2197,11 @@ function computeSignal(sym){
   // Evaluated on CLOSED candles only, so a signal only changes when a candle completes
   // (the live forming candle wiggles every tick and used to make levels "fluctuate").
   const candles=kmrClosed(getCandles(sym));
-  if(!candles||candles.length<30){
+  if(!candles||candles.length<30||Date.now()-candles.at(-1).t>30*60e3){
     return{state:'WAIT',score:0,total:8,conditions:[],reason:ASSETS[sym].isCrypto?'Loading Binance candles...':'Loading OHLC data...',lot:0,confidence:null};
   }
   const s=kmrScan(sym,candles);
+  if(!freshQuote(sym)||calendarCache===null||Date.now()-calendarCacheAt>30*60e3)return{state:'WAIT',score:0,total:8,conditions:[],reason:!freshQuote(sym)?'Fresh quote unavailable':'Economic calendar unavailable — entries paused',lot:0,confidence:null};
   const C=candles.map(k=>k.c),e50=ema(C,50),px=C[C.length-1];
   marketTrend[sym]=e50==null?null:(px>e50?'BULL':'BEAR'); // trend strip + flip watch keep their old meaning
   const mtf=computeMTFTrend(sym);
@@ -2377,7 +2384,7 @@ const SESSION_OVERLAPS=[
   {name:'Tokyo–London overlap', startH:12.5, endH:14.5, note:'Thin overlap, moderate pickup'},
   {name:'London–New York overlap', startH:18.0, endH:21.5, note:'The single highest-volume window of the day — most major moves happen here'},
 ];
-function istHourNow(){const d=new Date();return d.getHours()+d.getMinutes()/60;}
+function istHourNow(){return kmrIstHour();}
 // ── WEEKEND MARKET-CLOSED CHECK (XAU/XAG only — BTC trades 24/7) ──
 // Spot gold/silver follow the standard FX week: close Friday ~5pm New York, reopen Sunday
 // ~5pm New York. Converted to IST that's roughly Sat ~2:30–3:30am through Mon ~2:30–3:30am,
@@ -2385,12 +2392,11 @@ function istHourNow(){const d=new Date();return d.getHours()+d.getMinutes()/60;}
 // Monday before 3:30am" — matches device-local time the same way istHourNow() already does
 // elsewhere in this file (approximation, not derived from the live feed — same caveat as the
 // Session tab's market-hours table).
-function isMetalsMarketOpen(){
-  const d=new Date();
-  const day=d.getDay(); // 0=Sun … 6=Sat
-  if(day===6||day===0)return false;
-  if(day===1&&istHourNow()<3.5)return false;
-  return true;
+function isMetalsMarketOpen(at=Date.now()){
+  const parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',weekday:'short',hour:'2-digit',hourCycle:'h23'}).formatToParts(new Date(at));
+  const day=parts.find(p=>p.type==='weekday').value,hour=+parts.find(p=>p.type==='hour').value;
+  // Reference FX/metals week with DST; holiday/session interruptions still depend on feed freshness.
+  return day!=='Sat'&&!(day==='Sun'&&hour<18)&&!(day==='Fri'&&hour>=17)&&!(hour===17);
 }
 function sessionActiveAt(sess,h){
   const end=sess.endH%24;const start=sess.startH%24;
@@ -2487,8 +2493,8 @@ function renderSessionTab(){
 // ═══ DASHBOARD (HOME) — today's P&L + live prices + open signals, one view ═══
 function renderDashboard(){
   const body=document.getElementById('dashboardBody');if(!body)return;
-  const now=new Date(),sod=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
-  const todayRows=signalHistory.filter(r=>sigTime(r)>=sod);
+  const now=new Date(Date.now()+19800000),sod=istDayKey(Date.now())*864e5-19800000;
+  const todayRows=allPaperRows().filter(r=>sigTime(r)>=sod);
   const st=pnlStats(todayRows);
   const col=st.pnl>0?'var(--grn)':st.pnl<0?'var(--red)':'var(--mut)';
   const hr=kmrIstHour(),greet=hr<5?'Late night session':hr<12?'Good morning':hr<17?'Good afternoon':'Good evening';
@@ -2511,7 +2517,7 @@ function renderDashboard(){
     const tcls=trend==='BULL'?'up':trend==='BEAR'?'dn':'';
     const state=!sc?'Loading…':sc.tier?`${sc.dir} setup · ${sc.score}/100`:(sc.wait||sc.reason||'Waiting');
     html+=`<div class="pulse a-${sym} ${sc&&sc.tier?'ready':''}" onclick="showTab('manual',document.querySelector('[data-tab=manual]'))">
-      <div class="pulse-h"><span>${ICONS[sym]} ${ASSETS[sym].sym}</span><b class="${tcls}">${trend==='BULL'?'▲ UPTREND':trend==='BEAR'?'▼ DOWNTREND':'◆ MIXED'}</b></div>
+      <div class="pulse-h"><span>${ICONS[sym]} ${ASSETS[sym].sym}</span><b class="${tcls}">${trend==='BULL'?'▲ UPTREND':trend==='BEAR'?'▼ DOWNTREND':!sc?.bias1h?'DATA UNAVAILABLE':'◆ MIXED'}</b></div>
       ${vp?`<div class="vp-bar sm"><div class="vp-buy" style="width:${vp.buyPct.toFixed(1)}%">${vp.buyPct.toFixed(0)}%</div><div class="vp-sell" style="width:${vp.sellPct.toFixed(1)}%">${vp.sellPct.toFixed(0)}%</div></div>`:`<div class="vp-empty" style="padding:4px 0">No volume data</div>`}
       <div class="pulse-s">${sc&&sc.tier?'🎯 ':'⏳ '}${state}</div>
     </div>`;
@@ -2701,7 +2707,7 @@ async function pagedKlines(sources,iv,rounds){
     for(let i=0;i<rounds;i++){
       try{
         const url=`${src.base}?symbol=${src.sym}&interval=${iv}&limit=${src.max}&endTime=${endTime}`;
-        const r=await fetch(url,{cache:'no-store'});
+        const r=await liveFetch(url);
         if(!r.ok){err=`HTTP ${r.status} from ${src.label}`;break;}
         const d=await r.json();
         if(!Array.isArray(d)||!d.length)break;
@@ -3509,10 +3515,10 @@ function newsTrackHtml(){
   updateNewsLog();
   const past=newsTrackRows(7*24*3600*1000,false);
   const next=newsTrackRows(7*24*3600*1000,true).slice(0,6);
-  const graded=past.filter(e=>e.graded&&!e.ungradeable&&e.pred&&e.pred.goldDir!=='NEUTRAL'&&e.goldDir!=='FLAT');
+  const graded=[...new Map(past.filter(e=>e.graded&&!e.ungradeable&&!e.late&&e.pred&&e.pred.goldDir!=='NEUTRAL'&&e.goldDir!=='FLAT').map(e=>[e.country+':'+e.ts,e])).values()];
   const hits=graded.filter(e=>e.matched).length;
   let html=`<div class="ic"><div class="it">📊 Past 7 Days — Gold call vs Gold reaction</div><div class="ib">`;
-  if(graded.length)html+=`<div class="nt-score"><b>${hits}/${graded.length}</b> calls matched · <b>${Math.round(hits/graded.length*100)}%</b> hit-rate <span style="color:var(--dim)">(flat reactions and no-lean calls excluded)</span></div>`;
+  if(graded.length)html+=`<div class="nt-score"><b>${hits}/${graded.length}</b> release groups matched · <b>${Math.round(hits/graded.length*100)}%</b> observed match rate <span style="color:var(--dim)">(one observation per release time; retrospective calls, flat reactions and no-lean calls excluded)</span></div>`;
   if(!past.length)html+=`<span style="color:var(--dim)">No tracked high-impact events in the past 7 days yet — this log builds up as the calendar loads.</span>`;
   past.forEach(e=>{
     const p=e.pred||{goldDir:'NEUTRAL',conf:50,reasons:[]};
@@ -3700,13 +3706,13 @@ async function evwBackgroundNews(){
 //  • Daily goal and daily stop: the engine pauses itself when either is reached.
 const SCALP_DEF={target:2,maxLoss:4,goal:10,dayStop:8,stopAtGoal:true,auto:true,continuation:false,assets:{XAUUSD:true,XAGUSD:true,BTCUSD:true},timeStopMin:45};
 let scalpCfg=(()=>{try{const c=JSON.parse(localStorage.getItem('kmr_scalp_cfg')||'null');return c?{...SCALP_DEF,...c,assets:{...SCALP_DEF.assets,...(c.assets||{})}}:{...SCALP_DEF,assets:{...SCALP_DEF.assets}};}catch(e){return{...SCALP_DEF,assets:{...SCALP_DEF.assets}};}})();
-let scalpHist=(()=>{try{return JSON.parse(localStorage.getItem('kmr_scalp_hist')||'[]');}catch(e){return[];}})();
+let scalpHist=[]; // Restore only the authenticated owner; preserve legacy cache without importing it.
 let scalpData={XAUUSD:[],XAGUSD:[],BTCUSD:[]},scalpState={XAUUSD:{},XAGUSD:{},BTCUSD:{}};
 let scalpLastFetch=0,scalpFetchBusy=false,scalpLastBoundary=0,scalpBt={},scalpBtBusy=false;
 function saveScalpCfg(){try{localStorage.setItem('kmr_scalp_cfg',JSON.stringify(scalpCfg));}catch(e){}}
 function saveScalpHist(){
-  scalpHist=scalpHist.slice(0,400);
-  try{localStorage.setItem('kmr_scalp_hist',JSON.stringify(scalpHist));}catch(e){}
+  // Keep complete history; server restoration remains authoritative.
+  try{localStorage.setItem('kmr_scalp_hist_'+currentUser?.username,JSON.stringify(scalpHist));}catch(e){}
   if(currentUser&&currentUser.role!=='guest')
     scalpHist.forEach(r=>riyanQueue('low-profit',String(r.id||r.t),r));
 }
@@ -3720,7 +3726,7 @@ function scalpToday(){
 }
 function emaSeries(C,p){const out=new Array(C.length).fill(null);if(C.length<p)return out;let v=C.slice(0,p).reduce((a,b)=>a+b,0)/p;out[p-1]=v;const k=2/(p+1);for(let i=p;i<C.length;i++){v=C[i]*k+v*(1-k);out[i]=v;}return out;}
 function bbAt(C,i,n=20,k=2){if(i<n-1)return null;const w=C.slice(i-n+1,i+1);const m=w.reduce((a,b)=>a+b,0)/n;const sd=Math.sqrt(w.reduce((a,b)=>a+(b-m)**2,0)/n);return{m,u:m+k*sd,l:m-k*sd};}
-function aggMinutes(c,min){const ms=min*60e3,m={};c.forEach(k=>{const b=Math.floor(k.t/ms)*ms;if(!m[b])m[b]={t:b,o:k.o,h:k.h,l:k.l,c:k.c,v:k.v||0,n:1};else{const x=m[b];x.h=Math.max(x.h,k.h);x.l=Math.min(x.l,k.l);x.c=k.c;x.v+=k.v||0;x.n++;}});return Object.values(m).sort((a,b)=>a.t-b.t);}
+function aggMinutes(c,min){return PaperMath.aggregate(c,min,300000);}
 async function scalpFetch(sym,lim){
   const state=scalpState[sym];
   let c=null,reason='',source='';
@@ -3763,7 +3769,7 @@ async function scalpFetch(sym,lim){
 // If 15m is missing/stale, aggregate only completed 5m candles. Never fabricate
 // a directional setup, discard strict risk gates, or use the unclosed 15m bar.
 function scalpClosed15m(sym,c5,now=Date.now()){
-  const primary=kmrClosed(ohlcData[sym]?.['15m']||[]);
+  const primary=PaperMath.closed(ohlcData[sym]?.['15m']||[],900000,now);
   const last5=c5[c5.length-1],p=primary[primary.length-1];
   const valid=primary.length>=55&&last5&&p &&
     Math.abs((p.t+900e3)-(last5.t+300e3))<45*60e3 &&
@@ -3800,7 +3806,8 @@ function scalpScan(sym,c5,c15,h1,ctx){
   g(!ev,ev?`High-impact news: ${ev.title} ${ev2txt(ev,ctx.now)} — no scalps ±10/15 min`:'No high-impact news in the next 10 min');
   g(A>=2.5*spread,A>=2.5*spread?`5m range ${fmtP(sym,A)} vs spread ${fmtP(sym,spread)} — enough room`:`5m range ${fmtP(sym,A)} too small vs spread ${fmtP(sym,spread)} — dead market`);
   g(last.h-last.l<=3*A,last.h-last.l>3*A?'Last 5m candle is a spike (>3× ATR) — let it settle':'No spike candle');
-  g(ctx.now-last.t<=12*60e3,ctx.now-last.t>12*60e3?'5m data is stale — waiting for a fresh candle':'5m data fresh');
+  g(ctx.now-last.t>=300e3&&ctx.now-last.t<=12*60e3,ctx.now-last.t>12*60e3?'5m data is stale — waiting for a fresh candle':'5m data fresh');
+  if(ctx.newsReady===false)g(false,'Economic calendar unavailable or stale — new entries paused');
   // ── setups ──
   const body=Math.abs(last.c-last.o),rng=Math.max(last.h-last.l,1e-9);
   const lw=Math.min(last.o,last.c)-last.l,uw=last.h-Math.max(last.o,last.c);
@@ -3886,12 +3893,13 @@ function scalpScan(sym,c5,c15,h1,ctx){
   return out;
 }
 function scalpLevels(sym,dir,entry,scan,c5,cfg){
+  if(!['BUY','SELL'].includes(dir)||!Number.isFinite(entry)||entry<=0||!Number.isFinite(scan?.A)||scan.A<=0||!Array.isArray(c5)||c5.length<3||!Number.isFinite(cfg?.maxLoss)||cfg.maxLoss<=0)return{reject:'Invalid setup or risk inputs'};
   const A=scan.A,spread=SPREAD[sym]||0,cs=ASSETS[sym].contractSz,sgn=dir==='BUY'?1:-1;
   let tpDist=Math.max(0.8*A,2.5*spread);
   if(scan.tpCap)tpDist=Math.min(tpDist,Math.max(scan.tpCap,0.45*A));
   const last3=c5.slice(-3);
   const ext=dir==='BUY'?Math.min(...last3.map(k=>k.l)):Math.max(...last3.map(k=>k.h));
-  // Existing A/B/C SL models retain their original ATR sizing.
+  // Never clip a structural stop inward to make an oversized position fit.
   // Experimental EMA9 continuation uses a structural stop beyond the recent
   // swing plus 0.15 ATR. Never clip an excessively wide structural stop inward.
   const experimental=scan.strategyVersion==='continuation-v1-opt-in';
@@ -3899,16 +3907,16 @@ function scalpLevels(sym,dir,entry,scan,c5,cfg){
   if(experimental&&swingDistance>1.3*A)
     return{reject:'Continuation swing stop exceeds 1.3× ATR — wait for a closer entry'};
   const slDist=experimental?Math.max(0.45*A,swingDistance):
-    Math.min(Math.max(swingDistance,1.0*A),1.6*A);
+    Math.max(swingDistance,1.0*A);
   const net=tpDist-spread;if(net<=0)return{reject:'Spread eats the whole target'};
-  let lot=Math.max(0.01,Math.round(cfg.target/(net*cs)/0.01)*0.01);
+  let lot=0.01; // Fixed paper lot; never enlarge size to force the requested profit.
   let slUsd=(slDist+spread)*lot*cs;
   while(slUsd>cfg.maxLoss&&lot>0.0101){lot=+(lot-0.01).toFixed(2);slUsd=(slDist+spread)*lot*cs;}
   if(slUsd>cfg.maxLoss+1e-6)return{reject:`Even 0.01 lot would risk ${slUsd.toFixed(2)} here — above your ${cfg.maxLoss} max loss`};
   const units=lot*cs;
   return{entry,tp:entry+sgn*tpDist,sl:entry-sgn*slDist,beAt:entry+sgn*tpDist*0.6,lot:+lot.toFixed(2),units,tpUsd:net*units,slUsd,tpDist,slDist};
 }
-function scalpCtx(sym,now){return{now,events:kmrNewsEvents(),isMetal:sym!=='BTCUSD',marketOpen:sym==='BTCUSD'||isMetalsMarketOpen(),spread:SPREAD[sym]||0,dec:ASSETS[sym].dec,continuation:!!scalpCfg.continuation};}
+function scalpCtx(sym,now){return{now,newsReady:calendarCache!==null&&now-calendarCacheAt<30*60e3,events:kmrNewsEvents(),isMetal:sym!=='BTCUSD',marketOpen:sym==='BTCUSD'||isMetalsMarketOpen(),spread:SPREAD[sym]||0,dec:ASSETS[sym].dec,continuation:!!scalpCfg.continuation};}
 function scalpEvaluate(sym){
   const st=scalpState[sym],now=Date.now();
   const c5=kmrClosed(scalpData[sym]||[]);
@@ -3919,6 +3927,8 @@ function scalpEvaluate(sym){
   if(scan.A&&live){const pv=scalpLevels(sym,scan.dir||(scan.trend==='BEAR'?'SELL':'BUY'),live,scan,c5,scalpCfg);st.preview=pv;}
   const day=scalpToday();
   st.block=!scalpCfg.auto?'Auto scalping is OFF':!scalpCfg.assets[sym]?'This asset is switched off':
+    !paperReady()?'Paper engine waiting for server ownership / synchronization':
+    !freshQuote(sym)?'Fresh quote unavailable — entries paused':
     st.feedError?'Candle feed unavailable — '+st.feedError:
     scalpHist.some(t=>t.status==='OPEN'&&t.sym===sym)?'A scalp is already open on this asset':
     now<(st.cooldown||0)?`Cooldown ${Math.ceil((st.cooldown-now)/60e3)} min after the last trade`:
@@ -3937,7 +3947,7 @@ function scalpEvaluate(sym){
   if(lv.reject){st.note=lv.reject;return;}
   scalpOpen(sym,scan,lv);
 }
-function scalpOpen(sym,scan,lv){
+async function scalpOpen(sym,scan,lv){
   const t={id:Date.now()+Math.floor(Math.random()*1000),sym,dir:scan.dir,setup:scan.setup,reason:scan.setup,
     why:scan.why,entry:lv.entry,tp:lv.tp,sl:lv.sl,slNow:lv.sl,beAt:lv.beAt,beMoved:false,
     lot:lv.lot,units:lv.units,tpUsd:lv.tpUsd,slUsd:lv.slUsd,t:Date.now(),status:'OPEN',lastBar:scan.barT,
@@ -3947,6 +3957,9 @@ function scalpOpen(sym,scan,lv){
     conditions:{closed5mBarAt:scan.barT,trend15m:scan.trend,ADX:scan.adx,RSI7:scan.rsi7,
       ATR5m:scan.A,relativeVolume:scan.relVol,gates:scan.gates,ema9:scan.e9,
       ema21:scan.e21,maxLoss:scalpCfg.maxLoss,target:scalpCfg.target}};
+  t.entryBar=scan.barT;t.owner=currentUser?.username;t.accountingVersion=2;t.updatedAt=t.t;
+  t.spreadPerUnit=SPREAD[sym]||0;t.signalKey='scalp:'+sym+':5m:'+scan.barT+':'+scan.dir;
+  if(!await paperSaveEntry('low-profit',t.id,t))return;
   scalpHist.unshift(t);saveScalpHist();
   const col=t.dir==='BUY'?'var(--grn)':'var(--red)';
   showToast(`💵 <b style="color:${col}">${t.dir}</b> ${ASSETS[sym].sym} scalp · ${t.lot} lot<br>TP ${fmtP(sym,t.tp)} (+$${t.tpUsd.toFixed(2)}) · SL ${fmtP(sym,t.sl)} (−$${t.slUsd.toFixed(2)})`,col);
@@ -3955,10 +3968,11 @@ function scalpOpen(sym,scan,lv){
   claimAlertOnce('kmr_scalp_'+t.id).then(ok=>{if(ok)sendTelegram(`<b>💵 LOW-PROFIT ${t.dir} — ${ASSETS[sym].sym}</b>\n\nEntry: ${fmtP(sym,t.entry)}\nTP: ${fmtP(sym,t.tp)} (+$${t.tpUsd.toFixed(2)})\nSL: ${fmtP(sym,t.sl)} (−$${t.slUsd.toFixed(2)})\nSize: ${t.lot} lot (${+(t.units).toFixed(3)} ${ASSETS[sym].lotUnit})\nSetup: ${t.setup}\n• ${t.why.join('\n• ')}\n\nStop → breakeven at 60% of TP · 45-min time stop`);}).catch(()=>{});
 }
 function scalpNotify(title,body){try{if(window.Notification&&Notification.permission==='granted'&&navigator.serviceWorker)navigator.serviceWorker.ready.then(r=>r.showNotification('KMR · '+title,{body,tag:'kmr-scalp',renotify:true,icon:'icon-192.png',badge:'icon-192.png'}));}catch(e){}}
-function scalpClose(t,exit,why){
+function scalpClose(t,exit,why,at=Date.now()){
+  if(!paperReady()||t.status!=='OPEN'||!PaperMath.positive(exit))return;
   const sgn=t.dir==='BUY'?1:-1;
-  t.status=why;t.exit=exit;t.closedAt=Date.now();
-  t.pnl=+((exit-t.entry)*sgn*t.units-(SPREAD[t.sym]||0)*t.units).toFixed(2);
+  t.status=why;t.exit=exit;t.closedAt=at;t.updatedAt=Date.now();
+  t.pnl=+((exit-t.entry)*sgn*t.units-(t.spreadPerUnit??SPREAD[t.sym]??0)*t.units).toFixed(2);
   saveScalpHist();
   scalpState[t.sym].cooldown=Date.now()+(t.pnl<0?15:5)*60e3;
   const col=t.pnl>=0?'var(--grn)':'var(--red)';
@@ -3969,31 +3983,35 @@ function scalpClose(t,exit,why){
   claimAlertOnce('kmr_scalpx_'+t.id).then(ok=>{if(ok)sendTelegram(`<b>${lbl} — ${ASSETS[t.sym].sym} ${t.dir} scalp</b>\nExit ${fmtP(t.sym,exit)} · <b>${t.pnl>=0?'+':''}$${t.pnl.toFixed(2)}</b>\nToday: ${scalpToday().pnl>=0?'+':''}$${scalpToday().pnl.toFixed(2)} / goal $${scalpCfg.goal}`);}).catch(()=>{});
 }
 // hi/lo = the price range seen since the last check (a tick, or a whole 5m candle)
-function scalpCheckRange(t,hi,lo,now,closePx){
+function scalpCheckRange(t,hi,lo,now,closePx,openPx=closePx){
   if(t.status!=='OPEN')return;
   const sgn=t.dir==='BUY'?1:-1;
   const slHit=sgn>0?lo<=t.slNow:hi>=t.slNow,tpHit=sgn>0?hi>=t.tp:lo<=t.tp;
-  if(slHit){scalpClose(t,t.slNow,t.beMoved?'BE':'SL');return;}  // worst case first
-  if(tpHit){scalpClose(t,t.tp,'TP');return;}
+  if(slHit){scalpClose(t,PaperMath.stopFill(t.dir,t.slNow,openPx),t.beMoved?'BE':'SL',now);return;}  // worst case first
+  if(tpHit){scalpClose(t,t.tp,'TP',now);return;}
   if(!t.beMoved&&(sgn>0?hi>=t.beAt:lo<=t.beAt)){
-    t.beMoved=true;t.slNow=t.entry+sgn*(SPREAD[t.sym]||0)*1.2;saveScalpHist();
+    t.beMoved=true;t.slNow=t.entry+sgn*(SPREAD[t.sym]||0)*1.2;t.updatedAt=Date.now();saveScalpHist();
+    // OHLC cannot reveal wick order: use the adverse path if the raised stop was touched.
+    if(hi!==lo&&(sgn>0?lo<=t.slNow:hi>=t.slNow)){scalpClose(t,t.slNow,'BE',now);return;}
     showToast(`⚖ ${ASSETS[t.sym].sym} scalp 60% to TP — stop moved to breakeven`,'var(--acc)');
   }
-  if(now-t.t>=scalpCfg.timeStopMin*60e3&&closePx!=null)scalpClose(t,closePx,'TIME');
+  if(now-t.t>=scalpCfg.timeStopMin*60e3&&closePx!=null)scalpClose(t,closePx,'TIME',now);
 }
 function scalpManageAll(){
   const now=Date.now();
-  scalpHist.filter(t=>t.status==='OPEN').forEach(t=>{const p=prices[t.sym];if(p!=null)scalpCheckRange(t,p,p,now,p);});
+  scalpHist.filter(t=>t.status==='OPEN').forEach(t=>{const p=prices[t.sym];if(freshQuote(t.sym))scalpCheckRange(t,p,p,now,p);});
 }
 // Catch wicks that happened between ticks (or while the phone was locked) from 5m candles
 function scalpCandleCheck(){
   scalpHist.filter(t=>t.status==='OPEN').forEach(t=>{
-    (scalpData[t.sym]||[]).filter(k=>k.t>=t.t-0&&k.t>(t.lastBar||0)&&k.t+300e3<=Date.now()).forEach(k=>{if(t.status!=='OPEN')return;scalpCheckRange(t,k.h,k.l,k.t+300e3,k.c);t.lastBar=k.t;});
+    (scalpData[t.sym]||[]).filter(k=>k.t>=t.t-0&&k.t>(t.lastBar||0)&&k.t+300e3<=Date.now()).forEach(k=>{if(t.status!=='OPEN')return;scalpCheckRange(t,k.h,k.l,k.t+300e3,k.c,k.o);t.lastBar=k.t;});
   });
   saveScalpHist();
 }
 async function scalpLoop(){
   if(!currentUser)return;
+  await paperHeartbeat();
+  if(Date.now()-calendarCacheAt>5*60e3)fetchEconCalendar().catch(()=>{});
   const now=Date.now();
   const boundary=Math.floor(now/300e3)*300e3;
   if(!scalpFetchBusy&&(now-scalpLastFetch>60e3||(boundary>scalpLastBoundary&&now-boundary>4e3))){
@@ -4009,13 +4027,11 @@ async function scalpLoop(){
         }
       }));
       scalpLastFetch=Date.now();
-      scalpCandleCheck();
-      basketCandleCheck();
+      if(paperReady()){scalpCandleCheck();basketCandleCheck();}
     }catch(e){console.warn('Low Profit fetch cycle failed',e);}
     finally{scalpFetchBusy=false;}
   }
-  scalpManageAll();
-  basketManage();
+  if(paperReady()){scalpManageAll();basketManage();}
   SYMS.forEach(sym=>{try{scalpEvaluate(sym);basketEvaluate(sym);}catch(e){console.warn('scalp',sym,e);}});
   if(document.getElementById('tsc')?.style.display!=='none')renderScalpLive();
 }
@@ -4031,46 +4047,57 @@ async function runScalpBacktest(){
     }
   }finally{scalpBtBusy=false;renderScalpBt();}
 }
-function scalpSimulate(sym,all,cfg){
-  const trades=[];let i=200,cool=0;
-  const cs=ASSETS[sym].contractSz,spread=SPREAD[sym]||0;
+function scalpSimulate(sym,history,cfg){
+  const all=PaperMath.closed(history,300000);
+  if(all.length<202)return{ok:false,reason:'Insufficient valid closed 5m candles'};
+  const trades=[],daily=new Map();let i=200,cool=0;
+  const spread=SPREAD[sym]||0;
   while(i<all.length-1){
-    if(i<cool){i++;continue;}
-    const win=all.slice(0,i+1),endT=all[i].t+300e3;
-    const c15=aggMinutes(win,15).filter(k=>k.t+900e3<=endT);
+    const next=all[i+1],endT=all[i].t+300e3,day=daily.get(istDayKey(next.t))||0;
+    if(next.t<cool||day<=-cfg.dayStop||(cfg.stopAtGoal&&day>=cfg.goal)){i++;continue;}
+    const win=all.slice(0,i+1),c15=aggMinutes(win,15).filter(k=>k.t+900e3<=endT);
     const scan=scalpScan(sym,win,c15,null,{now:endT,events:[],isMetal:sym!=='BTCUSD',marketOpen:true,spread,dec:ASSETS[sym].dec,continuation:!!cfg.continuation});
     if(!scan.dir||!scan.gatesOk){i++;continue;}
-    const lv=scalpLevels(sym,scan.dir,all[i].c,scan,win,cfg);
+    const sgn=scan.dir==='BUY'?1:-1,ran=sgn*(next.o-scan.price);
+    if(ran>0.4*scan.A||ran<-0.5*scan.A){i++;continue;}
+    const lv=scalpLevels(sym,scan.dir,next.o,scan,win,cfg);
     if(lv.reject){i++;continue;}
-    const sgn=scan.dir==='BUY'?1:-1;let slNow=lv.sl,be=false,exit=null,why=null,j=i+1;
-    for(;j<all.length&&j<=i+Math.round(cfg.timeStopMin/5);j++){
+    let slNow=lv.sl,be=false,exit=null,why=null,j=i+1;
+    const deadline=next.t+cfg.timeStopMin*60e3;
+    for(;j<all.length;j++){
       const k=all[j],slHit=sgn>0?k.l<=slNow:k.h>=slNow,tpHit=sgn>0?k.h>=lv.tp:k.l<=lv.tp;
-      if(slHit){exit=slNow;why=be?'BE':'SL';break;}
+      if(slHit){exit=PaperMath.stopFill(scan.dir,slNow,k.o);why=be?'BE':'SL';break;}
       if(tpHit){exit=lv.tp;why='TP';break;}
-      if(!be&&(sgn>0?k.h>=lv.beAt:k.l<=lv.beAt)){be=true;slNow=lv.entry+sgn*spread*1.2;}
+      if(!be&&(sgn>0?k.h>=lv.beAt:k.l<=lv.beAt)){
+        be=true;slNow=lv.entry+sgn*spread*1.2;
+        if(sgn>0?k.l<=slNow:k.h>=slNow){exit=slNow;why='BE';break;}
+      }
+      if(k.t+300e3>=deadline){exit=k.c;why='TIME';break;}
     }
-    if(exit==null){j=Math.min(j,all.length-1);exit=all[j].c;why='TIME';}
-    const pnl=(exit-lv.entry)*sgn*lv.units-spread*lv.units;
-    trades.push({t:all[i].t,dir:scan.dir,setup:scan.setup,pnl,why});
-    cool=j+(pnl<0?3:1);i=j+1;
+    if(exit==null){j=all.length-1;exit=all[j].c;why='END_OF_SAMPLE';}
+    const pnl=(exit-lv.entry)*sgn*lv.units-spread*lv.units,closedAt=all[j].t+300e3;
+    trades.push({t:next.t,closedAt,entry:lv.entry,exit,dir:scan.dir,setup:scan.setup,pnl,why});
+    const dayKey=istDayKey(closedAt);daily.set(dayKey,(daily.get(dayKey)||0)+pnl);
+    cool=closedAt+(pnl<0?15:5)*60e3;i=j+1;
   }
   const n=trades.length,wins=trades.filter(x=>x.pnl>0.005).length,net=trades.reduce((a,x)=>a+x.pnl,0);
-  const days=Math.max(0.5,(all[all.length-1].t-all[200].t)/864e5);
+  const days=Math.max(0.5,(all.at(-1).t-all[200].t)/864e5);
   let peak=0,eq=0,dd=0;trades.forEach(x=>{eq+=x.pnl;peak=Math.max(peak,eq);dd=Math.max(dd,peak-eq);});
   const bySetup={};trades.forEach(x=>{const b=bySetup[x.setup]=bySetup[x.setup]||{n:0,net:0,w:0};b.n++;b.net+=x.pnl;if(x.pnl>0.005)b.w++;});
-  return{ok:true,n,wins,winRate:n?wins/n*100:0,net,perDay:net/days,tradesPerDay:n/days,days,maxDD:dd,bySetup,tp:trades.filter(x=>x.why==='TP').length};
+  return{ok:true,n,wins,winRate:n?wins/n*100:0,net,perDay:net/days,tradesPerDay:n/days,days,maxDD:dd,bySetup,tp:trades.filter(x=>x.why==='TP').length,trades,
+    assumptions:['Next-bar open, daily limits and cooldowns','Stop first on ambiguous candles; adverse opening gaps','Estimated spread only; no commission or historical news','Per-symbol replay, not a portfolio or live-profit forecast']};
 }
 // ── UI ──
 function scalpToggleAuto(){scalpCfg.auto=!scalpCfg.auto;saveScalpCfg();renderScalpTab();}
-function scalpSet(k,v){if(k.startsWith('asset:')){scalpCfg.assets[k.slice(6)]=!!v;}else if(k==='stopAtGoal'||k==='continuation'){scalpCfg[k]=!!v;}else{const x=parseFloat(v);if(isFinite(x)&&x>0)scalpCfg[k]=x;}saveScalpCfg();renderScalpLive();}
-function scalpCloseNow(id){const t=scalpHist.find(x=>x.id===id&&x.status==='OPEN');if(t&&prices[t.sym]!=null){scalpClose(t,prices[t.sym],'MANUAL');renderScalpLive();}}
+function scalpSet(k,v){if(k.startsWith('asset:')){scalpCfg.assets[k.slice(6)]=!!v;}else if(k==='stopAtGoal'||k==='continuation'){scalpCfg[k]=!!v;}else{const x=parseFloat(v);if(isFinite(x)&&x>0)scalpCfg[k]=k==='maxLoss'?Math.min(x,4):k==='dayStop'?Math.min(x,8):x;}saveScalpCfg();renderScalpLive();}
+function scalpCloseNow(id){const t=scalpHist.find(x=>x.id===id&&x.status==='OPEN');if(t&&freshQuote(t.sym)){scalpClose(t,prices[t.sym],'MANUAL');renderScalpLive();}}
 function scalpResetToday(){if(!confirm('Clear today\'s closed scalps from the log?'))return;const dk=istDayKey(Date.now());scalpHist=scalpHist.filter(t=>t.status==='OPEN'||istDayKey(t.closedAt||t.t)!==dk);saveScalpHist();renderScalpLive();}
 function renderScalpTab(){
   const el=document.getElementById('scalpContainer');if(!el)return;
   const c=scalpCfg;
   el.innerHTML=`
   <div class="sc-hero">
-    <div><div class="sc-h1">💵 Low-Profit Scalps</div><div class="sc-h2">Small, quick wins — 5-minute setups sized to your $ target</div></div>
+    <div><div class="sc-h1">💵 Low-Profit Scalps</div><div class="sc-note">${basketTxt(paperEngine.reason)} · account limits: $4 planned open risk / $8 daily loss / 5 positions</div><div class="sc-h2">5-minute paper setups · estimated costs · losses possible</div></div>
     <button class="sc-switch ${c.auto?'on':''}" onclick="scalpToggleAuto()"><i></i><span>${c.auto?'AUTO ON':'AUTO OFF'}</span></button>
   </div>
   <div id="scalpLive"></div>
@@ -4296,14 +4323,14 @@ function calcPos(sym,price,dir,candles,lot,atrVal,sr){
 // why Telegram/Email alerts often never fired.)
 let lastGuardToast={};
 function evaluateSignals(manual){
-  if(!currentUser)return;
+  if(!currentUser||!paperReady())return;
   const fired=[];
   SYMS.forEach(sym=>{
     const scan=computeSignal(sym); // always run: keeps marketTrend[sym] fresh for the strip + flip check
     // Independent of scan.candles (only populated on BUY/SELL branches) so the spike flag
     // still updates during WAIT periods too — arguably when it's most useful as a heads-up.
     const allC=getCandles(sym);
-    const vsCandles=allC&&allC.length>1?allC.slice(0,-1):allC;
+    const vsCandles=PaperMath.closed(allC,900000);
     volSpike[sym]=computeVolSpike(sym,vsCandles);
     // Feed the self-learned session-hours table (Session tab) — real ATR% sample per tick
     if(vsCandles&&vsCandles.length>15){
@@ -4347,7 +4374,7 @@ function evaluateSignals(manual){
       const liveEntry=prices[sym];
       const atrV=sig.atrVal||atr(sig.candles)||sig.price*0.001;
       const guardMsg=msg=>{if(lastGuardToast[sym]!==candleTs){lastGuardToast[sym]=candleTs;showToast(msg,'#e8a33d');}};
-      if(liveEntry==null)return;
+      if(!freshQuote(sym)||calendarCache===null||Date.now()-calendarCacheAt>30*60e3)return;
       const plan=sig.smart?kmrTradePlan({...sig.smart,price:liveEntry},ASSETS[sym].dec):null;
       if(!plan)return;
       const sgn=sig.state==='BUY'?1:-1;
@@ -4356,10 +4383,10 @@ function evaluateSignals(manual){
       if(ran<-atrV*0.6){guardMsg(`⏳ ${ASSETS[sym].sym} ${sig.state} — price turned against the setup after the candle closed. Skipped.`);return;}
       if(plan.entryType==='LIMIT'){guardMsg(`⏳ ${ASSETS[sym].sym} ${sig.state} is stretched — wait for a pullback to ${fmtP(sym,plan.entry)}`);return;}
       const triggerSig={...sig,price:liveEntry};
-      const base=calcPos(sym,liveEntry,sig.state,sig.candles,sig.lot,sig.atrVal,sig.sr);
-      const units=sig.lot*ASSETS[sym].contractSz;
-      const pos={...base,sl:plan.sl,tp1:plan.tp1,tp2:plan.tp2,tp3:plan.tp3,tp:plan.tp3,slDist:Math.abs(liveEntry-plan.sl),tpDist:Math.abs(plan.tp3-liveEntry),
-        slUsd:Math.abs(liveEntry-plan.sl)*units,tpUsd:Math.abs(plan.tp3-liveEntry)*units,tp1Usd:Math.abs(plan.tp1-liveEntry)*units,tp2Usd:Math.abs(plan.tp2-liveEntry)*units,tp3Usd:Math.abs(plan.tp3-liveEntry)*units,
+      const base=calcPos(sym,liveEntry,sig.state,sig.candles,0.01,sig.atrVal,sig.sr);
+      const units=0.01*ASSETS[sym].contractSz;
+      const pos={...base,lot:0.01,posUnits:units,sl:plan.sl,tp1:plan.tp1,tp2:plan.tp2,tp3:plan.tp3,tp:plan.tp3,slDist:Math.abs(liveEntry-plan.sl),tpDist:Math.abs(plan.tp3-liveEntry),
+        slUsd:(Math.abs(liveEntry-plan.sl)+(SPREAD[sym]||0))*units,tpUsd:Math.abs(plan.tp3-liveEntry)*units,tp1Usd:Math.abs(plan.tp1-liveEntry)*units,tp2Usd:Math.abs(plan.tp2-liveEntry)*units,tp3Usd:Math.abs(plan.tp3-liveEntry)*units,
         rr:(Math.abs(plan.tp2-liveEntry)/Math.abs(liveEntry-plan.sl)).toFixed(1),riskPct:Math.abs(liveEntry-plan.sl)*units/CAPITAL*100};
       if(pos.volLevel==='red'){
         showToast(`🔴 ${sig.state} ${ASSETS[sym].sym} — high volatility (ATR ${pos.atrPct.toFixed(2)}%), standard ${pos.lot} lot`,'var(--red)');
@@ -4404,7 +4431,7 @@ function renderSignals(){
     }
   });
   if(!html)html=`<div style="text-align:center;color:var(--dim);font-size:12px;padding:30px 0">No signals available for your access level right now.</div>`;
-  html=`<div class="vp-strip">${SYMS.map(x=>kmrVolumeCardHtml(x,true)).join('')}</div>`+html;
+  html=`<div class="notice"><b>PAPER ONLY</b> · ${basketTxt(paperEngine.reason)}<br>Signal score measures rule agreement, not win probability. Reference quotes and modeled costs can differ from your broker.</div><div class="vp-strip">${SYMS.map(x=>kmrVolumeCardHtml(x,true)).join('')}</div>`+html;
   document.getElementById('signalsContainer').innerHTML=html;
 }
 
@@ -4418,7 +4445,7 @@ function lockedCard(sym,a,r,isAdmin,isNew){
   const cardClass=isHigh?'high-card':'med-card';
   const cur=prices[sym];
   const rem=r.remFrac==null?1:r.remFrac;
-  const flt=cur!=null?(((isBuy?(cur-r.price):(r.price-cur))*r.posUnits*rem)+(r.realUsd||0)):null;
+  const flt=freshQuote(sym)?(((isBuy?(cur-r.price):(r.price-cur))-(r.spreadPerUnit??SPREAD[sym]??0))*r.posUnits*rem+(r.realUsd||0)):null;
   const rung=(lbl,val,hit)=>`<div class="tp-rung ${hit?'rung-hit':''}"><div class="tp-rung-lbl">${lbl}${hit?' ✓':''}</div><div class="tp-rung-val tp-val">${fmtP(sym,val)}</div></div>`;
   const adminRow=isAdmin?`<div class="hist-detail" style="margin-top:6px">
       <div class="hd"><div class="hd-label">RISK</div><div class="hd-val">-$${(r.slUsd||0).toFixed(2)} (${(r.riskPct||0).toFixed(1)}%)</div></div>
@@ -4680,10 +4707,10 @@ async function claimAlertOnce(key){
     localStorage.setItem(key,TAB_ID);
     await new Promise(res=>setTimeout(res,120+Math.random()*180));
     return localStorage.getItem(key)===TAB_ID;
-  }catch(e){return true;} // localStorage unavailable (e.g. private mode) — fail open rather than silently drop real alerts
+  }catch(e){return false;} // No durable claim: do not duplicate outbound alerts.
 }
 async function recordSignal(sym,sig,pos,manual){
-  if(activeSignals[sym])return; // one locked signal per symbol at a time
+  if(!paperReady()||!freshQuote(sym)||activeSignals[sym])return; // server-coordinated paper entries only
   const id=Date.now()+Math.floor(Math.random()*100);
   const r={id,ts:Date.now(),sym,dir:sig.state,price:sig.price,tp:pos.tp,sl:pos.sl,
     tp1:pos.tp1,tp2:pos.tp2,tp3:pos.tp3,tp1Hit:false,tp2Hit:false,
@@ -4695,6 +4722,10 @@ async function recordSignal(sym,sig,pos,manual){
     outcome:'OPEN',exitPrice:null,exitTimeStr:null,pnlUsd:null,pnlPct:null,
     timeStr:new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'}),
     dateStr:new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'2-digit'})};
+  r.owner=currentUser.username;r.accountingVersion=2;r.spreadPerUnit=SPREAD[sym]||0;r.updatedAt=r.ts;
+  r.paperOnly=true;r.brokerOrderId=null;r.timeframe='15m';
+  r.signalKey='auto:'+sym+':15m:'+sig.candles?.at(-1)?.t+':'+r.dir;
+  if(!await paperSaveEntry(r.manual?'manual-signals':'auto-signals',id,r))return;
   signalHistory.unshift(r);
   activeSignals[sym]=id; // 🔒 lock — TP/SL frozen until TP3 or SL is hit
   await saveSignal(r);
@@ -4721,57 +4752,20 @@ async function recordSignal(sym,sig,pos,manual){
 
 // ═══ P&L OUTCOME ══════════════════════════════════════════════════════════
 async function checkOutcome(sym,cur){
-  // ENGINE v2 TRADE MANAGEMENT (this is what lifts the win rate):
-  //  • TP1 hit → close 50% of position, move SL to ENTRY (breakeven). Trade can no longer lose.
-  //  • TP2 hit → close 30% more, move SL to TP1 (profit locked).
-  //  • TP3 hit → close final 20% → WIN.
-  //  • SL hit → close remainder. If partials were already banked, net is still POSITIVE → counted WIN.
-  //  Outcome = WIN when net realized P&L > 0, LOSS only when net is negative (full SL before TP1).
+  if(!paperReady()||!freshQuote(sym))return;
   let changed=false;
   for(const r of signalHistory){
-    if(r.sym!==sym||r.outcome!=='OPEN'||!r.tp||!r.sl)continue;
-    const isBuy=r.dir==='BUY';
-    if(r.remFrac==null){r.remFrac=1;r.realUsd=0;r.slNow=r.sl;r.beMoved=false;} // migrate old records
-    const dirPnl=px=>isBuy?(px-r.price):(r.price-px);
-
-    // TP1: bank 50%, SL → breakeven
-    if(r.tp1&&!r.tp1Hit&&(isBuy?cur>=r.tp1:cur<=r.tp1)){
-      r.tp1Hit=true;r.realUsd+=dirPnl(r.tp1)*r.posUnits*0.5;r.remFrac=0.5;
-      r.slNow=r.price;r.beMoved=true;changed=true;await dbPut('signals',r);
-      showToast(`🎯 TP1 hit — ${ASSETS[sym].sym} ${r.dir} · 50% banked +$${(dirPnl(r.tp1)*r.posUnits*0.5).toFixed(2)} · SL → breakeven 🔓`,'var(--grn)');
-      celebrate('TP');
-    }
-    // TP2: bank 30%, SL → TP1
-    if(r.tp2&&r.tp1Hit&&!r.tp2Hit&&(isBuy?cur>=r.tp2:cur<=r.tp2)){
-      r.tp2Hit=true;r.realUsd+=dirPnl(r.tp2)*r.posUnits*0.3;r.remFrac=0.2;
-      r.slNow=r.tp1;changed=true;await dbPut('signals',r);
-      showToast(`🎯 TP2 hit — ${ASSETS[sym].sym} ${r.dir} · 30% banked · SL → TP1 (profit locked)`,'var(--grn)');
-      celebrate('TP');
-    }
-
-    let closePx=null;
-    if(isBuy){
-      if(cur>=r.tp)closePx=r.tp;
-      else if(cur<=(r.slNow!=null?r.slNow:r.sl))closePx=(r.slNow!=null?r.slNow:r.sl);
-    }else{
-      if(cur<=r.tp)closePx=r.tp;
-      else if(cur>=(r.slNow!=null?r.slNow:r.sl))closePx=(r.slNow!=null?r.slNow:r.sl);
-    }
-    if(closePx!=null){
-      r.realUsd+=dirPnl(closePx)*r.posUnits*r.remFrac;
-      r.remFrac=0;
-      r.pnlUsd=r.realUsd;
-      r.pnlPct=r.pnlUsd/CAPITAL*100;
-      const hit=r.pnlUsd>0?'WIN':r.pnlUsd<0?'LOSS':'BE';
-      r.outcome=hit==='BE'?'WIN':hit; // breakeven counts as protected WIN
-      r.exitPrice=cur;
-      r.exitTimeStr=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-      changed=true;await dbPut('signals',r);
+    if(r.sym!==sym||!PaperMath.ladder(r,cur))continue;
+    changed=true;r.pnlPct=(r.pnlUsd||0)/CAPITAL*100;
+    if(r.outcome!=='OPEN'){
+      r.exitTimeStr=new Date(r.closedAt).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata'});
       if(activeSignals[sym]===r.id)delete activeSignals[sym];
       sigCooldown[sym]=Date.now()+SIGNAL_COOLDOWN_MS;
-      await saveSigMeta();
-      fireOutcome(sym,r.dir,r.outcome,r.pnlUsd);
-      sendTelegram(`${r.outcome==='WIN'?'✅':'❌'} <b>${r.outcome}</b> ${sym} ${r.dir}\nEntry ${r.price.toFixed(ASSETS[sym].dec)} → Exit ${cur.toFixed(ASSETS[sym].dec)}\nP&L: ${r.pnlUsd>=0?'+':''}$${r.pnlUsd.toFixed(2)}`);
+    }
+    await dbPut('signals',r);
+    if(r.outcome!=='OPEN'){
+      await saveSigMeta();fireOutcome(sym,r.dir,r.outcome,r.pnlUsd);
+      sendTelegram(`<b>PAPER ${r.outcome}</b> ${sym} ${r.dir}\nEntry ${fmtP(sym,r.price)} → fill ${fmtP(sym,r.exitPrice)}\nEstimated net P&L $${r.pnlUsd.toFixed(2)}`);
     }
   }
   if(changed){
@@ -4779,6 +4773,7 @@ async function checkOutcome(sym,cur){
     if(document.getElementById('th').style.display!=='none')renderHistory();
   }
 }
+
 
 // ═══ RENDER HISTORY — split HIGH / MED ═════════════════════════════════════
 function renderHistory(){
@@ -4795,7 +4790,7 @@ function renderHistory(){
     const wins=sigs.filter(r=>r.outcome==='WIN').length;
     const losses=sigs.filter(r=>r.outcome==='LOSS').length;
     const open=sigs.filter(r=>r.outcome==='OPEN').length;
-    const closed=wins+losses;
+    const closed=wins+losses+sigs.filter(r=>r.outcome==='BE').length;
     const wr=closed>0?Math.round(wins/closed*100):0;
     const pnl=sigs.reduce((s,r)=>s+(r.pnlUsd||0),0);
     const best=sigs.reduce((b,r)=>r.pnlUsd!=null&&r.pnlUsd>(b?.pnlUsd??-Infinity)?r:b,null);
@@ -4807,7 +4802,7 @@ function renderHistory(){
   let summaryHtml='';
   if(canPnl){
     if(canHigh){
-      summaryHtml+=`<div class="hist-section-title" style="color:var(--grn)">★ HIGH CONFIDENCE — 0.02 lot</div>
+      summaryHtml+=`<div class="hist-section-title" style="color:var(--grn)">★ HIGH MODEL SCORE</div>
       <div class="report-grid">
         <div class="rstat high-stat"><div class="rstat-label">WIN RATE</div><div class="rstat-val" style="color:${hs.wr>=50?'var(--grn)':'var(--red)'}">${hs.wr}%</div><div class="rstat-sub">${hs.wins}W · ${hs.losses}L · ${hs.open} open</div></div>
         <div class="rstat high-stat"><div class="rstat-label">P&L (HIGH)</div><div class="rstat-val" style="color:${hs.pnl>=0?'var(--grn)':'var(--red)'}">${hs.pnl>=0?'+':''}$${hs.pnl.toFixed(2)}</div><div class="rstat-sub">${hs.closed} closed trades</div></div>
@@ -5053,11 +5048,9 @@ async function checkTrendFlips(){
 async function closeSignalNow(id){
   const r=signalHistory.find(x=>x.id===id&&x.outcome==='OPEN');if(!r)return;
   const cur=prices[r.sym];if(cur==null)return showToast('No live price yet','var(--red)');
-  const isBuy=r.dir==='BUY';
-  const rem=r.remFrac==null?1:r.remFrac;
-  r.realUsd=(r.realUsd||0)+(isBuy?(cur-r.price):(r.price-cur))*r.posUnits*rem;
-  r.remFrac=0;r.pnlUsd=r.realUsd;r.pnlPct=r.pnlUsd/CAPITAL*100;
-  r.outcome=r.pnlUsd>=0?'WIN':'LOSS';r.exitPrice=cur;r.manualExit=true;
+  if(!paperReady()||!freshQuote(r.sym))return showToast('Fresh quote and server ownership required','var(--red)');
+  PaperMath.fill(r,cur,r.remFrac==null?1:r.remFrac,'MANUAL');
+  r.pnlPct=r.pnlUsd/CAPITAL*100;r.manualExit=true;
   r.exitTimeStr=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   await dbPut('signals',r);
   if(activeSignals[r.sym]===r.id)delete activeSignals[r.sym];
@@ -5205,9 +5198,15 @@ const CALENDAR_SOURCES=[
 ];
 let calendarFailedAt=0;
 const CALENDAR_RETRY_COOLDOWN_MS=30000; // don't hammer a failing calendar chain every time an asset tab is switched
+let calendarPromise=null;
 async function fetchEconCalendar(force){
+  if(calendarPromise)return calendarPromise;
+  calendarPromise=fetchEconCalendarImpl(force);
+  try{return await calendarPromise;}finally{calendarPromise=null;}
+}
+async function fetchEconCalendarImpl(force){
   if(!force&&calendarCache&&Date.now()-calendarCacheAt<ANALYSIS_CACHE_MS)return calendarCache;
-  if(!force&&!calendarCache&&Date.now()-calendarFailedAt<CALENDAR_RETRY_COOLDOWN_MS)return null;
+  if(!force&&Date.now()-calendarFailedAt<CALENDAR_RETRY_COOLDOWN_MS)return null;
   await throttleFeedCall();
   const {data,error}=await fetchJsonRobust(CALENDAR_SOURCES,{timeoutMs:8000,validate:d=>Array.isArray(d)&&d.length>0,extractJson:true});
   feedError.calendar=data?null:error;
@@ -5447,45 +5446,55 @@ function setPnlPeriod(p,el){
 // Range in ms. NOTE: archived trades ARE included — archiving only hides them from
 // the signal log, it must never remove them from your P&L.
 function pnlRange(){
-  const now=new Date(),sod=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
+  const now=new Date(Date.now()+19800000),sod=istDayKey(Date.now())*864e5-19800000;
   switch(pnlPeriod){
     case 'today':return{a:sod,b:Infinity,label:'Today'};
-    case 'yest':return{a:sod-864e5,b:sod,label:'Yesterday'};
+    case 'yest':return{a:sod-864e5,b:sod-1,label:'Yesterday'};
     case 'week':return{a:sod-6*864e5,b:Infinity,label:'Last 7 Days'};
-    case 'month':return{a:new Date(now.getFullYear(),now.getMonth(),1).getTime(),b:Infinity,label:now.toLocaleDateString('en-IN',{month:'long',year:'numeric'})};
+    case 'month':return{a:Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),1)-19800000,b:Infinity,label:now.toLocaleDateString('en-IN',{month:'long',year:'numeric'})};
     case 'all':return{a:0,b:Infinity,label:'All Time'};
     case 'custom':{
       const f=document.getElementById('pnlFrom').value,t=document.getElementById('pnlTo').value;
-      const a=f?new Date(f+'T00:00:00').getTime():0;
-      const b=t?new Date(t+'T23:59:59').getTime():Infinity;
+      const a=f?Date.parse(f+'T00:00:00+05:30'):0;
+      const b=t?Date.parse(t+'T23:59:59.999+05:30'):Infinity;
       return{a,b,label:(f||'start')+' → '+(t||'now')};
     }
   }
   return{a:0,b:Infinity,label:'All Time'};
 }
-const sigTime=r=>r.ts||r.id||0;
-function pnlRows(){const{a,b}=pnlRange();return signalHistory.filter(r=>{const t=sigTime(r);return t>=a&&t<=b;});}
+const sigTime=r=>r.closedAt||r.exitAt||r.ts||r.t||Number(r.id)||0;
+function allPaperRows(){
+  const auto=signalHistory.map(r=>({...r,strategy:r.manual?'Manual paper':'Auto',legacy:r.accountingVersion!==2}));
+  const scalps=scalpHist.map(r=>({...r,ts:r.t,price:r.entry,posUnits:r.units,pnlUsd:r.pnl,
+    outcome:r.status==='OPEN'?'OPEN':Number.isFinite(r.pnl)?PaperMath.outcome(r.pnl):'UNKNOWN',strategy:'Low Profit',legacy:r.accountingVersion!==2}));
+  const baskets=[...basketDemo.history,...(basketDemo.active?[basketDemo.active]:[])].flatMap(s=>s.positions.map(p=>({...p,sym:s.sym,ts:p.openedAt,price:p.entry,posUnits:p.units,pnlUsd:p.pnl,
+    outcome:p.status==='OPEN'?'OPEN':Number.isFinite(p.pnl)?PaperMath.outcome(p.pnl):'UNKNOWN',strategy:'Basket',legacy:p.accountingVersion!==2})));
+  return [...auto,...scalps,...baskets];
+}
+function pnlRows(){const{a,b}=pnlRange();return allPaperRows().filter(r=>{const t=sigTime(r);return t>=a&&t<=b;});}
 function pnlStats(list){
   const w=list.filter(r=>r.outcome==='WIN').length,l=list.filter(r=>r.outcome==='LOSS').length,o=list.filter(r=>r.outcome==='OPEN').length;
   const h=list.filter(r=>r.confidence==='HIGH').length,m=list.filter(r=>r.confidence==='MED').length;
   const pnl=list.reduce((x,r)=>x+(r.pnlUsd||0),0);
-  const closed=w+l,wr=closed?Math.round(w/closed*100):0;
-  return{w,l,o,h,m,pnl,closed,wr,n:list.length};
+  const be=list.filter(r=>r.outcome==='BE').length;
+  const closed=w+l+be,wr=closed?Math.round(w/closed*100):0;
+  return{w,l,be,o,h,m,pnl,closed,wr,n:list.length};
 }
 function renderPnl(){
   const body=document.getElementById('pnlBody');if(!body)return;
   const{label}=pnlRange(),rows=pnlRows(),tot=pnlStats(rows);
   const good=tot.pnl>0,bad=tot.pnl<0;
   const col=good?'var(--grn)':bad?'var(--red)':'var(--mut)';
-  const mediaHtml=tot.closed===0
-    ? `<div style="font-size:52px;margin-bottom:6px">🕐</div>`
-    : `<video class="pnl-vid" src="${good?'happy.mp4':bad?'bear.mp4':'happy.mp4'}" autoplay loop muted playsinline></video>`;
+  const mediaHtml='<div style="font-size:40px;margin-bottom:6px">📊</div>';
   let html=`<div class="pnl-hero">
     ${mediaHtml}
     <div class="pnl-big" style="color:${col}">${tot.pnl>=0?'+':'-'}$${Math.abs(tot.pnl).toFixed(2)}</div>
-    <div class="pnl-sub">${label} · ${tot.w}W ${tot.l}L${tot.o?` · ${tot.o} open`:''} · Win rate ${tot.wr}%</div>
+    <div class="pnl-sub">${label} (IST) · ${tot.w}W ${tot.l}L ${tot.be}BE${tot.o?` · ${tot.o} open`:''} · Win rate ${tot.wr}%</div>
     <div class="pnl-sub" style="color:${col};font-weight:800;margin-top:6px">${tot.closed===0?'No closed trades in this period':good?'🎉 Profitable period — well played!':bad?'😔 Down this period — stay disciplined':'Breakeven period'}</div>
   </div>`;
+  html+=`<div class="notice">Paper P&amp;L across Auto, Low Profit and Basket, grouped by exit date (IST). Spread is estimated; commission, financing and broker slippage are not included. ${rows.filter(r=>r.legacy).length} legacy rows retain unverified historical accounting.</div>`;
+  html+=`<div class="hist-section-title">BY STRATEGY</div>`;
+  ['Auto','Manual paper','Low Profit','Basket'].forEach(strategy=>{const st=pnlStats(rows.filter(r=>r.strategy===strategy));html+=`<div class="pnl-row"><span>${strategy} · ${st.closed} closed</span><b>${st.pnl>=0?'+':''}$${st.pnl.toFixed(2)}</b></div>`;});
   html+=`<div class="hist-section-title">BY COMMODITY</div>`;
   SYMS.forEach(sym=>{
     const st=pnlStats(rows.filter(r=>r.sym===sym));
@@ -5500,7 +5509,7 @@ function renderPnl(){
     </div>`;
   });
   html+=`<div class="hist-section-title">BY CONFIDENCE TIER</div>`;
-  [['HIGH','★ HIGH · 0.02 lot','var(--grn)'],['MED','◆ MED · 0.01 lot','var(--acc)']].forEach(([tier,ttl,tc])=>{
+  [['HIGH','★ HIGH · model score','var(--grn)'],['MED','◆ MED · 0.01 lot','var(--acc)']].forEach(([tier,ttl,tc])=>{
     const st=pnlStats(rows.filter(r=>r.confidence===tier));
     const c=st.pnl>0?'var(--grn)':st.pnl<0?'var(--red)':'var(--mut)';
     html+=`<div class="pnl-row" style="border-color:${tc}44">
@@ -5513,9 +5522,9 @@ function renderPnl(){
   });
   const openRows=rows.filter(r=>r.outcome==='OPEN');
   if(openRows.length){
-    let float=0;openRows.forEach(r=>{const cur=prices[r.sym];if(cur!=null){const rem=r.remFrac==null?1:r.remFrac;float+=((r.dir==='BUY'?(cur-r.price):(r.price-cur))*r.posUnits*rem)+(r.realUsd||0);}});
+    let float=0;openRows.forEach(r=>{const cur=prices[r.sym];if(freshQuote(r.sym)){const rem=r.remFrac==null?1:r.remFrac;float+=((r.dir==='BUY'?(cur-r.price):(r.price-cur))-(r.spreadPerUnit??SPREAD[r.sym]??0))*r.posUnits*rem+(r.realUsd||0);}});
     html+=`<div class="pnl-row" style="border-style:dashed"><div class="pnl-row-ico">⏳</div>
-      <div class="pnl-row-mid"><div class="pnl-row-sym">Open positions (floating)</div><div class="pnl-row-sub">${openRows.length} running · not counted above</div></div>
+      <div class="pnl-row-mid"><div class="pnl-row-sym">Open positions (floating)</div><div class="pnl-row-sub">${openRows.length} running · fresh quotes only, estimated spread · not counted above</div></div>
       <div class="pnl-row-val" style="color:${float>=0?'var(--grn)':'var(--red)'}">${float>=0?'+':'-'}$${Math.abs(float).toFixed(2)}</div></div>`;
   }
   // ═══ ADVANCED TRADING STATS — Voltrex-style dense stat panel, computed from real
@@ -5552,11 +5561,11 @@ function renderPnl(){
 // profit factor, expectancy, and the zero-loss/no-closed-trades edge cases before this
 // was wired into the P&L tab.
 function computeAdvancedStats(rows){
-  const closed=rows.filter(r=>r.outcome==='WIN'||r.outcome==='LOSS');
+  const closed=rows.filter(r=>r.outcome==='WIN'||r.outcome==='LOSS'||r.outcome==='BE');
   const n=closed.length;
   if(!n)return null;
-  const wins=closed.filter(r=>(r.pnlUsd||0)>0);
-  const losses=closed.filter(r=>(r.pnlUsd||0)<=0);
+  const wins=closed.filter(r=>(r.pnlUsd||0)>.005);
+  const losses=closed.filter(r=>(r.pnlUsd||0)<-.005);
   const grossProfit=wins.reduce((s,r)=>s+r.pnlUsd,0);
   const grossLoss=Math.abs(losses.reduce((s,r)=>s+r.pnlUsd,0));
   const profitFactor=grossLoss>0?grossProfit/grossLoss:(grossProfit>0?Infinity:0);
@@ -5671,6 +5680,7 @@ async function initAuth(){
   await loadThemeState();
   await loadHistory();
   if(currentUser){
+    signalHistory=[];scalpHist=[];activeSignals={};sigCooldown={};paperEngine.until=0;
     basketLoad();
     await riyanRestore();
     await basketDbRestore();
@@ -5751,7 +5761,7 @@ document.addEventListener('visibilitychange',async()=>{
 async function riyanApi(path,opts={}){
   const headers={'Accept':'application/json',...(opts.headers||{})};
   if(opts.body)headers['Content-Type']='application/json';
-  if(opts.method&&opts.method!=='GET')headers['X-CSRF-Token']=riyanCsrf;
+  if(opts.method&&opts.method!=='GET'){headers['X-CSRF-Token']=riyanCsrf;headers['X-Paper-Engine']=paperEngine.id;}
   const response=await fetch(path,{...opts,credentials:'same-origin',cache:'no-store',headers});
   if(!response.ok)throw Error('HTTP '+response.status);
   return response.status===204?null:response.json();
@@ -5820,6 +5830,7 @@ async function riyanProcessQueue(){
     for(const [k,item] of Object.entries(pending).slice(0,100)){
       if(!currentUser||currentUser.username!==user)break;
       if(item.retryAt&&item.retryAt>Date.now())continue;
+      if(['auto-signals','manual-signals','low-profit','basket-positions','basket-sessions'].includes(item.type)&&Date.now()>=paperEngine.leaseUntil)continue;
       try{
         const safeId=await riyanSafeRecordId(item.type,item.id);
         const data=JSON.parse(item.value);
@@ -5840,6 +5851,10 @@ async function riyanProcessQueue(){
         sent++;
       }catch(e){
         const err=String(e.message||e),latest=JSON.parse(localStorage.getItem(key)||'{}');
+        if(err==='HTTP 409'&&await paperReconcileConflict(item,user)){
+          if(latest[k]?.value===item.value){delete latest[k];localStorage.setItem(key,JSON.stringify(latest));}
+          continue;
+        }
         if(terminal.has(err)||err==='Invalid JSON record'){
           // Keep the full unsaved record for inspection/retry; never discard silently.
           const failed=JSON.parse(localStorage.getItem(failedKey)||'{}');
@@ -5892,7 +5907,7 @@ async function riyanRetryFailed(){
 }
 function riyanSnapshot(){
   if(!currentUser||currentUser.role==='guest')return;
-  const day=new Date().toISOString().slice(0,10);
+  const day=new Date(Date.now()+19800000).toISOString().slice(0,10);
   Object.entries(analysisCache).forEach(([sym,data])=>riyanQueue('analysis',sym+'-'+(data.at||day),{symbol:sym,...data}));
   Object.entries(researchCache).forEach(([sym,data])=>riyanQueue('research',sym+'-'+day,{symbol:sym,...data}));
   Object.entries(newsLog).forEach(([key,data])=>riyanQueue('gold-calls',key,data));
@@ -5930,35 +5945,39 @@ function riyanSnapshot(){
     forecastEvents:newsTrackRows(7*864e5,true),
     recentActualEvents:newsTrackRows(7*864e5,false)
   });
-  const settled=signalHistory.filter(r=>r.outcome==='WIN'||r.outcome==='LOSS');
+  const settled=allPaperRows().filter(r=>['WIN','LOSS','BE'].includes(r.outcome));
   riyanQueue('pnl','daily-'+day,{
     date:day,generatedAt:Date.now(),
     totalSignals:signalHistory.length,totalScalps:scalpHist.length,
     closedSignals:settled.length,
-    signalProfitUsd:settled.reduce((sum,r)=>sum+(Number(r.pnlUsd)||0),0),
+    combinedPaperProfitUsd:settled.reduce((sum,r)=>sum+(Number(r.pnlUsd)||0),0),
+    signalProfitUsd:settled.filter(r=>r.strategy==='Auto'||r.strategy==='Manual paper').reduce((sum,r)=>sum+(Number(r.pnlUsd)||0),0),
     scalpProfitUsd:scalpHist.reduce((sum,r)=>sum+(Number(r.pnl)||0),0),
-    advanced:computeAdvancedStats(signalHistory),
+    advanced:computeAdvancedStats(allPaperRows()),
     recentSignalIds:signalHistory.slice(0,200).map(r=>r.id),
     recentScalpIds:scalpHist.slice(0,200).map(r=>r.id||r.t)
   });
 }
 async function riyanRestore(){
   if(!currentUser)return;
+  const restoringUser=currentUser.username;
   try{
     const rows=await Promise.all(['auto-signals','manual-signals','low-profit','gold-calls']
-      .map(type=>riyanApi('/api/v1/records/'+type+'?limit=1000')));
+      .map(type=>riyanReadAll(type)));
+    if(currentUser?.username!==restoringUser)return false;
     const parse=r=>{try{return typeof r.payload==='string'?JSON.parse(r.payload):r.payload;}catch(e){return null;}};
-    const merged=new Map(signalHistory.map(r=>[String(r.id),r]));
+    const merged=new Map();
     rows[0].concat(rows[1]).map(parse).filter(Boolean).forEach(r=>{
-      if(r.id!=null&&!merged.has(String(r.id)))merged.set(String(r.id),r);
+      if(r.id!=null)merged.set(String(r.id),{...r,owner:currentUser.username});
     });
     signalHistory=[...merged.values()].sort((a,b)=>(b.id||0)-(a.id||0));
-    const scalpMap=new Map(scalpHist.map(r=>[String(r.id||r.t),r]));
+    const scalpMap=new Map();
     rows[2].map(parse).filter(Boolean).forEach(r=>scalpMap.set(String(r.id||r.t),r));
-    scalpHist=[...scalpMap.values()].sort((a,b)=>(b.t||0)-(a.t||0)).slice(0,400);
+    scalpHist=[...scalpMap.values()].sort((a,b)=>(b.t||0)-(a.t||0));
     rows[3].forEach(r=>{const item=parse(r);const sourceId=item?.originalSourceId||r.source_id;if(item&&!newsLog[sourceId])newsLog[sourceId]=item;});
-    for(const r of signalHistory)try{await dbPut('signals',r);}catch(e){}
-  }catch(e){console.warn('DB restore unavailable, retained browser cache',e);}
+    activeSignals={};for(const r of signalHistory)if(r.outcome==='OPEN')activeSignals[r.sym]=r.id;
+    return true;
+  }catch(e){console.warn('DB restore unavailable, paper entries paused',e);return false;}
 }
 async function riyanConnect(){
   if(!currentUser)return showToast('Log in first','var(--red)');

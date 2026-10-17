@@ -22,6 +22,19 @@ class AuthPersistenceIntegrationTest {
     @Autowired private MockMvc mvc;
     @Autowired private ObjectMapper mapper;
 
+    private String paperJson(String key) throws Exception {
+        var n=mapper.createObjectNode();
+        n.put("sym","XAUUSD").put("dir","BUY").put("entry",100).put("sl",99.5)
+            .put("tp",102).put("units",1).put("lot",.01).put("status","OPEN")
+            .put("paperOnly",true).put("accountingVersion",2).put("signalKey",key)
+            .put("updatedAt",System.currentTimeMillis()).putNull("brokerOrderId");
+        return mapper.writeValueAsString(n);
+    }
+    private void lease(Cookie[] cookies,String csrf) throws Exception {
+        mvc.perform(post("/api/v1/paper/lease").cookie(cookies).header("X-CSRF-Token",csrf).header("X-Paper-Engine","integration-engine")
+            .header("X-Paper-Engine","integration-engine"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.owned").value(true));
+    }
     @Test
     void loginAndAuditRequireServerSession() throws Exception {
         mvc.perform(get("/api/v1/records/auto-signals"))
@@ -43,20 +56,21 @@ class AuthPersistenceIntegrationTest {
         assertNotNull(sessionCookie);
         assertNotNull(csrfCookie);
         Cookie[] authCookies={sessionCookie,csrfCookie};
+        lease(authCookies,csrf);
         mvc.perform(put("/api/v1/records/auto-signals/ci-123")
             .cookie(authCookies).contentType(MediaType.APPLICATION_JSON)
             .content("{\"sym\":\"XAUUSD\",\"dir\":\"BUY\",\"reason\":\"EMA20\"}"))
             .andExpect(status().isForbidden());
         mvc.perform(put("/api/v1/records/auto-signals/ci-123")
-            .cookie(authCookies).header("X-CSRF-Token",csrf).contentType(MediaType.APPLICATION_JSON)
-            .content("{\"sym\":\"XAUUSD\",\"dir\":\"BUY\",\"reason\":\"EMA20\",\"conditions\":{\"trend\":\"BULL\"}}"))
+            .cookie(authCookies).header("X-CSRF-Token",csrf).header("X-Paper-Engine","integration-engine").contentType(MediaType.APPLICATION_JSON)
+            .content(paperJson("ci-123")))
             .andExpect(status().isOk());
         mvc.perform(get("/api/v1/records/auto-signals").cookie(authCookies))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$[0].source_id").exists());
         mvc.perform(get("/api/v1/audit").cookie(authCookies))
             .andExpect(status().isOk());
-        mvc.perform(post("/api/v1/auth/logout").cookie(authCookies).header("X-CSRF-Token",csrf))
+        mvc.perform(post("/api/v1/auth/logout").cookie(authCookies).header("X-CSRF-Token",csrf).header("X-Paper-Engine","integration-engine"))
             .andExpect(status().isNoContent());
         mvc.perform(get("/api/v1/records/auto-signals").cookie(authCookies))
             .andExpect(status().isUnauthorized());
@@ -71,21 +85,24 @@ class AuthPersistenceIntegrationTest {
         JsonNode session=mapper.readTree(login.getResponse().getContentAsString());
         String csrf=session.path("csrf").asText();
         var cookies=login.getResponse().getCookies();
+        lease(cookies,csrf);
         for(String type:new String[]{"auto-signals","manual-signals","low-profit","analysis","seven-day",
                                      "pnl","gold-calls","research","news-alerts","tab-state","user-state"}) {
             String id="ci-"+type;
             mvc.perform(put("/api/v1/records/"+type+"/"+id)
-                .cookie(cookies).header("X-CSRF-Token",csrf)
+                .cookie(cookies).header("X-CSRF-Token",csrf).header("X-Paper-Engine","integration-engine")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"symbol\":\"XAUUSD\",\"status\":\"OPEN\",\"timeframe\":\"5m\",\"entry\":5000,\"sl\":4980,\"tp1\":5010,\"tp2\":5020,\"reason\":\"EMA20\",\"conditions\":{\"trend\":\"BULL\",\"adx\":24}}"))
+                .content(paperJson(id)))
                 .andExpect(status().isOk());
             mvc.perform(get("/api/v1/records/"+type).cookie(cookies))
                 .andExpect(status().isOk());
         }
+        var closed=(com.fasterxml.jackson.databind.node.ObjectNode)mapper.readTree(paperJson("ci-auto-signals"));
+        closed.put("status","CLOSED").put("pnl",1.65).put("exit",102).put("closedAt",System.currentTimeMillis());
         mvc.perform(put("/api/v1/records/auto-signals/ci-auto-signals")
-            .cookie(cookies).header("X-CSRF-Token",csrf)
+            .cookie(cookies).header("X-CSRF-Token",csrf).header("X-Paper-Engine","integration-engine")
             .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"symbol\":\"XAUUSD\",\"status\":\"CLOSED\",\"reason\":\"TP1 reached\"}"))
+            .content(mapper.writeValueAsString(closed)))
             .andExpect(status().isOk());
         mvc.perform(get("/api/v1/audit").cookie(cookies))
             .andExpect(status().isOk())
@@ -104,7 +121,7 @@ class AuthPersistenceIntegrationTest {
         for(var entry:java.util.Map.of("tsuser","user","vino","user","guest","guest").entrySet()) {
             String password="staging-new-password-"+entry.getKey()+"-123!";
             mvc.perform(post("/api/v1/auth/users")
-                .cookie(adminCookies).header("X-CSRF-Token",csrf)
+                .cookie(adminCookies).header("X-CSRF-Token",csrf).header("X-Paper-Engine","integration-engine")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(mapper.writeValueAsString(java.util.Map.of(
                     "username",entry.getKey(),"role",entry.getValue(),"password",password))))
@@ -136,19 +153,19 @@ class AuthPersistenceIntegrationTest {
         String csrf=mapper.readTree(adminLogin.getResponse().getContentAsString()).path("csrf").asText();
         var cookies=adminLogin.getResponse().getCookies();
         // Admin keeps 12+ characters.
-        mvc.perform(post("/api/v1/auth/users").cookie(cookies).header("X-CSRF-Token",csrf)
+        mvc.perform(post("/api/v1/auth/users").cookie(cookies).header("X-CSRF-Token",csrf).header("X-Paper-Engine","integration-engine")
             .contentType(MediaType.APPLICATION_JSON)
             .content(mapper.writeValueAsString(java.util.Map.of(
                 "username","weakadmin","role","admin","password","12345"))))
             .andExpect(status().isBadRequest());
 
         // Normal users can use a password of exactly 5 characters, not 4.
-        mvc.perform(post("/api/v1/auth/users").cookie(cookies).header("X-CSRF-Token",csrf)
+        mvc.perform(post("/api/v1/auth/users").cookie(cookies).header("X-CSRF-Token",csrf).header("X-Paper-Engine","integration-engine")
             .contentType(MediaType.APPLICATION_JSON)
             .content(mapper.writeValueAsString(java.util.Map.of(
                 "username","shortuser","role","user","password","1234"))))
             .andExpect(status().isBadRequest());
-        mvc.perform(post("/api/v1/auth/users").cookie(cookies).header("X-CSRF-Token",csrf)
+        mvc.perform(post("/api/v1/auth/users").cookie(cookies).header("X-CSRF-Token",csrf).header("X-Paper-Engine","integration-engine")
             .contentType(MediaType.APPLICATION_JSON)
             .content(mapper.writeValueAsString(java.util.Map.of(
                 "username","shortuser","role","user","password","12345"))))
@@ -159,7 +176,7 @@ class AuthPersistenceIntegrationTest {
             .andExpect(status().isOk());
 
         // Guest has no minimum (even a blank password), but no write access.
-        mvc.perform(post("/api/v1/auth/users").cookie(cookies).header("X-CSRF-Token",csrf)
+        mvc.perform(post("/api/v1/auth/users").cookie(cookies).header("X-CSRF-Token",csrf).header("X-Paper-Engine","integration-engine")
             .contentType(MediaType.APPLICATION_JSON)
             .content(mapper.writeValueAsString(java.util.Map.of(
                 "username","nopassguest","role","guest","password",""))))
@@ -179,34 +196,34 @@ class AuthPersistenceIntegrationTest {
 
         // Password reset obeys the existing role.
         mvc.perform(put("/api/v1/auth/users/shortuser/password")
-            .cookie(cookies).header("X-CSRF-Token",csrf)
+            .cookie(cookies).header("X-CSRF-Token",csrf).header("X-Paper-Engine","integration-engine")
             .contentType(MediaType.APPLICATION_JSON)
             .content(mapper.writeValueAsString(java.util.Map.of("password","1234"))))
             .andExpect(status().isBadRequest());
         mvc.perform(put("/api/v1/auth/users/shortuser/password")
-            .cookie(cookies).header("X-CSRF-Token",csrf)
+            .cookie(cookies).header("X-CSRF-Token",csrf).header("X-Paper-Engine","integration-engine")
             .contentType(MediaType.APPLICATION_JSON)
             .content(mapper.writeValueAsString(java.util.Map.of("password","abcde"))))
             .andExpect(status().isOk());
 
         // Guest -> user and user -> admin require new, stronger passwords.
         mvc.perform(put("/api/v1/auth/users/nopassguest/role")
-            .cookie(cookies).header("X-CSRF-Token",csrf)
+            .cookie(cookies).header("X-CSRF-Token",csrf).header("X-Paper-Engine","integration-engine")
             .contentType(MediaType.APPLICATION_JSON)
             .content(mapper.writeValueAsString(java.util.Map.of("role","user"))))
             .andExpect(status().isBadRequest());
         mvc.perform(put("/api/v1/auth/users/nopassguest/role")
-            .cookie(cookies).header("X-CSRF-Token",csrf)
+            .cookie(cookies).header("X-CSRF-Token",csrf).header("X-Paper-Engine","integration-engine")
             .contentType(MediaType.APPLICATION_JSON)
             .content(mapper.writeValueAsString(java.util.Map.of("role","user","password","abcde"))))
             .andExpect(status().isOk());
         mvc.perform(put("/api/v1/auth/users/shortuser/role")
-            .cookie(cookies).header("X-CSRF-Token",csrf)
+            .cookie(cookies).header("X-CSRF-Token",csrf).header("X-Paper-Engine","integration-engine")
             .contentType(MediaType.APPLICATION_JSON)
             .content(mapper.writeValueAsString(java.util.Map.of("role","admin","password","abcde"))))
             .andExpect(status().isBadRequest());
         mvc.perform(put("/api/v1/auth/users/shortuser/role")
-            .cookie(cookies).header("X-CSRF-Token",csrf)
+            .cookie(cookies).header("X-CSRF-Token",csrf).header("X-Paper-Engine","integration-engine")
             .contentType(MediaType.APPLICATION_JSON)
             .content(mapper.writeValueAsString(java.util.Map.of(
                 "role","admin","password","new-admin-secret-1234"))))
@@ -248,7 +265,7 @@ class AuthPersistenceIntegrationTest {
         String ownId="stateowner--id-"+hash;
         String otherId="otheruser--id-"+hash;
         mvc.perform(put("/api/v1/records/user-state/"+ownId)
-            .cookie(cookies).header("X-CSRF-Token",csrf)
+            .cookie(cookies).header("X-CSRF-Token",csrf).header("X-Paper-Engine","integration-engine")
             .contentType(MediaType.APPLICATION_JSON)
             .content(mapper.writeValueAsString(java.util.Map.of(
                 "symbol","XAUUSD","blocked","5m data stale",
@@ -259,12 +276,12 @@ class AuthPersistenceIntegrationTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$[0].source_id").value(ownId));
         mvc.perform(put("/api/v1/records/user-state/"+otherId)
-            .cookie(cookies).header("X-CSRF-Token",csrf)
+            .cookie(cookies).header("X-CSRF-Token",csrf).header("X-Paper-Engine","integration-engine")
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"symbol\":\"BTCUSD\"}"))
             .andExpect(status().isForbidden());
         mvc.perform(put("/api/v1/records/user-state/stateowner--not-a-hash")
-            .cookie(cookies).header("X-CSRF-Token",csrf)
+            .cookie(cookies).header("X-CSRF-Token",csrf).header("X-Paper-Engine","integration-engine")
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"symbol\":\"BTCUSD\"}"))
             .andExpect(status().isForbidden());
@@ -294,28 +311,26 @@ class AuthPersistenceIntegrationTest {
         var ownerCookies=ownLogin.getResponse().getCookies();
         String csrf=mapper.readTree(ownLogin.getResponse().getContentAsString())
             .path("csrf").asText();
+        lease(ownerCookies,csrf);
         String ownId="basketowner--id-"+"b".repeat(64);
         String alienId="otheruser--id-"+"c".repeat(64);
         for(String type:java.util.List.of("basket-sessions","basket-positions",
                 "basket-events","basket-replays")) {
             String path="/api/v1/records/"+type+"/"+ownId;
-            String paperJson=mapper.writeValueAsString(java.util.Map.of(
-                "symbol","XAUUSD","direction","BUY","status","OPEN",
-                "paperOnly",true,"reason","confirmed 5m demo only",
-                "conditions",java.util.Map.of("maxBasketRiskUsd",4,"lot",0.01)));
+            String paperJson=paperJson("basket-ci");
             mvc.perform(put(path).cookie(ownerCookies)
-                .header("X-CSRF-Token",csrf).contentType(MediaType.APPLICATION_JSON)
+                .header("X-CSRF-Token",csrf).header("X-Paper-Engine","integration-engine").contentType(MediaType.APPLICATION_JSON)
                 .content(paperJson)).andExpect(status().isOk());
             mvc.perform(get("/api/v1/records/"+type).cookie(ownerCookies))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].source_id").value(ownId));
             mvc.perform(put("/api/v1/records/"+type+"/"+alienId)
-                .cookie(ownerCookies).header("X-CSRF-Token",csrf)
+                .cookie(ownerCookies).header("X-CSRF-Token",csrf).header("X-Paper-Engine","integration-engine")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(paperJson)).andExpect(status().isForbidden());
         }
         mvc.perform(put("/api/v1/records/basket-sessions/"+ownId)
-            .cookie(ownerCookies).header("X-CSRF-Token",csrf)
+            .cookie(ownerCookies).header("X-CSRF-Token",csrf).header("X-Paper-Engine","integration-engine")
             .contentType(MediaType.APPLICATION_JSON)
             .content(mapper.writeValueAsString(java.util.Map.of(
                 "symbol","XAUUSD","status","CLOSED",

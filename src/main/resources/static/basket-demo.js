@@ -54,7 +54,7 @@ function basketPlan(sym,scan,entry,c5,cfg){
   var experimental=scan.strategyVersion==='continuation-v1-opt-in';
   if(experimental&&swingDistance>1.3*A)return{reject:'EMA9 swing stop too wide'};
   var dist=experimental?Math.max(0.45*A,swingDistance):
-    Math.min(Math.max(swingDistance,A),1.6*A);
+    Math.max(swingDistance,A);
   if(!Number.isFinite(dist)||!Number.isFinite(units)||!Number.isFinite(ext)||
      !(dist>0&&units>0))return{reject:'Invalid stop distance'};
   var sl=entry-sgn*dist,riskUsd=(dist+spread)*units;
@@ -103,7 +103,7 @@ function basketEvent(session,action,details){
     riyanQueue('basket-events',basketRecordId(e.id),e);
 }
 function basketClose(price,why,time){
-  var s=basketDemo.active;if(!s)return;
+  var s=basketDemo.active;if(!s||!paperReady())return;
   var at=time||Date.now(),net=basketPnlAt(s.positions,price,s.sym);
   s.status='CLOSED';s.exit=price;s.closedAt=at;s.updatedAt=at;s.closeReason=why;s.netPnl=+net.toFixed(4);
   for(var p of s.positions){
@@ -115,8 +115,8 @@ function basketClose(price,why,time){
   basketEvent(s,'CLOSE_ALL',{reason:why,exit:price,netPnl:s.netPnl,
     positions:s.positions.length});
   basketPersistSession(s);
-  basketDemo.history.unshift(s);basketDemo.history=basketDemo.history.slice(0,100);
-  basketDemo.active=null;basketSave();
+  basketDemo.history.unshift(s);
+  basketDemo.cooldown=at+(net<0?15:5)*60000;basketDemo.active=null;basketSave();
   if(typeof showToast==='function')showToast('🧺 PAPER '+why+' · '+basketMoney(s.netPnl),
     s.netPnl>=0?'var(--grn)':'var(--red)');
 }
@@ -134,15 +134,15 @@ function basketProfitTrigger(s,target){
 // Conservative OHLC: per-position stops are tested before net basket target.
 // In an ambiguous same-candle move assume the adverse fill happens first.
 function basketCandleCheck(){
-  var s=basketDemo.active;if(!s)return;
+  var s=basketDemo.active;if(!s||!paperReady())return;
   var closed=kmrClosed(scalpData[s.sym]||[]).filter(k=>
-    k.t+300000<=Date.now()&&k.t>=s.createdAt&&k.t>(s.lastCheckedBar||0));
+    k.t+300000<=Date.now()&&k.t>=Math.max(s.createdAt,...s.positions.map(p=>p.openedAt))&&k.t>(s.lastCheckedBar||0));
   for(var k of closed){
     var stops=s.positions.filter(p=>s.dir==='BUY'?k.l<=p.sl:k.h>=p.sl);
     if(stops.length){
       var px=s.dir==='BUY'?Math.min(...stops.map(p=>p.sl)):
         Math.max(...stops.map(p=>p.sl));
-      basketClose(px,'POSITION_STOP',k.t+300000);return;
+      basketClose(PaperMath.stopFill(s.dir,px,k.o),'POSITION_STOP',k.t+300000);return;
     }
     var trigger=basketProfitTrigger(s,scalpCfg.target);
     if(trigger!=null&&(s.dir==='BUY'?k.h>=trigger:k.l<=trigger)){
@@ -152,9 +152,9 @@ function basketCandleCheck(){
   }
 }
 function basketManage(){
-  var s=basketDemo.active;if(!s)return;
+  var s=basketDemo.active;if(!s||!paperReady())return;
   var quote=prices[s.sym],feed=scalpState[s.sym]||{};
-  if(!Number.isFinite(quote)||quote<=0||feed.feedError||
+  if(!freshQuote(s.sym)||!Number.isFinite(quote)||quote<=0||feed.feedError||
      !feed.feedAt||Date.now()-feed.feedAt>12*60000){
     s.warning='Fresh quote unavailable: paper risk exit cannot be verified';return;
   }
@@ -179,8 +179,8 @@ function basketManage(){
     basketClose(quote,'TIME_STOP');return;
   }
 }
-function basketEvaluate(sym){
-  if(!currentUser||currentUser.role==='guest'||!basketDemo.enabled||
+async function basketEvaluate(sym){
+  if(!paperReady()||!freshQuote(sym)||Date.now()<(basketDemo.cooldown||0)||basketDemo.entryBusy||!currentUser||currentUser.role==='guest'||!basketDemo.enabled||
      !scalpCfg.auto||!scalpCfg.assets[sym])return;
   if(scalpHist.some(t=>t.status==='OPEN'))return;
   var s=basketDemo.active,st=scalpState[sym]||{},scan=st.scan,
@@ -205,7 +205,7 @@ function basketEvaluate(sym){
     session={id:'basket-'+Date.now()+'-'+Math.floor(Math.random()*10000),
       sym,dir:scan.dir,status:'OPEN',createdAt:Date.now(),
       positions:[],lastCheckedBar:scan.barT,paperOnly:true,netPnl:0};
-    basketDemo.active=session;
+
   }
   var pos={id:'paper-'+Date.now()+'-'+Math.floor(Math.random()*100000),
     sym,dir:scan.dir,status:'OPEN',entry:quote,sl:plan.sl,
@@ -215,6 +215,14 @@ function basketEvaluate(sym){
     conditions:{trend:scan.trend,adx:scan.adx,rsi7:scan.rsi7,relVolume:scan.relVol,
       atr5m:scan.A,gates:scan.gates,strategyVersion:scan.strategyVersion||'v28-original'},
     feedSource:st.feedSource||'unknown',paperOnly:true,brokerOrderId:null};
+  pos.accountingVersion=2;pos.updatedAt=pos.openedAt;pos.spreadPerUnit=SPREAD[sym]||0;
+  pos.owner=currentUser.username;pos.signalKey='basket:'+sym+':5m:'+scan.barT+':'+scan.dir;
+  pos.basketId=session.id;
+  basketDemo.entryBusy=true;
+  try{if(!await paperSaveEntry('basket-positions',basketRecordId(pos.id),pos))return;}
+  finally{basketDemo.entryBusy=false;}
+  // The position is durable before the browser creates the session or alerts.
+  basketDemo.active=session;
   session.positions.push(pos);session.updatedAt=Date.now();basketDemo.lastBars[sym]=scan.barT;
   basketDemo.blockReason='';
   basketEvent(session,'OPEN_POSITION',{positionId:pos.id,entry:quote,sl:pos.sl,
@@ -225,33 +233,37 @@ function basketEvaluate(sym){
     'var(--acc)');
 }
 async function basketDbRestore(){
-  if(!currentUser||currentUser.role==='guest')return;
+  if(!currentUser||currentUser.role==='guest')return false;
+  const user=currentUser.username;
   try{
-    var rows=await riyanApi('/api/v1/records/basket-sessions?limit=1000');
-    if(!Array.isArray(rows))return;
-    var parsed=rows.map(r=>{try{return typeof r.payload==='string'?JSON.parse(r.payload):r.payload;}catch(e){return null;}})
-      .filter(s=>s&&s.id&&s.paperOnly&&s.owner===currentUser.username);
-    var latest=new Map((basketDemo.history||[]).map(s=>[s.id,s]));
-    for(var s of parsed.filter(s=>s.status==='CLOSED')){
-      var prev=latest.get(s.id);
-      if(!prev||(s.updatedAt||s.closedAt||0)>(prev.updatedAt||prev.closedAt||0))latest.set(s.id,s);
+    const [records,positions]=await Promise.all([
+      riyanReadAll('basket-sessions'),
+      riyanReadAll('basket-positions')]);
+    if(currentUser?.username!==user)return false;
+    const parse=r=>{try{return typeof r.payload==='string'?JSON.parse(r.payload):r.payload;}catch(e){return null;}};
+    const sessions=new Map(records.map(parse).filter(s=>s&&s.owner===user).map(s=>[s.id,s]));
+    // A position may have committed immediately before a lost response / closed tab.
+    // Rebuild sessions from durable positions so accepted entries cannot disappear.
+    const grouped=new Map();
+    for(const p of positions.map(parse).filter(p=>p&&p.basketId)){
+      if(!grouped.has(p.basketId))grouped.set(p.basketId,[]);
+      grouped.get(p.basketId).push(p);
     }
-    basketDemo.history=[...latest.values()].sort((a,b)=>(b.closedAt||0)-(a.closedAt||0)).slice(0,100);
-    var sessions=parsed.filter(s=>s.status==='OPEN').sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
-    if(sessions.length>1){
-      basketDemo.enabled=false;
-      basketDemo.conflict='Multiple open baskets in DB; disabled pending reconciliation';
-    }else if(sessions.length===1){
-      var remote=sessions[0],local=basketDemo.active;
-      if(!local || (local.id===remote.id&&(remote.updatedAt||0)>(local.updatedAt||0))){
-        basketDemo.active=remote;
-      }else if(local.id!==remote.id){
-        basketDemo.enabled=false;
-        basketDemo.conflict='Local/DB active basket mismatch; disabled pending reconciliation';
-      }
+    for(const [id,ps] of grouped){
+      const meta=sessions.get(id)||{},open=ps.some(p=>p.status==='OPEN');
+      sessions.set(id,{...meta,id,sym:ps[0].sym,dir:ps[0].dir,positions:ps,
+        owner:user,paperOnly:true,status:open?'OPEN':'CLOSED',
+        createdAt:meta.createdAt||Math.min(...ps.map(p=>p.openedAt)),
+        closedAt:open?null:Math.max(...ps.map(p=>p.closedAt||0)),
+        netPnl:ps.reduce((v,p)=>v+(p.pnl||0),0)});
     }
-    basketSave();
-  }catch(e){console.warn('Paper basket DB restore skipped; retaining local cache',e);}
+    basketDemo.history=[...sessions.values()].filter(s=>s.status==='CLOSED');
+    const open=[...sessions.values()].filter(s=>s.status==='OPEN');
+    basketDemo.active=open.length===1?open[0]:null;
+    basketDemo.conflict=open.length>1?'Multiple open baskets require reconciliation':'';
+    if(open.length>1){basketDemo.enabled=false;throw Error(basketDemo.conflict);}
+    basketSave();return true;
+  }catch(e){console.warn('Paper basket restoration unavailable',e);return false;}
 }
 function basketToggle(){
   if(!currentUser||currentUser.role==='guest'){
@@ -264,9 +276,9 @@ function basketToggle(){
   basketDemo.enabled=!basketDemo.enabled;basketSave();renderScalpTab();
 }
 function basketCloseNow(){
-  var s=basketDemo.active;if(!s)return;
+  var s=basketDemo.active;if(!s||!paperReady())return;
   var price=prices[s.sym];
-  if(!Number.isFinite(price)||scalpState[s.sym].feedError){
+  if(!freshQuote(s.sym)||!Number.isFinite(price)||scalpState[s.sym].feedError){
     showToast('Cannot close simulated basket with an unavailable quote','var(--red)');return;
   }
   if(confirm('Close all '+s.positions.length+' simulated positions?'))

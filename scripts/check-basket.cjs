@@ -1,6 +1,7 @@
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
+const PaperMath=require('../src/main/resources/static/trading-core.js');
 const source=fs.readFileSync('src/main/resources/static/basket-demo.js','utf8');
 const replay=fs.readFileSync('src/main/resources/static/basket-replay.js','utf8');
 const html=fs.readFileSync('src/main/resources/static/index.html','utf8');
@@ -12,11 +13,11 @@ const now=Date.now();
 let queued=[],calls=[];
 const storage=new Map();
 const context=vm.createContext({
- Math,Date,console,Map,Set,Array,Object,Number,JSON,
+ Math,Date,console,Map,Set,Array,Object,Number,JSON,PaperMath,paperReady:()=>true,freshQuote:()=>true,
  localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v)},
  currentUser:{username:'basketowner',role:'user'},
  SPREAD:{XAUUSD:.35,XAGUSD:.03,BTCUSD:5},
- ASSETS:{XAUUSD:{contractSz:100,dec:2},XAGUSD:{contractSz:5000,dec:3},BTCUSD:{contractSz:1,dec:1}},
+ ASSETS:{XAUUSD:{contractSz:100,dec:2},XAGUSD:{contractSz:100,dec:3},BTCUSD:{contractSz:1,dec:1}},
  scalpCfg:{target:2,maxLoss:4,dayStop:8,goal:10,stopAtGoal:true,
    timeStopMin:45,auto:true,continuation:false,assets:{XAUUSD:true,XAGUSD:true,BTCUSD:true}},
  prices:{XAUUSD:100.5,XAGUSD:50,BTCUSD:80000},
@@ -106,7 +107,7 @@ assert.equal(results.ok,true);
 assert(results.positions>0,'synthetic confirmed candles should open paper positions');
 assert(results.maxPositions<=5,'replay may never open more than five positions');
 assert(results.baskets>0,'replay should close and report at least one basket');
-assert(results.assumptions.some(x=>x.includes('no MT5'))===false || true);
+assert(results.assumptions.some(x=>x.includes('no commission')), 'replay must disclose omitted costs');
 assert(!source.includes('mt5_executor')&&!source.includes('execute-demo'),
  'paper mode must not call MT5');
 
