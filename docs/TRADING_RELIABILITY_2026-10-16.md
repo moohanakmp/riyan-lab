@@ -40,7 +40,10 @@ Migration V5 adds lease and deduplication tables. V1–V4 were not edited; the V
 - GitHub Actions run `38995660944`: Java 21 / PostgreSQL 17, **15 tests passed, zero failures or skips**; all four frontend regression scripts passed.
 - Render health returned HTTP 200 and UP. The deployed index, trading-core and paper-engine files matched the published source byte for byte.
 - Authenticated reload, Signals, Low Profit and combined P&L rendered. Feed history was unavailable, so signals remained WAIT. Live paper-entry/exit scenarios cannot be certified without a usable candle feed.
-- Follow-up from live testing: version application modules to avoid mixing old and new scripts during rollout; correct fixed-lot, stop-gap, session and freshness labels. Engine restoration remains under investigation.
+- Follow-up from live testing: version application modules to avoid mixing old and new scripts during rollout; correct fixed-lot, stop-gap, session and freshness labels. Concurrent sync requests now share completion, and API waits have a 15-second deadline. These recovery regressions pass locally and in CI.
+
+- Authenticated read-only staging diagnostics passed health, unauthenticated rejection, session restoration, all 15 record types, both metal quotes, all three news APIs and background news polling. Binance returned HTTP 451 for BTC/XAU/XAG candles from the deployment; reliable signals require a region-supported data provider.
+- Live diagnostics found six missing static assets; both PWA icons and four decorative SVGs have been added, with a build-time reference check.
 
 ## Remaining release gates
 

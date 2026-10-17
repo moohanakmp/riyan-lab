@@ -11,3 +11,15 @@ for (const name of files) {
   for (const script of scripts) new vm.Script(script[1], {filename:path});
   console.log('Validated ' + scripts.length + ' inline JavaScript block(s) in ' + path);
 }
+const manifest = JSON.parse(fs.readFileSync(dir + '/manifest.json', 'utf8'));
+const assets = new Set(manifest.icons.map(icon => icon.src.replace(/^\//, '')));
+for (const name of files) {
+  const html = fs.readFileSync(dir + '/' + name, 'utf8');
+  for (const match of html.matchAll(/(?:src=["']|url\(["']?)(\/?(?:art\/[^"')\s]+|[^/"']+\.(?:js|png)))(?:\?[^"')\s]*)?["')]/g)) {
+    assets.add(match[1].replace(/^\//, '').split('?')[0]);
+  }
+}
+for (const asset of assets) {
+  if (!fs.existsSync(dir + '/' + asset)) throw new Error('Missing static asset: ' + asset);
+}
+console.log('Validated ' + assets.size + ' referenced local assets');
