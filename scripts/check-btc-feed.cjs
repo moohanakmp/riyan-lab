@@ -1,0 +1,47 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs'),vm=require('node:vm');
+const PaperMath=require('../src/main/resources/static/trading-core.js');
+const html=fs.readFileSync('src/main/resources/static/index.html','utf8');
+const source=fs.readFileSync('src/main/resources/static/btc-feed.js','utf8');
+const calls=[];let missing=null,fail=false;
+const ctx=vm.createContext({PaperMath,Date,Map,JSON,Number,Array,Object,Error,Math,Promise,
+ setTimeout:fn=>{fn();return 1;},
+ liveFetch:async url=>{
+  calls.push(url);if(fail)return {ok:false,status:503,json:async()=>({upstreamStatus:429})};
+  const u=new URL(url),step=+u.searchParams.get('granularity')*1000;
+  const start=Date.parse(u.searchParams.get('start')),end=Date.parse(u.searchParams.get('end'));
+  assert(end-start<300*step,'each page stays below the 300 bucket limit');
+  const rows=[];
+  for(let t=start-step;t<=end+step;t+=step)if(t!==missing)rows.push([t/1000,99,102,100,101,7]);
+  rows.reverse();rows.push(rows[0]);
+  return {ok:true,json:async()=>rows};
+ }});
+vm.runInContext(source,ctx);const feed=ctx.BtcFeed;
+(async()=>{
+ const end=Date.UTC(2025,0,3);
+ const data=await feed.candles('1m',301,end);
+ assert.equal(calls.length,2);assert.equal(data.length,301);
+ assert.equal(data[0].t,end-301*60000);assert.equal(data.at(-1).t,end-60000);
+ assert.deepEqual({...data[0]},{t:end-301*60000,ms:60000,l:99,h:102,o:100,c:101,v:7,complete:true});
+ data[0].c=100000;const again=await feed.candles('1m',301,end);
+ assert.equal(again[0].c,101,'consumer tick updates cannot corrupt cached source candles');assert.equal(calls.length,2);
+ const half=await feed.candles('30m',2,end);assert.equal(half.length,2);assert.equal(half[0].v,14);
+ missing=end-3600000;const four=await feed.candles('4h',2,end);assert.equal(four.length,1,'missing source hour drops incomplete 4h bar');
+ assert.equal(four[0].t,end-8*3600000);missing=null;
+ const at=Date.now();assert.equal(feed.quote({price:'100',time:new Date(at).toISOString()},at).price,100);
+ for(const q of [{price:'0',time:new Date(at).toISOString()},{price:'100',time:new Date(at-31000).toISOString()},{price:'100',time:new Date(at+6000).toISOString()}])assert.throws(()=>feed.quote(q,at));
+ assert.throws(()=>feed.normalize([[end/1000,110,90,100,100,1]],60000,end,end+60000));
+ assert.throws(()=>feed.normalize([[end/1000,99,102,100,101,1],[end/1000,99,102,100,100,1]],60000,end,end+60000));
+ fail=true;await assert.rejects(feed.candles('5m',4,end),/429/);fail=false;
+ assert.equal((await feed.candles('5m',4,end)).length,4,'provider errors do not poison the cache');
+ const extract=(a,b)=>html.slice(html.indexOf(a),html.indexOf(b,html.indexOf(a)));
+ vm.runInContext(extract('function analyzeFlowGeneric(', 'function mergeFlowRangesGeneric('),ctx);
+ vm.runInContext(extract('function fmtSlotTimeGeneric(', '// Aggregates N consecutive'),ctx);
+ ctx.flowZ=(k,n)=>n?(k-n/2)/Math.sqrt(n/4):0;
+ const day=Date.UTC(2025,0,1),bar=(i)=>({t:day+i*900000,ms:900000,o:100+i,h:110,l:99,c:101+i,v:1});
+ const flow=ctx.analyzeFlowGeneric([bar(1),bar(2),bar(3)],15);
+ assert.equal(flow.slots.length,1);assert.equal(flow.slots[0].slot,12,'misaligned first candle must not shift reporting slots');
+ assert.equal(flow.slots[0].avgNet,2);
+ assert.equal(ctx.fmtSlotTimeGeneric(5,60),'5:30am','UTC hour candles are labelled at their actual IST boundary');
+ console.log('PASS Coinbase pagination, OHLC mapping, sorted duplicates, cache isolation, partial aggregation, stale quotes, failed retry and aligned Flow buckets');
+})().catch(error=>{console.error(error);process.exitCode=1;});

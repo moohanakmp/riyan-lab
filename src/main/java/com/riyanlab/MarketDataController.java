@@ -26,6 +26,21 @@ public class MarketDataController {
             URI u=URI.create(raw.replace("[","%5B").replace("]","%5D").replace("\"","%22"));
             if(!"https".equals(u.getScheme())||u.getPort()!=-1||u.getUserInfo()!=null||u.getFragment()!=null)throw new IllegalArgumentException();
             if("api.gold-api.com".equals(u.getHost())&&Set.of("/price/XAU","/price/XAG").contains(u.getPath())&&u.getQuery()==null)return u;
+            if("api.exchange.coinbase.com".equals(u.getHost())){
+                if(Set.of("/products/BTC-USD/ticker","/products/BTC-USD/stats").contains(u.getPath())&&u.getQuery()==null)return u;
+                if(!"/products/BTC-USD/candles".equals(u.getPath())||u.getQuery()==null)throw new IllegalArgumentException();
+                Map<String,String> q=new HashMap<>();
+                for(String item:u.getQuery().split("&")){
+                    String[] kv=item.split("=",-1);
+                    if(kv.length!=2||q.put(kv[0],kv[1])!=null)throw new IllegalArgumentException();
+                }
+                if(!q.keySet().equals(Set.of("granularity","start","end")))throw new IllegalArgumentException();
+                int seconds=Integer.parseInt(q.get("granularity"));
+                if(!Set.of(60,300,900,3600,21600,86400).contains(seconds))throw new IllegalArgumentException();
+                long start=java.time.Instant.parse(q.get("start")).toEpochMilli(),end=java.time.Instant.parse(q.get("end")).toEpochMilli();
+                if(start<0||end<start||end-start>=300L*seconds*1000||end>System.currentTimeMillis()+60000)throw new IllegalArgumentException();
+                return u;
+            }
             boolean spot="api.binance.com".equals(u.getHost()),future="fapi.binance.com".equals(u.getHost());
             if(!spot&&!future)throw new IllegalArgumentException();
             if(spot&&"/api/v3/ticker/24hr".equals(u.getPath())&&"symbols=[\"BTCUSDT\"]".equals(u.getQuery()))return u;
@@ -55,10 +70,10 @@ public class MarketDataController {
         if(saved!=null&&saved.until>now)return response(saved);
         if(!permits.tryAcquire())throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"Market feed busy");
         try{
-            var upstream=client.send(java.net.http.HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(8)).GET().build(),HttpResponse.BodyHandlers.ofString());
+            var upstream=client.send(java.net.http.HttpRequest.newBuilder(uri).header("User-Agent","RiyanLab/1.0 public-market-data").timeout(Duration.ofSeconds(8)).GET().build(),HttpResponse.BodyHandlers.ofString());
             int status=upstream.statusCode();
             // Preserve bans/rate limits as unavailable. Never switch hosts to bypass them.
-            long ttl=status==200?(uri.getPath().contains("klines")?15000:3000):60000;
+            long ttl=status==200?((uri.getPath().contains("klines")||uri.getPath().endsWith("/candles"))?30000:uri.getPath().endsWith("/stats")?60000:3000):60000;
             String body=status==200?upstream.body():"{\"error\":\"Market provider unavailable\",\"upstreamStatus\":"+status+"}";
             if(body.length()>2_000_000)throw new IllegalStateException("Oversized market response");
             Cached result=new Cached(body,status==200?200:503,now+ttl);

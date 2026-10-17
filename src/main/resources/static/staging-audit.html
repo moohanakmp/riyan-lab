@@ -67,14 +67,15 @@ button.onclick=async()=>{
   const feeds={
    'XAU quote':'https://api.gold-api.com/price/XAU',
    'XAG quote':'https://api.gold-api.com/price/XAG',
-   'BTC candles':'https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=15m&limit=100',
+   'BTC quote':'https://api.exchange.coinbase.com/products/BTC-USD/ticker',
+   'BTC candles':'https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=900&start='+new Date(Math.floor(Date.now()/900000)*900000-100*900000).toISOString()+'&end='+new Date(Math.floor(Date.now()/900000)*900000-1000).toISOString(),
    'XAU candles':'https://fapi.binance.com/fapi/v1/klines?symbol=XAUUSDT&interval=15m&limit=100',
    'XAG candles':'https://fapi.binance.com/fapi/v1/klines?symbol=XAGUSDT&interval=15m&limit=100'
   };
   for(const [name,url] of Object.entries(feeds)){
    try{
     const r=await api('/api/v1/market/data?url='+encodeURIComponent(url));
-    const valid=name.includes('candles')?Array.isArray(r.data)&&r.data.length>0:Number.isFinite(r.data?.price)&&r.data.price>0;
+    const valid=name.includes('candles')?Array.isArray(r.data)&&r.data.length>0:Number.isFinite(Number(r.data?.price))&&Number(r.data.price)>0;
     add('Market feed: '+name,r.ok&&valid?'PASS':'WARN','HTTP '+r.status+(r.data?.upstreamStatus?'; provider HTTP '+r.data.upstreamStatus:'')+(Array.isArray(r.data)?'; candles '+r.data.length:''));
    }catch(e){add('Market feed: '+name,'WARN',e.message)}
   }
@@ -92,7 +93,7 @@ button.onclick=async()=>{
    add('Background internet news polls',r.ok&&n>0?'PASS':'WARN','HTTP '+r.status+'; poll entries '+n+'; failed '+(Array.isArray(r.data)?r.data.filter(x=>x.status!=='OK').length:'?'));
   }catch(e){add('Background internet news polls',false,e.message)}
  }
- for(const asset of ['/icon-192.png','/icon-512.png','/trading-core.js','/paper-engine.js','/basket-demo.js','/basket-replay.js','/art/art-btc.svg','/art/art-gold.svg','/art/art-silver.svg','/art/art-candles.svg']){
+ for(const asset of ['/icon-192.png','/icon-512.png','/trading-core.js','/btc-feed.js','/paper-engine.js','/basket-demo.js','/basket-replay.js','/art/art-btc.svg','/art/art-gold.svg','/art/art-silver.svg','/art/art-candles.svg']){
   try{const r=await fetch(asset,{method:'HEAD',credentials:'same-origin',cache:'no-store'});add('PWA/static asset: '+asset,r.ok,'HTTP '+r.status)}
   catch(e){add('PWA/static asset: '+asset,false,e.message)}
  }

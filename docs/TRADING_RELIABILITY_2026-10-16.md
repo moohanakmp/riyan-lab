@@ -56,3 +56,14 @@ Migration V5 adds lease and deduplication tables. V1–V4 were not edited; the V
 ## Practical limits
 
 This remains a browser-operated paper application. The active engine browser must stay open; a suspended browser cannot provide continuous execution. There is no MT5 order routing in this repository. XAU/XAG/BTC contract multipliers and spreads are paper assumptions, not verified broker specifications. Replays omit historical news, commission, financing, real slippage and combined multi-asset overlap. Existing historical P&L cannot be certified or repaired accurately without the missing original fill evidence. None of these tests establishes profitability or a bug-free application.
+
+
+## BTC and Flow follow-up
+
+Binance returned HTTP 451 from Render. BTC quotes, indicator candles, Low Profit, historical Flow and Research now use the Coinbase Exchange BTC-USD public market, with matching chart/source labels. Coinbase OHLC array order and seconds-based timestamps are normalized, pages stay within 300 source buckets, malformed/conflicting candles are rejected, and 30-minute/4-hour aggregation requires all source bars. Quote freshness checks use the provider trade timestamp. Partial historical requests fail visibly instead of appearing as complete data.
+
+Flow reporting now aligns bars to actual clock buckets, excludes incomplete candles, and labels hourly bars at their IST half-hour boundary. Cached Flow results were versioned so older calculations are not reused. Metals still require an accessible licensed candle source; spot quotes alone do not provide historical candles.
+
+References: https://docs.cdp.coinbase.com/api-reference/exchange-api/rest-api/products/get-product-candles and https://docs.cdp.coinbase.com/api-reference/exchange-api/rest-api/products/get-product-ticker .
+
+Added regression coverage: provider allowlist and request bounds; Coinbase pagination/schema/order; duplicate/conflicting bars; missing-bar aggregation; cache isolation; stale/future quotes; provider failure recovery; Flow bucket alignment. Live verification of this follow-up is required after deployment.

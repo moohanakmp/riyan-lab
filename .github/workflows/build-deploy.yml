@@ -47,6 +47,7 @@ jobs:
           node --check src/main/resources/static/basket-replay.js
           node scripts/check-basket.cjs
           node scripts/check-trading.cjs
+          node scripts/check-btc-feed.cjs
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build

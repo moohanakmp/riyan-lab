@@ -1056,7 +1056,7 @@ body{background:
     <div class="ic"><div class="it">📡 Data Sources</div><div class="ib">
       <b>Gold chart:</b> TradingView OANDA:XAUUSD<br>
       <b>Silver chart:</b> TradingView OANDA:XAGUSD<br>
-      <b>BTC chart:</b> TradingView BINANCE:BTCUSDT<br>
+      <b>BTC chart:</b> TradingView COINBASE:BTCUSD<br>
       <b>Signal OHLC:</b> Binance XAUUSDT / XAGUSDT perpetuals re-based to spot (metals; PAXG fallback for gold), Binance spot klines (BTC) — native 15m/1H/4H, re-synced every 3 min<br>
       <b>Live prices:</b> gold-api.com + Binance every 5s<br>
       <b>Fast timeframes (1m/5m):</b> built live from the same price ticks, no extra API calls · <b>4h:</b> aggregated from 15m history (metals) / Binance klines (BTC)<br>
@@ -1083,6 +1083,7 @@ body{background:
 <button id="evFab" class="evfab" onclick="evwReopen()" aria-label="Show next event popup"></button>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script src="/trading-core.js?v=20261017-1"></script>
+<script src="/btc-feed.js?v=20261017-1"></script>
 <script src="/paper-engine.js?v=20261017-1"></script>
 <script src="/basket-demo.js?v=20261017-1"></script>
 <script src="/basket-replay.js?v=20261017-1"></script>
@@ -1094,7 +1095,7 @@ let emailJsInited=false;
 const ASSETS={
   XAUUSD:{sym:'XAU/USD',name:'Gold',   dec:2,isCrypto:false,tvSym:'OANDA:XAUUSD',   binance:null,      lotUnit:'oz',  contractSz:100},
   XAGUSD:{sym:'XAG/USD',name:'Silver', dec:3,isCrypto:false,tvSym:'OANDA:XAGUSD',   binance:null,      lotUnit:'oz',  contractSz:100},
-  BTCUSD:{sym:'BTC/USD',name:'Bitcoin',dec:0,isCrypto:true,  tvSym:'BINANCE:BTCUSDT',binance:'BTCUSDT', lotUnit:'BTC', contractSz:1},
+  BTCUSD:{sym:'BTC/USD',name:'Bitcoin',dec:0,isCrypto:true,  tvSym:'COINBASE:BTCUSD',binance:'BTCUSDT', lotUnit:'BTC', contractSz:1},
 };
 const ICONS={XAUUSD:'🥇',XAGUSD:'🥈',BTCUSD:'₿'};
 const SYMS=Object.keys(ASSETS);
@@ -1678,6 +1679,7 @@ function liveFetch(url){
   return fetch('/api/v1/market/data?url='+encodeURIComponent(url),{credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(12000)});
 }
 async function fetchBinanceKlines(sym,iv,lim){
+  if(sym==='BTCUSDT')return BtcFeed.candles(iv,lim);
   const r=await liveFetch(`https://api.binance.com/api/v3/klines?symbol=${sym}&interval=${iv}&limit=${lim}`);
   if(!r.ok)throw new Error('B'+r.status);
   const d=await r.json();
@@ -1748,7 +1750,7 @@ function lastNy17(now){
   return t;
 }
 function metalSrcNote(sym){
-  if(ASSETS[sym].isCrypto)return'Binance BTC/USDT';
+  if(ASSETS[sym].isCrypto)return'Coinbase BTC/USD';
   const b=metalBasis[sym];const off=b&&b.f?((b.f-1)*100):0;
   return `${metalSrc[sym]}${b&&b.spot&&Math.abs(off)>=0.005?` · re-based ${off>=0?'+':''}${off.toFixed(2)}% to spot`:''}`;
 }
@@ -1813,13 +1815,23 @@ function buildTFFromTicks(sym,ms){
 }
 
 // ═══ LIVE PRICES ═══════════════════════════════════════════════════════════
+let btcQuoteBusy=false,btcStatsAt=0;
 async function fetchLiveCrypto(){
+  if(btcQuoteBusy)return;
+  btcQuoteBusy=true;
   try{
-    const r=await liveFetch('https://api.binance.com/api/v3/ticker/24hr?symbols=["BTCUSDT"]');
-    const arr=await r.json();
-    arr.forEach(t=>{const sym='BTCUSD';const p=+t.lastPrice,chg=+t.priceChangePercent;if(!PaperMath.positive(p)||!Number.isFinite(+t.closeTime)||Math.abs(Date.now()-(+t.closeTime))>60000)throw Error('Stale BTC quote');if(dayOpen[sym]===undefined)dayOpen[sym]=+t.openPrice;prev[sym]=prices[sym];prices[sym]=p;quoteAt[sym]=Date.now();btcTicks.push({t:Date.now(),p});if(btcTicks.length>3000)btcTicks.splice(0,500);appendLiveTick(sym,p);updateCard(sym,p,chg);checkOutcome(sym,p);});
-    cryptoOk=true;
-  }catch(e){cryptoOk=false;}
+    const q=await BtcFeed.ticker(),sym='BTCUSD',p=q.price;
+    prev[sym]=prices[sym];prices[sym]=p;quoteAt[sym]=q.at;
+    btcTicks.push({t:q.at,p});if(btcTicks.length>3000)btcTicks.splice(0,500);
+    appendLiveTick(sym,p);checkOutcome(sym,p);cryptoOk=true;
+    if(Date.now()-btcStatsAt>60000){
+      btcStatsAt=Date.now();
+      try{const stats=await BtcFeed.stats();if(PaperMath.positive(+stats.open))dayOpen[sym]=+stats.open;}catch(e){}
+    }
+    const change=PaperMath.positive(dayOpen[sym])?(p-dayOpen[sym])/dayOpen[sym]*100:null;
+    updateCard(sym,p,change);
+  }catch(e){cryptoOk=false;quoteAt.BTCUSD=0;}
+  finally{btcQuoteBusy=false;}
 }
 async function fetchLiveMetals(){
   try{
@@ -2190,7 +2202,7 @@ function kmrScan(sym,candles){
     tune:SIG_TUNE[sym]||SIG_TUNE.XAUUSD,obs:orderBlocks(sym),events:kmrNewsEvents(),
     now:Date.now(),istHour:kmrIstHour(),isMetal:sym!=='BTCUSD',dec:ASSETS[sym].dec});
 }
-const KMR_VOL_SOURCE=new Proxy({},{get:(_,sym)=>sym==='BTCUSD'?'Binance BTC/USDT traded volume':`${metalSrc[sym]||'—'} traded volume${/PAXG/.test(metalSrc[sym]||'')?' (token proxy, not spot-gold volume)':''}`});
+const KMR_VOL_SOURCE=new Proxy({},{get:(_,sym)=>sym==='BTCUSD'?'Coinbase BTC/USD traded volume':`${metalSrc[sym]||'—'} traded volume${/PAXG/.test(metalSrc[sym]||'')?' (token proxy, not spot-gold volume)':''}`});
 
 // ── Signal engine entry point used by auto signals, the Signals tab and the trend strip ──
 function computeSignal(sym){
@@ -2595,7 +2607,7 @@ function flowTier(s,pipSize){
   return 0;
 }
 let flowCache={};
-try{flowCache=JSON.parse(localStorage.getItem('kmr_flow_cache_v2')||'{}');}catch(e){flowCache={};}
+try{flowCache=JSON.parse(localStorage.getItem('kmr_flow_cache_v3')||'{}');}catch(e){flowCache={};}
 const FLOW_CACHE_MS=12*3600*1000; // re-analyze at most twice a day unless manually forced
 let flowTf='15m'; // selected dropdown value: 1m/5m/15m/30m/1h/1d/any
 
@@ -2611,7 +2623,7 @@ function intervalMinutesOf(tf){return{'1m':1,'5m':5,'15m':15,'30m':30,'1h':60}[t
 function fmtSlotTimeGeneric(slot,bucketMinutes){
   // Wraps past 1440 min (e.g. a range ending at the last slot of the day, like your own
   // "11pm-12am" example) back to midnight instead of showing an invalid "24:00"-style time.
-  const totalMin=(slot*bucketMinutes)%1440;
+  const totalMin=(slot*bucketMinutes+(bucketMinutes===60?30:0))%1440;
   const h=Math.floor(totalMin/60),m=totalMin%60;
   const ampm=h<12?'am':'pm',h12=h%12===0?12:h%12;
   return `${h12}:${m.toString().padStart(2,'0')}${ampm}`;
@@ -2621,19 +2633,16 @@ function fmtSlotTimeGeneric(slot,bucketMinutes){
 // day for a consistent same-direction bias across calendar days.
 function analyzeFlowGeneric(candles,intervalMinutes){
   const bucketMinutes=intervalMinutes>=60?60:30;
-  const perBucket=Math.max(1,Math.round(bucketMinutes/intervalMinutes));
+  const sourceMs=intervalMinutes*60000;
+  const complete=PaperMath.aggregate(PaperMath.closed(candles,sourceMs),bucketMinutes,sourceMs);
   const slotsPerDay=24*60/bucketMinutes;
   const daily={};
-  for(let i=0;i+perBucket-1<candles.length;i+=perBucket){
-    const group=candles.slice(i,i+perBucket);
-    let contiguous=true;
-    for(let j=1;j<group.length;j++){if(group[j].t-group[j-1].t>intervalMinutes*60*1000*1.5){contiguous=false;break;}}
-    if(!contiguous)continue; // a gap here means a pagination seam or missing history — skip rather than misattribute
-    const c1=group[0],c2=group[group.length-1];
+  for(const bar of complete){
+    const c1=bar,c2=bar;
     const istMs=c1.t+5.5*3600*1000;
     const d=new Date(istMs);
     const minutesOfDay=d.getUTCHours()*60+d.getUTCMinutes();
-    const slot=Math.floor(minutesOfDay/bucketMinutes);
+    const slot=Math.floor((minutesOfDay-(bucketMinutes===60?30:0)+1440)%1440/bucketMinutes);
     const dayKey=Math.floor(istMs/(24*3600*1000));
     daily[slot]=daily[slot]||{};
     daily[slot][dayKey]={o:c1.o,c:c2.c};
@@ -2660,13 +2669,13 @@ function mergeFlowRangesGeneric(slots,pipSize,bucketMinutes){
       ranges.push({dominant:s.dominant,startSlot:s.slot,endSlot:s.slot,net:s.avgNet,consistencies:[s.consistency],daysSample:s.total,tier:s.tier,z:s.z});
     }
   });
-  return ranges.map(r=>({dir:r.dominant,tier:r.tier,z:+r.z.toFixed(2),from:fmtSlotTimeGeneric(r.startSlot,bucketMinutes),to:fmtSlotTimeGeneric(r.endSlot+1,bucketMinutes),pips:Math.round(Math.abs(r.net)/pipSize),consistency:Math.round(Math.min(...r.consistencies)*100),days:r.daysSample,startMin:r.startSlot*bucketMinutes,endMin:(r.endSlot+1)*bucketMinutes}))
+  return ranges.map(r=>({dir:r.dominant,tier:r.tier,z:+r.z.toFixed(2),from:fmtSlotTimeGeneric(r.startSlot,bucketMinutes),to:fmtSlotTimeGeneric(r.endSlot+1,bucketMinutes),pips:Math.round(Math.abs(r.net)/pipSize),consistency:Math.round(Math.min(...r.consistencies)*100),days:r.daysSample,startMin:r.startSlot*bucketMinutes+(bucketMinutes===60?30:0),endMin:(r.endSlot+1)*bucketMinutes+(bucketMinutes===60?30:0)}))
     .sort((a,b)=>b.tier-a.tier||b.z-a.z);
 }
 // Compact per-slot stats kept in the cache so the tab can show the strongest tendencies and
 // "what usually happens in the current half-hour" even when nothing is significant.
 function flowSlotSummary(slots,pipSize,bucketMinutes){
-  return slots.map(s=>({slot:s.slot,from:fmtSlotTimeGeneric(s.slot,bucketMinutes),to:fmtSlotTimeGeneric(s.slot+1,bucketMinutes),startMin:s.slot*bucketMinutes,endMin:(s.slot+1)*bucketMinutes,dir:s.dominant,cons:Math.round(s.consistency*100),n:s.total,z:+s.z.toFixed(2),pips:Math.round(Math.abs(s.avgNet)/pipSize)}));
+  return slots.map(s=>({slot:s.slot,from:fmtSlotTimeGeneric(s.slot,bucketMinutes),to:fmtSlotTimeGeneric(s.slot+1,bucketMinutes),startMin:s.slot*bucketMinutes+(bucketMinutes===60?30:0),endMin:(s.slot+1)*bucketMinutes+(bucketMinutes===60?30:0),dir:s.dominant,cons:Math.round(s.consistency*100),n:s.total,z:+s.z.toFixed(2),pips:Math.round(Math.abs(s.avgNet)/pipSize)}));
 }
 // Day-of-week mode (selected via the "1 Day" dropdown option) — a daily candle has no
 // intra-day structure left to bucket by time, so this switches to a genuinely different
@@ -2707,6 +2716,10 @@ let flowFetchError={}; // sym -> last failure reason, shown in the UI instead of
 // that is why silver's Flow was always empty). PAXG spot remains a gold fallback.
 async function pagedKlines(sources,iv,rounds){
   for(const src of sources){
+    if(src.provider==='coinbase'){
+      try{return {candles:await BtcFeed.candles(iv,Math.min(5000,src.max*rounds)),src:src.label};}
+      catch(e){flowFetchError._last=String(e.message||e);continue;}
+    }
     let all=[],endTime=Date.now(),err=null;
     for(let i=0;i<rounds;i++){
       try{
@@ -2715,20 +2728,22 @@ async function pagedKlines(sources,iv,rounds){
         if(!r.ok){err=`HTTP ${r.status} from ${src.label}`;break;}
         const d=await r.json();
         if(!Array.isArray(d)||!d.length)break;
-        const batch=d.map(k=>({t:k[0],o:+k[1],h:+k[2],l:+k[3],c:+k[4],v:+k[5]}));
+        const ms={'1m':60000,'5m':300000,'15m':900000,'30m':1800000,'1h':3600000,'1d':86400000}[iv];
+        const batch=d.map(k=>({t:+k[0],ms,o:+k[1],h:+k[2],l:+k[3],c:+k[4],v:+k[5]}));
+        if(batch.some((k,i)=>!PaperMath.valid(k)||k.t%ms!==0||(i>0&&k.t<=batch[i-1].t)))throw Error('Invalid historical candles');
         all=[...batch.filter(b=>!all.length||b.t<all[0].t),...all];
         endTime=batch[0].t-1;
         if(d.length<src.max)break; // reached the start of this market's history
       }catch(e){err=`network error reaching ${src.label}`;break;}
     }
-    if(all.length>50)return{candles:all,src:src.label};
+    if(all.length>50)return{candles:PaperMath.closed(all),src:src.label};
     if(err)flowFetchError._last=err;
   }
   return{candles:[],src:null};
 }
 function flowSources(sym){
   const S=[];
-  if(sym==='BTCUSD')S.push({base:'https://api.binance.com/api/v3/klines',sym:'BTCUSDT',max:1000,label:'Binance BTC/USDT'});
+  if(sym==='BTCUSD')S.push({provider:'coinbase',max:1000,label:'Coinbase BTC/USD'});
   else S.push({base:'https://fapi.binance.com/fapi/v1/klines',sym:FAPI_SYM[sym],max:1500,label:`Binance ${FAPI_SYM[sym]} perp`});
   if(sym==='XAUUSD')S.push({base:'https://api.binance.com/api/v3/klines',sym:'PAXGUSDT',max:1000,label:'Binance PAXG proxy'});
   return S;
@@ -2743,8 +2758,10 @@ async function fetchFlowHistory(sym,tf){
   return candles;
 }
 async function fetchFlowDaily(sym){
+  flowFetchError._last=null;
   const{candles,src}=await pagedKlines(flowSources(sym),'1d',1);
   if(src)flowSrcUsed[sym]=src;
+  flowFetchError[sym]=candles.length?null:(flowFetchError._last||'Daily history unavailable');
   return candles.slice(-365);
 }
 // Checks whether two [startMin,endMin) windows overlap at all (same-day wraparound not
@@ -2770,7 +2787,7 @@ async function analyzeFlowAny(sym){
     perTf.push({tf,ranges,slots,bucketMinutes,daysUsed});
   }
   const valid=perTf.filter(Boolean);
-  if(!valid.length)return{ranges:[],daysUsed:0};
+  if(!valid.length)return{ranges:[],daysUsed:0,failed:flowFetchError[sym]||'History unavailable'};
   // Does timeframe `o` lean the same direction as `dir` anywhere inside [startMin,endMin)?
   // Lower bar than the full merge threshold (55%+ of its own slots agreeing) — this is a
   // "does it at least lean this way elsewhere" check, not a demand that the other
@@ -2830,8 +2847,8 @@ async function analyzeFlowAll(force){
         const results=formatWeekdayResults(rows,pipSizeFor(sym));
         flowCache[cacheKey]={mode:'weekday',results,daysUsed:daily.length,weeksUsed,src:flowSrcUsed[sym],updatedAt:Date.now()};
       }else if(flowTf==='any'){
-        const{ranges,unconfirmed,daysUsed,slotsSum}=await analyzeFlowAny(sym);
-        flowCache[cacheKey]={mode:'any',ranges,unconfirmed,daysUsed,slotsSum,src:flowSrcUsed[sym],updatedAt:Date.now()};
+        const{ranges,unconfirmed,daysUsed,slotsSum,failed}=await analyzeFlowAny(sym);
+        flowCache[cacheKey]={mode:'any',ranges,unconfirmed,daysUsed,slotsSum,failed,src:flowSrcUsed[sym],updatedAt:failed?0:Date.now()};
       }else{
         const candles=await fetchFlowHistory(sym,flowTf);
         if(!candles.length){flowCache[cacheKey]={mode:'intraday',ranges:[],daysUsed:0,failed:flowFetchError[sym]||'no data',updatedAt:0};continue;}
@@ -2841,7 +2858,7 @@ async function analyzeFlowAll(force){
         flowCache[cacheKey]={mode:'intraday',ranges,daysUsed,slotsSum:flowSlotSummary(slots,pipSizeFor(sym),bucketMinutes),src:flowSrcUsed[sym],updatedAt:Date.now()};
       }
     }
-    try{localStorage.setItem('kmr_flow_cache_v2',JSON.stringify(flowCache));}catch(e){}
+    try{localStorage.setItem('kmr_flow_cache_v3',JSON.stringify(flowCache));}catch(e){}
   }finally{
     if(btn){btn.disabled=false;btn.innerHTML='🌊 Analyze';}
     renderFlowTab();
@@ -3164,7 +3181,7 @@ function pickAnalytics(sym){
 // (which works fine for the chart) returned "No data here yet" for this specific widget.
 // TVC:SILVER is TradingView's standard, broadly-supported symbol for spot silver across
 // their various embeddable widgets, so this widget uses it specifically for XAG.
-const ANALYTICS_TV_SYM={XAUUSD:'OANDA:XAUUSD',XAGUSD:'TVC:SILVER',BTCUSD:'BINANCE:BTCUSDT'};
+const ANALYTICS_TV_SYM={XAUUSD:'OANDA:XAUUSD',XAGUSD:'TVC:SILVER',BTCUSD:'COINBASE:BTCUSD'};
 let analyticsTall=false;
 function toggleAnalyticsTall(){analyticsTall=!analyticsTall;loadAnalyticsWidget(analyticsSym);}
 function loadAnalyticsWidget(sym){
@@ -3737,7 +3754,7 @@ async function scalpFetch(sym,lim){
   try{
     if(sym==='BTCUSD'){
       c=await fetchBinanceKlines('BTCUSDT','5m',Math.min(lim,1000));
-      source='Binance spot BTCUSDT (BTCUSD proxy)';
+      source='Coinbase BTC/USD spot';
     }else{
       c=await fetchFapiKlines(FAPI_SYM[sym],'5m',lim);
       source='Binance futures '+FAPI_SYM[sym];
@@ -4901,7 +4918,7 @@ function updateCard(sym,price,chg){
   const pv=document.getElementById('pv-'+sym),pc=document.getElementById('pc-'+sym),card=document.getElementById('c-'+sym);
   if(!pv||!pc||!card)return;
   pv.textContent=fmtP(sym,price);pv.classList.remove('shim');
-  pc.textContent=(chg>=0?'+':'')+chg.toFixed(2)+'%';pc.className='pchg '+(chg>0.001?'up':chg<-0.001?'dn':'nt');
+  pc.textContent=Number.isFinite(chg)?(chg>=0?'+':'')+chg.toFixed(2)+'%':'—';pc.className='pchg '+(chg>0.001?'up':chg<-0.001?'dn':'nt');
   if(prev[sym]!==undefined&&prev[sym]!==price){card.classList.remove('fg','fr');void card.offsetWidth;card.classList.add(price>=prev[sym]?'fg':'fr');}
   drawSpark(sym,price,chg);
 }
