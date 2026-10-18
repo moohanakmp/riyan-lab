@@ -15,7 +15,7 @@
   if(typeof document==='undefined')return;
   const $=id=>document.getElementById(id);
   const symbols=['XAUUSD','XAGUSD','BTCUSD'];
-  let frame=0,lastScan=0,scanSym='',cached=null;
+  let frame=0,lastScan=0,scanSym='',lastCandle=null,cached=null;
   function navigate(tab){const b=document.querySelector('#tabsRow [data-tab="'+tab+'"]');if(b&&b.style.display!=='none')b.click();}
   // Real data visualizations only: observed quote samples and the engine quality score.
   function drawGauge(score){
@@ -54,11 +54,11 @@
     if(tab!=='chart')return;
     const sym=selAsset;
     const fs=feedStatus(sym);
-    if(scanSym!==sym||Date.now()-lastScan>=5000){
+    if(scanSym!==sym||lastCandle!==fs.last?.t||Date.now()-lastScan>=30000){
       let scan=null;try{if(fs.last&&!fs.stale&&!fs.reference)scan=kmrScan(sym);}catch(e){/* unavailable state below */}
-      cached=qualityModel(fs,scan,freshQuote(sym));scanSym=sym;lastScan=Date.now();
+      cached=scan;scanSym=sym;lastCandle=fs.last?.t;lastScan=Date.now();
     }
-    const model=cached;
+    const model=qualityModel(fs,cached,freshQuote(sym));
     $('orbit-quality-symbol').textContent=ASSETS[sym].sym;
     $('orbit-quality-state').textContent=model.state;
     $('orbit-score').textContent=model.score==null?'—':model.score;

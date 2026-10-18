@@ -18,3 +18,8 @@ const html=fs.readFileSync('src/main/resources/static/index.html','utf8');
 const ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(x=>x[1]);assert.equal(new Set(ids).size,ids.length,'Duplicate UI IDs');
 for(const sym of ['XAUUSD','XAGUSD','BTCUSD'])for(const part of ['card','price','status','change'])assert.ok(ids.includes('orbit-'+part+'-'+sym));
 console.log('PASS Orbital quality: missing/stale/reference history, stale quotes, malformed scores, actual gate counts, WAIT state; no feed/persistence calls; unique controls');
+
+const css=fs.readFileSync('src/main/resources/static/workspace-ui.css','utf8');
+const cardRule=css.match(/\.ic,\.sig-card,\.pc,\.pulse,\.dash-hero,\.quality-card,\.ev-card\{([^}]+)\}/)[1];
+assert.ok(!cardRule.includes('!important'),'Generic card styles must allow existing selected, outcome and uploaded hero styles to win');
+console.log('PASS existing selected-card, outcome and custom hero-image styles retain specificity');
