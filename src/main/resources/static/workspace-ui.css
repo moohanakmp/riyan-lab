@@ -57,3 +57,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 @media(max-width:520px){.tabs{gap:2px;padding:7px 8px}.tabs>.tab{padding:8px 9px;gap:5px}.tab .tab-lbl{font-size:10px}.tabs>.tab .tab-ic{font-size:14px}.orbit-more>summary{font-size:10px;padding:10px 8px}.orbit-more-menu{top:140px;right:12px}.orbit-hero{min-height:300px;padding-top:24px;padding-bottom:120px}.orbit-hero-copy>p:last-child{margin-top:10px}}
 
 .bi-chevron-down::before { content: "\f282"; }
+
+#mainScroll>div{max-width:1600px;padding-left:0;padding-right:0}
+
+.orbit-more-menu #adminTabBtn{text-align:left}.orbit-more-menu #adminTabBtn .tab-ic{display:inline-block;margin-right:8px}

@@ -3,7 +3,7 @@
   'use strict';
   function qualityModel(feed,scan,quoteFresh){
     if(!feed||!feed.last||feed.stale||feed.reference||!quoteFresh||!scan||!Array.isArray(scan.gates)||!scan.gates.length||!Number.isFinite(scan.score)){
-      return {score:null,state:feed?.reference?'REFERENCE ONLY':'DATA UNAVAILABLE',reason:feed?.message||'Waiting for complete candle history',groups:[]};
+      return {score:null,state:feed?.reference?'REFERENCE ONLY':'DATA UNAVAILABLE',reason:feed?.message||'Waiting for complete candle history',groups:['Trend alignment','Momentum','Volatility','Market structure'].map(label=>({label,passed:0,total:0}))};
     }
     const groups=[['Trend alignment',['htf','adx']],['Momentum',['rsi','trigger']],['Volatility',['vol','spike']],['Market structure',['value','struct']]].map(([label,keys])=>{
       const gates=scan.gates.filter(g=>keys.includes(g.key));
@@ -26,7 +26,7 @@
     if(!visible||document.hidden)return;
     for(const sym of symbols){
       const value=prices[sym],fresh=freshQuote(sym),el=$('orbit-price-'+sym),status=$('orbit-status-'+sym);
-      el.textContent=Number.isFinite(value)?'$'+fmtP(sym,value):'—';
+      el.textContent=Number.isFinite(value)?fmtP(sym,value):'—';
       const change=Number.isFinite(value)&&dayOpen[sym]>0?(value/dayOpen[sym]-1)*100:null;
       $('orbit-change-'+sym).textContent=change==null?'Change unavailable':(change>=0?'+':'')+change.toFixed(2)+'%';
       $('orbit-change-'+sym).className='orbit-change '+(change==null?'':change>=0?'up':'dn');
@@ -55,7 +55,7 @@
       const row=document.createElement('div');row.className='orbit-factor';
       const label=document.createElement('span');label.textContent=group.label;
       const bar=document.createElement('progress');bar.max=group.total||1;bar.value=group.passed;bar.setAttribute('aria-label',group.label);
-      const value=document.createElement('b');value.textContent=group.passed+'/'+group.total;
+      const value=document.createElement('b');value.textContent=group.total?group.passed+'/'+group.total:'—';
       row.append(label,bar,value);groups.append(row);
     }
     $('orbit-ideas').hidden=!hasAccess('signals');
@@ -64,7 +64,7 @@
   symbols.forEach(sym=>$('orbit-card-'+sym).addEventListener('click',()=>{
     if(!hasAccess('chart'))return;
     // Use original symbol selector and tab button, including their existing permission gates.
-    pickChart(sym);navigate('chart');lastScan=0;schedule();
+    navigate('chart');pickChart(sym);lastScan=0;schedule();
   }));
   $('orbit-ideas').addEventListener('click',()=>navigate('signals'));
   $('tabsRow').addEventListener('click',event=>{if(event.target.closest('.tab'))$('orbitalMore').open=false;});
