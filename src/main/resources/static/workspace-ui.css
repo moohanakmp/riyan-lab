@@ -213,3 +213,6 @@ body[data-workspace-tab=chart] #workspaceRelated{padding-top:9px}
 }
 
 #workspaceArtwork{display:none}.workspace-explainer>summary{list-style-position:inside}
+/* Keep heading labels beside their icon; trailing controls stay right aligned. */
+#mainScroll .it,#mainScroll .sec-ttl{justify-content:flex-start!important}
+#mainScroll .it>button:last-child,#mainScroll .it>select:last-child,#mainScroll .sec-ttl>.tag:last-child{margin-left:auto}
