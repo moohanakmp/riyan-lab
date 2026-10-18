@@ -16,7 +16,7 @@ final result: passed
 1. [P2, resolved] Initial chart content retained the old 1000 px maximum width. Its left edge did not align with the new market cards. The final `#mainScroll>div` rule restores the full desktop grid width. Post-fix fixture and live screenshots show aligned hero, quote strip, feed status, chart, and quality columns.
 2. [P2, resolved] Initial quote adapter prepended a dollar sign to the existing currency formatter. The adapter now uses the existing formatter unchanged. Post-fix staging shows `$4166.10`, with one currency symbol.
 3. [P2, resolved] The first quality visualization was linear. The final implementation has the selected design's curved gauge, drawn from the actual engine score. Unavailable history produces an empty track and an em dash rather than an invented score. Actual gate counts replace the mock's invented factor percentages.
-4. [P2, resolved] Broad card styling could override selected/outcome styles and uploaded dashboard images. Removed the broad `!important` declarations. A browser check in the isolated fixture confirmed `.dash-hero.has-img` and a computed background containing the uploaded-image URL. A regression check protects semantic style specificity.
+4. [P2, resolved] Broad card styling could override selected/outcome styles and uploaded dashboard images. Removed the broad `!important` declarations, retaining the original semantic cascade. Added an explicit selected-price border because the legacy glass layer itself uses important borders. A browser check in the isolated fixture confirmed `.dash-hero.has-img` and a computed background containing the uploaded-image URL. A regression check protects semantic style specificity.
 
 No actionable P0/P1/P2 findings remain in the reviewed states.
 

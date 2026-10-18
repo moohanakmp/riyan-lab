@@ -22,4 +22,6 @@ console.log('PASS Orbital quality: missing/stale/reference history, stale quotes
 const css=fs.readFileSync('src/main/resources/static/workspace-ui.css','utf8');
 const cardRule=css.match(/\.ic,\.sig-card,\.pc,\.pulse,\.dash-hero,\.quality-card,\.ev-card\{([^}]+)\}/)[1];
 assert.ok(!cardRule.includes('!important'),'Generic card styles must allow existing selected, outcome and uploaded hero styles to win');
-console.log('PASS existing selected-card, outcome and custom hero-image styles retain specificity');
+console.log('PASS original semantic style cascade and custom hero-image styles preserved');
+
+assert.ok(/\.pc\.sel\{border-color:var\(--acc\)!important/.test(css),'Selected prices must remain visible above the legacy glass border');
