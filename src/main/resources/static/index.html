@@ -1790,7 +1790,13 @@ async function fetchMetalOHLC(sym){
   if(!metalRaw[sym]){ohlcData[sym]['15m']=[];ohlcData[sym]['1h']=[];ohlcData[sym]['4h']=[];}
   return false;
 }
-async function resyncOHLC(){
+let ohlcSyncPromise=null;
+function resyncOHLC(){
+  if(ohlcSyncPromise)return ohlcSyncPromise;
+  ohlcSyncPromise=performOhlcSync().finally(()=>{ohlcSyncPromise=null;});
+  return ohlcSyncPromise;
+}
+async function performOhlcSync(){
   lastOhlcSync=Date.now();
   try{
     const [a,b,c]=await Promise.all(['15m','1h','4h'].map(tf=>fetchBinanceKlines('BTCUSDT',tf,CANDLE_LIMIT)));
@@ -1850,7 +1856,13 @@ async function fetchLiveCrypto(){
   }catch(e){cryptoOk=false;quoteAt.BTCUSD=0;}
   finally{btcQuoteBusy=false;}
 }
-async function fetchLiveMetals(){
+let metalQuotePromise=null;
+function fetchLiveMetals(){
+  if(metalQuotePromise)return metalQuotePromise;
+  metalQuotePromise=performMetalQuotes().finally(()=>{metalQuotePromise=null;});
+  return metalQuotePromise;
+}
+async function performMetalQuotes(){
   try{
     const[gR,sR]=await Promise.all([liveFetch('https://api.gold-api.com/price/XAU'),liveFetch('https://api.gold-api.com/price/XAG')]);
     const g=await gR.json(),s=await sR.json();const now=Date.now();
@@ -1861,8 +1873,9 @@ async function fetchLiveMetals(){
 }
 async function bootstrapAll(){
   setSbar('⏳ Loading OHLC candles...');
+  const quotes=Promise.all([fetchLiveCrypto(),fetchLiveMetals()]);
   await Promise.allSettled([loadCandles('BTCUSD','15m'),loadCandles('BTCUSD','1h'),loadCandles('BTCUSD','4h'),fetchMetalOHLC('XAUUSD'),fetchMetalOHLC('XAGUSD')]);
-  await Promise.all([fetchLiveCrypto(),fetchLiveMetals()]);
+  await quotes;
   calibrateMetal('XAUUSD');calibrateMetal('XAGUSD');lastOhlcSync=Date.now();renderFeedStatus();
   const t=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   const ok=SYMS.filter(freshQuote).length;
@@ -2232,7 +2245,7 @@ function feedStatus(sym){
 function renderFeedStatus(){
   const states=SYMS.map(sym=>({sym,...feedStatus(sym)}));
   for(const id of ['tdb','tp','tc','ts','tsc','th','tan','tse','tfl','tma','tre','tay','ti','tpn']){
-    const panel=document.getElementById(id);if(!panel)continue;
+    const panel=document.getElementById(id);if(!panel||panel.style.display==='none')continue;
     let note=panel.querySelector('[data-feed-status]');
     if(!note){note=document.createElement('details');note.className='notice';note.dataset.feedStatus='';note.append(document.createElement('summary'),document.createElement('div'));panel.prepend(note);}
     note.querySelector('summary').textContent='Market data · '+states.map(f=>ASSETS[f.sym].sym+': '+(!f.last?'unavailable':f.reference?'delayed reference':f.stale?'last session / stale':'recent')).join(' · ');
@@ -3789,7 +3802,7 @@ function saveScalpHist(){
   // Keep complete history; server restoration remains authoritative.
   try{localStorage.setItem('kmr_scalp_hist_'+currentUser?.username,JSON.stringify(scalpHist));}catch(e){}
   if(currentUser&&currentUser.role!=='guest')
-    scalpHist.forEach(r=>riyanQueue('low-profit',String(r.id||r.t),r));
+    riyanQueueMany(scalpHist.map(r=>({type:'low-profit',id:String(r.id||r.t),obj:r})));
 }
 function istDayKey(t){return Math.floor((t+5.5*3600e3)/864e5);}
 function scalpToday(){
@@ -5487,14 +5500,18 @@ async function refreshAnalysis(force){
   const sym=analysisAsset;
   const cached=analysisCache[sym];
   const stale=!cached||Date.now()-cached.at>ANALYSIS_CACHE_MS;
-  if(!force&&!stale)return;
+  if((!force&&!stale)||analysisLoading[sym])return;
   analysisLoading[sym]=true;
-  const[news,]=await Promise.all([fetchNews(sym),fetchEconCalendar(force)]);
-  if(news)recordHeadlines(sym,news);
-  analysisCache[sym]={news,at:Date.now()};
-  if(currentUser&&currentUser.role!=='guest')riyanQueue('analysis',sym+'-'+analysisCache[sym].at,{symbol:sym,...analysisCache[sym]});
-  analysisLoading[sym]=false;
-  if(analysisAsset===sym)renderAnalysis();
+  try{
+    const[news,]=await Promise.all([fetchNews(sym),fetchEconCalendar(force)]);
+    if(news)recordHeadlines(sym,news);
+    analysisCache[sym]={news,at:Date.now()};
+    if(currentUser&&currentUser.role!=='guest')riyanQueue('analysis',sym+'-'+analysisCache[sym].at,{symbol:sym,...analysisCache[sym]});
+  }catch(e){console.warn('Analysis refresh unavailable',sym,e);}
+  finally{
+    analysisLoading[sym]=false;
+    if(analysisAsset===sym)renderAnalysis();
+  }
 }
 
 // ═══ P&L DASHBOARD ══════════════════════════════════════════════════════════
@@ -5860,22 +5877,28 @@ async function riyanSafeRecordId(type,id){
   return userScoped?userScoped[1]+'--id-'+hex:'id-'+hex;
 }
 function riyanQueue(type,id,obj){
-  if(!currentUser||currentUser.role==='guest'||!id||obj==null)return;
+  return riyanQueueMany([{type,id,obj}]);
+}
+function riyanQueueMany(items){
+  if(!currentUser||currentUser.role==='guest')return;
   try{
-    const data=JSON.stringify(obj);
-    if(data.length>950000){
-      console.warn('DB record too large — remains in browser history:',type,id);
-      return;
-    }
-    const user=currentUser.username;
-    const key='riyan_pending_'+user;
+    const user=currentUser.username,key='riyan_pending_'+user;
     const pending=JSON.parse(localStorage.getItem(key)||'{}');
-    const token=type+'|'+encodeURIComponent(String(id));
-    const digest=riyanFingerprint(data);
     const saved=JSON.parse(localStorage.getItem('riyan_sent_'+user)||'{}');
-    if(saved[token]===digest&&!pending[token])return;
-    if(pending[token]?.value!==data)pending[token]={type,id:String(id),value:data};
-    localStorage.setItem(key,JSON.stringify(pending));
+    let changed=false;
+    for(const {type,id,obj} of items){
+      if(!id||obj==null)continue;
+      let data;
+      try{data=JSON.stringify(obj);}catch(e){console.warn('Failed to serialize DB record:',type,id);continue;}
+      if(typeof data!=='string')continue;
+      if(data.length>950000){console.warn('DB record too large — remains in browser history:',type,id);continue;}
+      const token=type+'|'+encodeURIComponent(String(id)),digest=riyanFingerprint(data);
+      if(saved[token]===digest&&!pending[token])continue;
+      if(pending[token]?.value===data)continue;
+      pending[token]={type,id:String(id),value:data};changed=true;
+    }
+    // Durability is still synchronous. Only the number of full-queue rewrites changes.
+    if(changed)localStorage.setItem(key,JSON.stringify(pending));
   }catch(e){console.warn('Failed to queue DB record (storage unavailable):',e);}
 }
 let riyanSyncing=null;
@@ -5983,20 +6006,21 @@ async function riyanRetryFailed(){
 }
 function riyanSnapshot(){
   if(!currentUser||currentUser.role==='guest')return;
+  const records=[],enqueue=(type,id,obj)=>records.push({type,id,obj});
   const day=new Date(Date.now()+19800000).toISOString().slice(0,10);
-  Object.entries(analysisCache).forEach(([sym,data])=>riyanQueue('analysis',sym+'-'+(data.at||day),{symbol:sym,...data}));
-  Object.entries(researchCache).forEach(([sym,data])=>riyanQueue('research',sym+'-'+day,{symbol:sym,...data}));
-  Object.entries(newsLog).forEach(([key,data])=>riyanQueue('gold-calls',key,data));
-  scalpHist.forEach(r=>riyanQueue('low-profit',String(r.id||r.t),r));
+  Object.entries(analysisCache).forEach(([sym,data])=>enqueue('analysis',sym+'-'+(data.at||day),{symbol:sym,...data}));
+  Object.entries(researchCache).forEach(([sym,data])=>enqueue('research',sym+'-'+day,{symbol:sym,...data}));
+  Object.entries(newsLog).forEach(([key,data])=>enqueue('gold-calls',key,data));
+  scalpHist.forEach(r=>enqueue('low-profit',String(r.id||r.t),r));
   if(basketDemo.active)basketPersistSession(basketDemo.active);
   basketDemo.history.slice(0,100).forEach(s=>basketPersistSession(s));
-  riyanQueue('user-state',currentUser.username+':basket-demo-settings',{
+  enqueue('user-state',currentUser.username+':basket-demo-settings',{
     key:'basket-demo-settings',enabled:basketDemo.enabled,simulated:true,
     activeBasketId:basketDemo.active?.id||null,historyCount:basketDemo.history.length
   });
   for(const sym of SYMS){
     const state=scalpState[sym]||{};
-    riyanQueue('user-state',currentUser.username+':low-profit-diagnostics-'+sym,{
+    enqueue('user-state',currentUser.username+':low-profit-diagnostics-'+sym,{
       symbol:sym,auto:scalpCfg.auto,assetEnabled:!!scalpCfg.assets[sym],
       lastFiveMinuteBarAt:scalpData[sym]?.at(-1)?.t||null,feedSource:state.feedSource||null,
       feedError:state.feedError||null,blocked:state.block||null,
@@ -6015,14 +6039,14 @@ function riyanSnapshot(){
       gates:state.scan?.gates||[],diagnosticAt:state.scan?.barT||null
     });
   }
-  signalHistory.forEach(r=>riyanQueue(r.manual?'manual-signals':'auto-signals',String(r.id),r));
-  riyanQueue('seven-day','prediction-'+day,{
+  signalHistory.forEach(r=>enqueue(r.manual?'manual-signals':'auto-signals',String(r.id),r));
+  enqueue('seven-day','prediction-'+day,{
     date:day,generatedAt:Date.now(),
     forecastEvents:newsTrackRows(7*864e5,true),
     recentActualEvents:newsTrackRows(7*864e5,false)
   });
   const settled=allPaperRows().filter(r=>['WIN','LOSS','BE'].includes(r.outcome));
-  riyanQueue('pnl','daily-'+day,{
+  enqueue('pnl','daily-'+day,{
     date:day,generatedAt:Date.now(),
     totalSignals:signalHistory.length,totalScalps:scalpHist.length,
     closedSignals:settled.length,
@@ -6033,6 +6057,7 @@ function riyanSnapshot(){
     recentSignalIds:signalHistory.slice(0,200).map(r=>r.id),
     recentScalpIds:scalpHist.slice(0,200).map(r=>r.id||r.t)
   });
+  riyanQueueMany(records);
 }
 async function riyanRestore(){
   if(!currentUser)return;
