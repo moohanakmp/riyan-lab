@@ -27,7 +27,9 @@ var PaperMath = (() => {
       ks.sort((a,b)=>a.t-b.t);
       if(ks.length!==ms/sourceMs||ks.some((k,i)=>k.t!==t+i*sourceMs)) return [];
       return [{t,ms,o:ks[0].o,h:Math.max(...ks.map(k=>k.h)),l:Math.min(...ks.map(k=>k.l)),
-        c:ks.at(-1).c,v:ks.reduce((n,k)=>n+(k.v||0),0),n:ks.length,complete:true}];
+        c:ks.at(-1).c,v:ks.some(k=>k.v==null)?null:ks.reduce((n,k)=>n+k.v,0),n:ks.length,complete:true,
+        ...(ks.some(k=>k.analysisOnly)?{analysisOnly:true}:{}),
+        ...(ks[0].source?{source:ks.every(k=>k.source===ks[0].source)?ks[0].source:'mixed'}:{})}];
     });
   }
   function stopFill(dir,stop,observed) {

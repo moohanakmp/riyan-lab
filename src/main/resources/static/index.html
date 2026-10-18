@@ -848,6 +848,16 @@ body{background:
       <button class="anal-refresh" id="flowAnalyzeBtn" onclick="analyzeFlowAll()">🌊 Analyze</button>
     </div>
     <div class="notice">Looks for times of day where an asset has moved the <b>same direction consistently</b> across many days (not just once) — e.g. "gold tends bearish after 11pm." Pick a candle timeframe above: finer timeframes (1m/5m) reach fewer days back but with more precision; "1 Day" instead checks which <b>weekdays</b> trend consistently (a daily candle has no time-of-day left to analyze); "Any" cross-checks 15m/30m/1h and only keeps patterns confirmed by more than one. Only surfaces a pattern once it clears a real consistency bar, not any 50/50 coinflip. First run at a given timeframe fetches history and can take a little while.</div>
+    <div class="ic"><div class="it">Metal &amp; forex volume references</div><div class="ib">
+      <label for="referenceSymbol">Instrument </label><select id="referenceSymbol">
+        <option value="XAUUSD">Gold (XAU/USD)</option><option value="XAGUSD">Silver (XAG/USD)</option>
+        <option value="XPTUSD">Platinum (XPT/USD)</option><option value="XPDUSD">Palladium (XPD/USD)</option>
+        <option value="EURUSD">EUR/USD</option><option value="GBPUSD">GBP/USD</option><option value="AUDUSD">AUD/USD</option><option value="NZDUSD">NZD/USD</option>
+        <option value="USDJPY">USD/JPY</option><option value="USDCAD">USD/CAD</option><option value="USDCHF">USD/CHF</option>
+      </select> <button id="referenceAnalyze" class="anal-refresh" onclick="analyzeReferenceVolume()">Load volume</button>
+      <p>15-minute delayed futures reference. Volume is in contracts; the buy/sell split is estimated. This does not enable forex trading.</p>
+      <div id="referenceVolumeResult" role="status">Select an instrument to inspect completed candles and volume.</div>
+    </div></div>
     <div id="flowContainer">
       <div style="text-align:center;color:var(--dim);font-size:12px;padding:30px 0">Tap 🌊 Analyze to pull history at this timeframe and look for patterns.</div>
     </div>
@@ -1039,7 +1049,7 @@ body{background:
       <b>Volatility gate:</b> No signal if ATR too high or too low.<br>
       <b>Reversal watch (1m/5m/15m/1h/4h):</b> Every open trade is scanned across 5 timeframes — the same top-down stack pro traders use (4h/1h for macro bias, 15m for structure, 1m/5m for the earliest tell). 👀 <b>WATCH</b> = fast (1m/5m) momentum turns against you, structure still holds. ⚠️ <b>FLIP</b> = the 15m structural trend (same EMA50 used for entries) turns against you. 🔴 <b>STRONG</b> = 15m + 1h + 4h all against you — full confluence, exit territory. Levels always stay locked, but you can tap <b>🚪 Close Trade Now</b> on any open trade, any time — not only on a warning.<br>
       <b>🧠 Engine v3 (auto + manual):</b> 12 safety gates (HTF agreement, volatility band, ADX trend strength, no-chase, spike candle, RSI exhaustion, news blackout, rollover hours, opposing volume, value zone, trigger candle, 15m structure) then a 0–100 quality score (4H/1H trend, structure, pullback location, trigger, momentum, volume, liquidity sweep). Fixes found in the v2 audit: SELL signals used to skip the 1H/4H check; "near support" passed when no support existed; three correlated momentum checks triple-counted one move; the strong-candle trigger chased moves.<br>
-      <b>📊 Volume Pressure:</b> buy vs sell volume over the last 20 × 15m candles (estimated from where each candle closes in its range), cumulative delta, OBV, and divergence warnings. BTC uses real Binance spot volume; gold and silver use the real traded volume of Binance's XAUUSDT / XAGUSDT perpetual contracts (PAXG token volume only if the perp feed is unreachable).<br>
+      <b>📊 Volume Pressure:</b> buy vs sell volume over the last 20 × 15m candles (estimated from where each candle closes in its range), cumulative delta, OBV, and divergence warnings. BTC uses Coinbase BTC/USD traded volume. Metals retain their live perpetual/token source when reachable; otherwise delayed COMEX futures history supplies reference volume. Futures contract volume is not spot/broker volume. The reference fallback supports analysis and replay only, with entries paused.<br>
       <b>🧭 Manual & 📉 Analytics:</b> always give a full plan — entry (market or limit at the pullback), stop beyond structure, TP1 1R / TP2 next liquidity / TP3 runner, $ risk at your lot size, and the exact price that proves the idea wrong. Graded CONFIRMED only when every gate passes; otherwise LOWER CONFIDENCE with what to wait for. Never counted in Dashboard or P&L.<br>
       <b>🧪 Backtest:</b> Analytics → Run backtest replays Engine v3 on the real candles on your device, with no look-ahead, and reports win rate, R and profit factor.<br>
       <b>🔥 Spike badge:</b> shown on the trend strip when ATR expands sharply vs its own recent average (or, for BTC, when real candle volume runs high) — a heads-up that a bigger move may be underway. Informational only — it doesn't change entries or exits.<br>
@@ -1057,9 +1067,9 @@ body{background:
       <b>Gold chart:</b> TradingView OANDA:XAUUSD<br>
       <b>Silver chart:</b> TradingView OANDA:XAGUSD<br>
       <b>BTC chart:</b> TradingView COINBASE:BTCUSD<br>
-      <b>Signal OHLC:</b> Binance XAUUSDT / XAGUSDT perpetuals re-based to spot (metals; PAXG fallback for gold), Binance spot klines (BTC) — native 15m/1H/4H, re-synced every 3 min<br>
-      <b>Live prices:</b> gold-api.com + Binance every 5s<br>
-      <b>Fast timeframes (1m/5m):</b> built live from the same price ticks, no extra API calls · <b>4h:</b> aggregated from 15m history (metals) / Binance klines (BTC)<br>
+      <b>Signal OHLC:</b> Coinbase BTC/USD; metals use live derivatives when reachable or delayed futures reference history. Source, age and entry eligibility are shown across tabs<br>
+      <b>Live prices:</b> gold-api.com + Coinbase every 5s<br>
+      <b>Fast timeframes (1m/5m):</b> built live from the same price ticks, no extra API calls · <b>4h:</b> completed provider history, aggregated only with every source bar present<br>
       <b>Analysis news:</b> Google News via rss2json (browser-friendly, no proxy needed), GDELT as backup · <b>Econ calendar:</b> Forex Factory's own JSON export (via Fair Economy) tried through an AI content-reader proxy first, then direct + public CORS relays, with a bullish/bearish bias hint per event · both best-effort — if either can't reach your network, a direct "Open on Forex Factory / Google News ↗" link is always shown so you're never stuck
     </div></div>
     <div class="ic"><div class="it">💾 Storage & Alerts</div><div class="ib">
@@ -1069,7 +1079,7 @@ body{background:
     <div class="ic" style="background:rgba(246,201,14,.04);border-color:rgba(246,201,14,.15)"><div class="it">⚠ Disclaimer</div><div class="ib">Rule-based signals only. Not financial advice. Past signals do not guarantee future results. Always use your own judgment.</div></div>
   </div>
 </div>
-<div class="foot">Kalai Markets (KMR) · XAU · XAG · BTC · TradingView · Binance · gold-api.com</div>
+<div class="foot">Kalai Markets (KMR) · XAU · XAG · BTC · TradingView · Coinbase · Yahoo futures reference · gold-api.com</div>
 </div>
 <div id="themeSheet" style="display:none" class="sheet-ov" onclick="if(event.target===this)closeThemeSheet()">
   <div class="sheet">
@@ -1082,10 +1092,11 @@ body{background:
 <div id="evPop" class="evpop" role="status" aria-live="polite"></div>
 <button id="evFab" class="evfab" onclick="evwReopen()" aria-label="Show next event popup"></button>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-<script src="/trading-core.js?v=20261017-1"></script>
+<script src="/trading-core.js?v=20261017-2"></script>
 <script src="/btc-feed.js?v=20261017-1"></script>
+<script src="/reference-feed.js?v=20261017-2"></script>
 <script src="/paper-engine.js?v=20261017-1"></script>
-<script src="/basket-demo.js?v=20261017-1"></script>
+<script src="/basket-demo.js?v=20261017-2"></script>
 <script src="/basket-replay.js?v=20261017-1"></script>
 <script>
 // Init EmailJS lazily once public key is set (see saveNotifSettings)
@@ -1608,6 +1619,7 @@ function showTab(n,el){
   // render calls above (so it catches the freshly-populated content), and only on this one
   // navigation moment. The periodic refreshes that follow (5-8s later) never call this, so
   // the animation plays once per tab switch, not every time the page updates.
+  renderFeedStatus();
   settleInChildren(panel);
 }
 // Applies a one-shot staggered fade+slide to a panel's visible top-level cards. Self-cleans
@@ -1698,23 +1710,25 @@ async function loadCandles(sym,tf){
   if(!ASSETS[sym].isCrypto||ohlcData[sym][tf]?.length>10)return;
   try{ohlcData[sym][tf]=await fetchBinanceKlines(ASSETS[sym].binance,tf,CANDLE_LIMIT);}catch(e){}
 }
-// ── v26 METAL DATA LAYER ────────────────────────────────────────────────────
-// Bugs fixed here:
-//  • Kraken has NO XAG/USD pair ("EQuery:Unknown asset pair"), so silver was silently running
-//    on CoinGecko or even on random synthetic candles. Silver now uses Binance's regulated
-//    XAGUSDT perpetual (launched Jan 2026), which tracks spot silver with real traded volume.
-//  • Gold history came from PAXG (a token that trades at a premium to spot) while the live
-//    price and the TradingView chart are spot XAU/USD — so S/R, order blocks, SL and TP were
-//    offset from the chart. Gold now uses Binance's XAUUSDT perpetual, and every metal series
-//    is re-based to the live gold-api spot price so levels line up with OANDA's chart.
-//  • 1H/4H were only ~7 days deep (aggregated from 15m). They are now fetched natively (700 bars).
-//  • Candles were loaded once at boot and never refreshed, so hours later the engine was
-//    reading zero-volume bars built from price ticks. resyncOHLC() now re-pulls every 3 min.
+// Metal live history retains its existing provider when available. The public
+// futures fallback restores analysis and volume, but is explicitly reference-only.
 const FAPI_SYM={XAUUSD:'XAUUSDT',XAGUSD:'XAGUSDT'};
 let metalSrc={XAUUSD:'loading…',XAGUSD:'loading…'};
 let metalRaw={XAUUSD:null,XAGUSD:null};
 let metalBasis={XAUUSD:{f:1},XAGUSD:{f:1}};
 let lastOhlcSync=0;
+let metalFeedError={};
+const historyBackoff=new Map();
+async function historyAttempt(key,fn){
+  if((historyBackoff.get(key)||0)>Date.now())throw Error('Provider temporarily unavailable');
+  try{return await fn();}catch(e){historyBackoff.set(key,Date.now()+60000);throw e;}
+}
+function metalHistorySources(sym){
+  const sources=[{name:`Binance ${FAPI_SYM[sym]} perp`,fn:(iv,lim)=>historyAttempt('futures:'+sym,()=>fetchFapiKlines(FAPI_SYM[sym],iv,lim))}];
+  if(sym==='XAUUSD')sources.push({name:'Binance PAXG/USDT proxy',fn:(iv,lim)=>historyAttempt('paxg',()=>fetchBinanceKlines('PAXGUSDT',iv,lim))});
+  sources.push({name:ReferenceFeed.info(sym).source,reference:true,fn:(iv,lim)=>ReferenceFeed.candles(sym,iv,lim)});
+  return sources;
+}
 async function fetchFapiKlines(sym,iv,lim,endTime){
   const r=await liveFetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${sym}&interval=${iv}&limit=${Math.min(lim,1500)}${endTime?`&endTime=${endTime}`:''}`);
   if(!r.ok)throw new Error('F'+r.status);
@@ -1727,6 +1741,11 @@ async function fetchFapiKlines(sym,iv,lim,endTime){
 }
 function calibrateMetal(sym){
   const r=metalRaw[sym];if(!r||!r['15m']?.length)return;
+  if(r.analysisOnly){
+    metalBasis[sym]={f:1};
+    for(const tf of ['15m','1h','4h'])ohlcData[sym][tf]=r[tf].map(k=>({...k}));
+    return; // Preserve actual futures prices; never rescale delayed bars to a live spot tick.
+  }
   const spot=prices[sym],last=r['15m'][r['15m'].length-1].c;
   let f=metalBasis[sym]?.f||1;
   if(spot&&last){const nf=spot/last;if(nf>0.9&&nf<1.1)f=nf;}
@@ -1755,22 +1774,20 @@ function metalSrcNote(sym){
   return `${metalSrc[sym]}${b&&b.spot&&Math.abs(off)>=0.005?` · re-based ${off>=0?'+':''}${off.toFixed(2)}% to spot`:''}`;
 }
 async function fetchMetalOHLC(sym){
-  const tries=[{name:`Binance ${FAPI_SYM[sym]} perp`,fn:iv=>fetchFapiKlines(FAPI_SYM[sym],iv,CANDLE_LIMIT)}];
-  if(sym==='XAUUSD')tries.push({name:'Binance PAXG/USDT proxy',fn:iv=>fetchBinanceKlines('PAXGUSDT',iv,CANDLE_LIMIT)});
+  const tries=metalHistorySources(sym);
   for(const t of tries){
     try{
-      const c15=await t.fn('15m');if(!(c15?.length>50))continue;
+      const c15=await t.fn('15m',CANDLE_LIMIT);if(!(c15?.length>50))continue;
       let c1h=null,c4h=null;
-      try{[c1h,c4h]=await Promise.all([t.fn('1h'),t.fn('4h')]);}catch(e){}
-      metalRaw[sym]={'15m':c15,'1h':c1h?.length>50?c1h:aggregate15m(c15,1),'4h':c4h?.length>50?c4h:aggregate15m(c15,4),at:Date.now()};
-      metalSrc[sym]=t.name;
+      try{[c1h,c4h]=await Promise.all([t.fn('1h',CANDLE_LIMIT),t.fn('4h',CANDLE_LIMIT)]);}catch(e){}
+      metalRaw[sym]={'15m':c15,'1h':c1h?.length>50?c1h:aggregate15m(c15,1),'4h':c4h?.length>50?c4h:aggregate15m(c15,4),analysisOnly:!!t.reference,at:Date.now()};
+      metalSrc[sym]=t.name;metalFeedError[sym]='';
       calibrateMetal(sym);
       return true;
-    }catch(e){}
+    }catch(e){metalFeedError[sym]=String(e.message||e);}
   }
-  // No exchange history reachable: never invent candles. getCandles() falls back to candles
-  // built from the live spot ticks, and the engine reports "warming up" until it has enough.
-  metalSrc[sym]='live spot ticks only (exchange history unreachable)';
+  // Preserve already loaded history for analysis, with its original source and age.
+  if(!metalRaw[sym])metalSrc[sym]='History unavailable';
   if(!metalRaw[sym]){ohlcData[sym]['15m']=[];ohlcData[sym]['1h']=[];ohlcData[sym]['4h']=[];}
   return false;
 }
@@ -1782,12 +1799,13 @@ async function resyncOHLC(){
     if(prices.BTCUSD)appendLiveTick('BTCUSD',prices.BTCUSD);
   }catch(e){}
   await Promise.allSettled([fetchMetalOHLC('XAUUSD'),fetchMetalOHLC('XAGUSD')]);
+  renderFeedStatus();
 }
 function appendLiveTick(sym,price){
   const now=Date.now();
   const msMap={'15m':900000,'1h':3600000,'4h':14400000,'60':3600000};
   Object.entries(msMap).forEach(([tf,ms])=>{
-    const d=ohlcData[sym][tf];if(!d?.length)return;
+    const d=ohlcData[sym][tf];if(!d?.length||d.some(k=>k.analysisOnly))return;
     const k=Math.floor(now/ms)*ms,l=d[d.length-1];
     if(l.t===k){l.complete=false;l.c=price;l.h=Math.max(l.h,price);l.l=Math.min(l.l,price);}
     else if(k>l.t){d.push({t:k,ms,complete:false,o:price,h:price,l:price,c:price,v:0});if(d.length>CANDLE_LIMIT+50)d.shift();}
@@ -1846,7 +1864,7 @@ async function bootstrapAll(){
   setSbar('⏳ Loading OHLC candles...');
   await Promise.allSettled([loadCandles('BTCUSD','15m'),loadCandles('BTCUSD','1h'),loadCandles('BTCUSD','4h'),fetchMetalOHLC('XAUUSD'),fetchMetalOHLC('XAGUSD')]);
   await Promise.all([fetchLiveCrypto(),fetchLiveMetals()]);
-  calibrateMetal('XAUUSD');calibrateMetal('XAGUSD');lastOhlcSync=Date.now();
+  calibrateMetal('XAUUSD');calibrateMetal('XAGUSD');lastOhlcSync=Date.now();renderFeedStatus();
   const t=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   const ok=SYMS.filter(freshQuote).length;
   setSbar(`✓ ${t} IST · ${ok}/3 fresh quotes · ${signalHistory.length} signals cached`);
@@ -2202,13 +2220,37 @@ function kmrScan(sym,candles){
     tune:SIG_TUNE[sym]||SIG_TUNE.XAUUSD,obs:orderBlocks(sym),events:kmrNewsEvents(),
     now:Date.now(),istHour:kmrIstHour(),isMetal:sym!=='BTCUSD',dec:ASSETS[sym].dec});
 }
-const KMR_VOL_SOURCE=new Proxy({},{get:(_,sym)=>sym==='BTCUSD'?'Coinbase BTC/USD traded volume':`${metalSrc[sym]||'—'} traded volume${/PAXG/.test(metalSrc[sym]||'')?' (token proxy, not spot-gold volume)':''}`});
+const KMR_VOL_SOURCE=new Proxy({},{get:(_,sym)=>sym==='BTCUSD'?'Coinbase BTC/USD traded volume':metalRaw[sym]?.analysisOnly?`${metalSrc[sym]} · futures contracts, not spot/broker volume`:`${metalSrc[sym]||'History unavailable'}${metalRaw[sym]?' traded volume':''}${/PAXG/.test(metalSrc[sym]||'')?' (token proxy, not spot-gold volume)':''}`});
+function feedStatus(sym){
+  const bars=kmrClosed(getCandles(sym)),last=bars.at(-1),reference=bars.some(k=>k.analysisOnly);
+  const age=last?Date.now()-(last.t+(last.ms||900000)):Infinity;
+  return {reference,last,stale:age>15*60000,source:KMR_VOL_SOURCE[sym],
+    message:!last?'Candle history unavailable; spot prices do not include volume':
+      reference?'Delayed futures reference — analysis only; new entries paused':
+      age>15*60000?(sym!=='BTCUSD'&&!isMetalsMarketOpen()?'Market closed — showing last completed session':'Candle history stale — new entries paused'):
+      'Completed provider candles'};
+}
+function renderFeedStatus(){
+  const states=SYMS.map(sym=>({sym,...feedStatus(sym)}));
+  for(const id of ['tdb','tp','tc','ts','tsc','th','tan','tse','tfl','tma','tre','tay','ti','tpn']){
+    const panel=document.getElementById(id);if(!panel)continue;
+    let note=panel.querySelector('[data-feed-status]');
+    if(!note){note=document.createElement('details');note.className='notice';note.dataset.feedStatus='';note.append(document.createElement('summary'),document.createElement('div'));panel.prepend(note);}
+    note.querySelector('summary').textContent='Market data · '+states.map(f=>ASSETS[f.sym].sym+': '+(!f.last?'unavailable':f.reference?'delayed reference':f.stale?'last session / stale':'recent')).join(' · ');
+    const detail=note.querySelector('div');detail.replaceChildren();
+    for(const f of states){const row=document.createElement('p');row.textContent=ASSETS[f.sym].sym+': '+f.message+' · '+f.source+(f.last?' · last bar '+new Date(f.last.t).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})+' IST':'');detail.append(row);}
+  }
+}
 
 // ── Signal engine entry point used by auto signals, the Signals tab and the trend strip ──
 function computeSignal(sym){
   // Evaluated on CLOSED candles only, so a signal only changes when a candle completes
   // (the live forming candle wiggles every tick and used to make levels "fluctuate").
   const candles=kmrClosed(getCandles(sym));
+  if(candles.some(k=>k.analysisOnly)){
+    const sm=kmrScan(sym,candles);marketTrend[sym]=null;
+    return{state:'WAIT',referenceOnly:true,score:0,total:8,conditions:[],reason:'Delayed futures history available for analysis; a fresh supported spot/broker feed is required for entries',smart:{...sm,tier:null,gatesOk:false},lot:0,confidence:null};
+  }
   if(!candles||candles.length<30||Date.now()-candles.at(-1).t>30*60e3){
     marketTrend[sym]=null;
     return{state:'WAIT',dataUnavailable:true,score:0,total:8,conditions:[],reason:'Complete, recent candle history unavailable — entries paused',lot:0,confidence:null};
@@ -2231,6 +2273,7 @@ function computeSignal(sym){
 function runManualAnalysis(sym){
   const candles=kmrClosed(getCandles(sym));
   const live=prices[sym];
+  if(candles.some(k=>k.analysisOnly))return{ready:false,referenceOnly:true,reason:'Delayed futures reference loaded. Volume and trend analysis are available; entry/SL/TP plans require fresh spot/broker candles. '+KMR_VOL_SOURCE[sym]};
   if(!candles||candles.length<60||live==null)return{ready:false,reason:'Still gathering candle history for this asset — try again in a moment.'};
   const s=kmrScan(sym,candles);
   const fdir=s.dir||(s.bias1h==='BULL'?'BUY':s.bias1h==='BEAR'?'SELL':s.structure.state==='BULL'?'BUY':s.structure.state==='BEAR'?'SELL':(s.e50!=null&&s.price<s.e50?'SELL':'BUY'));
@@ -2265,7 +2308,7 @@ function kmrTrendStory(s,sym){
 function kmrVolumeCardHtml(sym,compact){
   const vp=kmrVolumePressure(kmrClosed(getCandles(sym)),20);
   const head=`<div class="vp-head"><span>${ICONS[sym]} ${compact?ASSETS[sym].sym.split('/')[0]:ASSETS[sym].sym} · Volume Pressure</span>${vp.ok?`<span class="vp-chip ${vp.side==='BUY'?'up':vp.side==='SELL'?'dn':''}">${vp.side==='BUY'?'Buyers in control':vp.side==='SELL'?'Sellers in control':'Balanced'}</span>`:''}</div>`;
-  if(!vp.ok)return`<div class="vp-card">${head}<div class="vp-empty">No volume in this feed right now — ${KMR_VOL_SOURCE[sym]}.</div></div>`;
+  if(!vp.ok)return`<div class="vp-card">${head}<div class="vp-empty">${feedStatus(sym).message}. Source: ${KMR_VOL_SOURCE[sym]}.</div></div>`;
   let h=`<div class="vp-card">${head}<div class="vp-bar"><div class="vp-buy" style="width:${vp.buyPct.toFixed(1)}%">${vp.buyPct.toFixed(0)}% BUY</div><div class="vp-sell" style="width:${vp.sellPct.toFixed(1)}%">${vp.sellPct.toFixed(0)}% SELL</div></div>`;
   if(!compact){
     h+=`<div class="vp-grid">
@@ -2277,6 +2320,7 @@ function kmrVolumeCardHtml(sym,compact){
     if(vp.divergence)h+=`<div class="vp-warn">⚠ ${vp.divergence==='BEAR_DIV'?'Bearish divergence: price rising while buy-flow falls — rally may be running out of fuel':'Bullish divergence: price falling while buy-flow rises — sellers may be exhausting'}</div>`;
     h+=`<div class="vp-src">Buy/sell split is estimated from where each candle closed within its range (standard volume-delta approximation — true order-flow needs tick trades no free feed gives). Source: ${KMR_VOL_SOURCE[sym]}.</div>`;
   }
+  if(compact)h+=`<div class="vp-src">Estimated split · ${KMR_VOL_SOURCE[sym]}</div>`;
   return h+'</div>';
 }
 
@@ -2531,10 +2575,13 @@ function renderDashboard(){
     const vp=sc&&sc.vp&&sc.vp.ok?sc.vp:null;
     const trend=sc?(sc.bias4h===sc.bias1h&&sc.bias1h?sc.bias1h:'MIXED'):null;
     const tcls=trend==='BULL'?'up':trend==='BEAR'?'dn':'';
-    const state=!sc?'Loading…':sc.tier?`${sc.dir} setup · ${sc.score}/100`:(sc.wait||sc.reason||'Waiting');
+    const fs=feedStatus(sym);
+    if(fs.reference&&sc)sc.tier=null;
+    const state=fs.reference||fs.stale?fs.message:!sc?'Loading…':sc.tier?`${sc.dir} setup · ${sc.score}/100`:(sc.wait||sc.reason||'Waiting');
     html+=`<div class="pulse a-${sym} ${sc&&sc.tier?'ready':''}" onclick="showTab('manual',document.querySelector('[data-tab=manual]'))">
       <div class="pulse-h"><span>${ICONS[sym]} ${ASSETS[sym].sym}</span><b class="${tcls}">${trend==='BULL'?'▲ UPTREND':trend==='BEAR'?'▼ DOWNTREND':!sc?.bias1h?'DATA UNAVAILABLE':'◆ MIXED'}</b></div>
-      ${vp?`<div class="vp-bar sm"><div class="vp-buy" style="width:${vp.buyPct.toFixed(1)}%">${vp.buyPct.toFixed(0)}%</div><div class="vp-sell" style="width:${vp.sellPct.toFixed(1)}%">${vp.sellPct.toFixed(0)}%</div></div>`:`<div class="vp-empty" style="padding:4px 0">No volume data</div>`}
+      ${vp?`<div class="vp-bar sm"><div class="vp-buy" style="width:${vp.buyPct.toFixed(1)}%">${vp.buyPct.toFixed(0)}%</div><div class="vp-sell" style="width:${vp.sellPct.toFixed(1)}%">${vp.sellPct.toFixed(0)}%</div></div>`:`<div class="vp-empty" style="padding:4px 0">${fs.last?'Provider has no usable volume in recent candles':'Candle history unavailable'}</div>`}
+      <div class="vp-src">${fs.source}</div>
       <div class="pulse-s">${sc&&sc.tier?'🎯 ':'⏳ '}${state}</div>
     </div>`;
   });
@@ -2704,22 +2751,19 @@ function formatWeekdayResults(rows,pipSize){
     .sort((a,b)=>b.tier-a.tier||b.z-a.z);
 }
 
-// Paginated historical fetch at a chosen granularity. Binance allows 1000 candles/call, so
-// BTC and XAU (both via Binance — XAU via the PAXG proxy used elsewhere in this app too)
-// can reach real depth; how many rounds we paginate is capped per-timeframe so a 1-minute
-// pull doesn't try to drag down an unreasonable number of candles. Silver has no Binance
-// pair — Kraken is tried at the requested granularity first, then CoinGecko's coarser
-// auto-granularity OHLC as a last resort (not a like-for-like match, but better than
-// nothing) — the days-used figure shown in the UI reports the truth either way.
-let flowFetchError={}; // sym -> last failure reason, shown in the UI instead of a silent "0 days"
-// v26: metals use Binance's XAUUSDT / XAGUSDT perpetuals (Kraken never had an XAG pair —
-// that is why silver's Flow was always empty). PAXG spot remains a gold fallback.
+// Shared history for Flow and Research. Source labels always travel with results.
+let flowFetchError={};
 async function pagedKlines(sources,iv,rounds){
   for(const src of sources){
+    if(src.provider==='reference'){
+      try{return {candles:await ReferenceFeed.candles(src.sym,iv,Math.min(5000,src.max*rounds)),src:src.label};}
+      catch(e){flowFetchError._last=String(e.message||e);continue;}
+    }
     if(src.provider==='coinbase'){
       try{return {candles:await BtcFeed.candles(iv,Math.min(5000,src.max*rounds)),src:src.label};}
       catch(e){flowFetchError._last=String(e.message||e);continue;}
     }
+    if(src.key&&(historyBackoff.get(src.key)||0)>Date.now())continue;
     let all=[],endTime=Date.now(),err=null;
     for(let i=0;i<rounds;i++){
       try{
@@ -2737,16 +2781,17 @@ async function pagedKlines(sources,iv,rounds){
       }catch(e){err=`network error reaching ${src.label}`;break;}
     }
     if(all.length>50)return{candles:PaperMath.closed(all),src:src.label};
-    if(err)flowFetchError._last=err;
+    if(err){flowFetchError._last=err;if(src.key)historyBackoff.set(src.key,Date.now()+60000);}
   }
   return{candles:[],src:null};
 }
 function flowSources(sym){
-  const S=[];
-  if(sym==='BTCUSD')S.push({provider:'coinbase',max:1000,label:'Coinbase BTC/USD'});
-  else S.push({base:'https://fapi.binance.com/fapi/v1/klines',sym:FAPI_SYM[sym],max:1500,label:`Binance ${FAPI_SYM[sym]} perp`});
-  if(sym==='XAUUSD')S.push({base:'https://api.binance.com/api/v3/klines',sym:'PAXGUSDT',max:1000,label:'Binance PAXG proxy'});
-  return S;
+  if(sym==='BTCUSD')return [{provider:'coinbase',max:1000,label:'Coinbase BTC/USD'}];
+  const sources=[];
+  if(FAPI_SYM[sym])sources.push({key:'futures:'+sym,base:'https://fapi.binance.com/fapi/v1/klines',sym:FAPI_SYM[sym],max:1500,label:`Binance ${FAPI_SYM[sym]} perp`});
+  if(sym==='XAUUSD')sources.push({key:'paxg',base:'https://api.binance.com/api/v3/klines',sym:'PAXGUSDT',max:1000,label:'Binance PAXG proxy'});
+  sources.push({provider:'reference',sym,max:1500,label:ReferenceFeed.info(sym).source});
+  return sources;
 }
 let flowSrcUsed={};
 async function fetchFlowHistory(sym,tf){
@@ -2863,6 +2908,15 @@ async function analyzeFlowAll(force){
     if(btn){btn.disabled=false;btn.innerHTML='🌊 Analyze';}
     renderFlowTab();
   }
+}
+async function analyzeReferenceVolume(){
+  const sym=document.getElementById('referenceSymbol').value,box=document.getElementById('referenceVolumeResult'),btn=document.getElementById('referenceAnalyze');
+  btn.disabled=true;box.textContent='Loading reference candles…';
+  try{
+    const bars=await ReferenceFeed.candles(sym,'15m',700),vp=kmrVolumePressure(bars),last=bars.at(-1);
+    box.textContent=ReferenceFeed.info(sym).source+' · '+bars.length+' completed candles · latest '+new Date(last.t).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})+' IST · '+(vp.ok?'Estimated buy '+vp.buyPct.toFixed(0)+'% / sell '+vp.sellPct.toFixed(0)+'% · relative volume '+vp.relVol.toFixed(2)+'×':'Insufficient nonzero volume observations')+' · last volume '+(last.v==null?'unreported':last.v+' contracts');
+  }catch(e){box.textContent='History unavailable: '+String(e.message||e);}
+  finally{btn.disabled=false;}
 }
 function setFlowTf(tf){flowTf=tf;renderFlowTab();}
 function flowRowHtml(r,i,sampleTxt,extra){
@@ -3009,10 +3063,9 @@ const RESEARCH_MIN_HISTORY=800;   // ~2.2 years of daily candles, request this m
 let researchCache={}; // sym -> report
 
 async function fetchResearchHistory(sym){
-  // Daily history: BTC spot (1000d), gold/silver Binance perps (history since their Jan-2026
-  // listing), gold falls back to PAXG's multi-year daily history.
+  // Daily history retains its source identity, including delayed futures fallback.
   let src=flowSources(sym).map(x=>({...x,max:Math.min(x.max,1000)}));
-  if(sym==='XAUUSD')src=src.reverse(); // PAXG has years of daily history; the perp only since Jan 2026
+  // Metals use clearly labelled continuous futures history; rollovers can affect patterns.
   const{candles}=await pagedKlines(src,'1d',1);
   return candles;
 }
@@ -3112,6 +3165,7 @@ async function runResearch(){
 
       researchCache[sym]={
         ready:true,todayCond,byWindow,primary,bullPct,bearPct,flatPct,confidence,scenario,
+        referenceOnly:candles.some(k=>k.analysisOnly),source:candles.some(k=>k.analysisOnly)?ReferenceFeed.info(sym).source:(sym==='BTCUSD'?'Coinbase BTC/USD':'Metal derivatives history'),
         daysUsed:Math.round((candles[candles.length-1].t-candles[0].t)/(24*3600*1000)),
         updatedAt:Date.now(),
       };
@@ -3135,6 +3189,7 @@ function renderResearchTab(){
     else if(!c.ready){html+=`<span style="color:var(--dim)">${c.reason}</span>`;}
     else{
       const tc=c.todayCond;
+      if(c.source)html+=`<div class="notice">${c.source}${c.referenceOnly?' · Futures-price scenarios only, not spot entry recommendations. Contract rollovers can distort historical patterns.':''}</div>`;
       html+=`<div style="font-size:10.5px;color:var(--mut);margin-bottom:8px">Current: <b>${fmtP(sym,tc.price)}</b> · Trend: <b style="color:${tc.trend==='BULL'?'var(--grn)':tc.trend==='BEAR'?'var(--red)':'var(--dim)'}">${tc.trend}</b> · RSI(14): ${tc.rsi.toFixed(0)} · ATR%: ${tc.atrPct.toFixed(2)}% · ~${c.daysUsed} days of history</div>`;
       html+=`<div style="font-size:10px;color:var(--acc);font-weight:700;margin-bottom:4px">HISTORICAL MATCHES (10-day forward outcome)</div>`;
       html+=`<div class="lvl-row"><span class="lvl-tag sup">BULL</span><span style="flex:1">${c.primary.bull} of ${c.primary.total} similar days</span><span style="color:var(--grn);font-weight:700">${c.bullPct}%</span></div>`;
@@ -3510,7 +3565,7 @@ function updateNewsLog(){
     if(e.graded||now<e.ts+NEWS_GRADE_DELAY_MS)return;
     if(e.country!=='USD'){e.graded=true;e.ungradeable=true;return;}
     const candles=ohlcData.XAUUSD?.['15m'];
-    if(!candles||!candles.length)return;
+    if(!candles||!candles.length||candles.some(k=>k.analysisOnly))return; // Never grade spot-gold outcomes using futures.
     const before=[...candles].reverse().find(k=>k.t<=e.ts);
     const afterCandles=candles.filter(k=>k.t>e.ts&&k.t<=e.ts+NEWS_GRADE_DELAY_MS+15*60*1000);
     if(!before||!afterCandles.length)return;
@@ -3750,29 +3805,21 @@ function bbAt(C,i,n=20,k=2){if(i<n-1)return null;const w=C.slice(i-n+1,i+1);cons
 function aggMinutes(c,min){return PaperMath.aggregate(c,min,300000);}
 async function scalpFetch(sym,lim){
   const state=scalpState[sym];
-  let c=null,reason='',source='';
-  try{
-    if(sym==='BTCUSD'){
-      c=await fetchBinanceKlines('BTCUSDT','5m',Math.min(lim,1000));
-      source='Coinbase BTC/USD spot';
-    }else{
-      c=await fetchFapiKlines(FAPI_SYM[sym],'5m',lim);
-      source='Binance futures '+FAPI_SYM[sym];
-    }
-  }catch(e){reason='Primary 5m feed unavailable: '+String(e.message||e);}
-  if((!c||c.length<60)&&sym==='XAUUSD'){
+  let c=null,reason='',source='',reference=false;
+  const sources=sym==='BTCUSD'?[{name:'Coinbase BTC/USD spot',fn:(iv,n)=>BtcFeed.candles(iv,Math.min(n,1000))}]:metalHistorySources(sym);
+  for(const candidate of sources){
     try{
-      c=await fetchBinanceKlines('PAXGUSDT','5m',Math.min(lim,1000));
-      source='PAXGUSDT gold proxy (not broker XAUUSD)';
-      reason='';
-    }catch(e){reason+='; gold fallback: '+String(e.message||e);}
+      const bars=await candidate.fn('5m',lim);
+      if(bars?.length>=60){c=bars;source=candidate.name;reference=!!candidate.reference;break;}
+      reason='Not enough completed 5m candles';
+    }catch(e){reason=String(e.message||e);}
   }
   if(!c||c.length<60){
     state.feedError=reason||'Not enough 5m candles — source unavailable';
     state.feedSource=source||'Unavailable';
     return null;
   }
-  if(sym!=='BTCUSD'&&prices[sym]){
+  if(sym!=='BTCUSD'&&!reference&&prices[sym]){
     const f=prices[sym]/c[c.length-1].c;
     if(!(f>0.9&&f<1.1)){
       state.feedError='Market quote and 5m feed differ by over 10%; scalp signal paused';
@@ -3781,7 +3828,7 @@ async function scalpFetch(sym,lim){
     }
     c=c.map(k=>({...k,o:k.o*f,h:k.h*f,l:k.l*f,c:k.c*f}));
   }
-  state.feedError='';
+  state.feedError='';state.referenceOnly=reference;
   state.feedSource=source;
   state.feedAt=Date.now();
   return c;
@@ -3950,6 +3997,7 @@ function scalpEvaluate(sym){
   st.block=!scalpCfg.auto?'Auto scalping is OFF':!scalpCfg.assets[sym]?'This asset is switched off':
     !paperReady()?'Paper engine waiting for server ownership / synchronization':
     !freshQuote(sym)?'Fresh quote unavailable — entries paused':
+    c5.some(k=>k.analysisOnly)||ohlcData[sym]?.['15m']?.some(k=>k.analysisOnly)||ohlcData[sym]?.['1h']?.some(k=>k.analysisOnly)?'Delayed futures reference — analysis/replay only; entries paused':
     st.feedError?'Candle feed unavailable — '+st.feedError:
     scalpHist.some(t=>t.status==='OPEN'&&t.sym===sym)?'A scalp is already open on this asset':
     now<(st.cooldown||0)?`Cooldown ${Math.ceil((st.cooldown-now)/60e3)} min after the last trade`:
@@ -4025,7 +4073,7 @@ function scalpManageAll(){
 // Catch wicks that happened between ticks (or while the phone was locked) from 5m candles
 function scalpCandleCheck(){
   scalpHist.filter(t=>t.status==='OPEN').forEach(t=>{
-    (scalpData[t.sym]||[]).filter(k=>k.t>=t.t-0&&k.t>(t.lastBar||0)&&k.t+300e3<=Date.now()).forEach(k=>{if(t.status!=='OPEN')return;scalpCheckRange(t,k.h,k.l,k.t+300e3,k.c,k.o);t.lastBar=k.t;});
+    (scalpData[t.sym]||[]).filter(k=>!k.analysisOnly&&k.complete!==false&&k.t>=t.t-0&&k.t>(t.lastBar||0)&&k.t+300e3<=Date.now()).forEach(k=>{if(t.status!=='OPEN')return;scalpCheckRange(t,k.h,k.l,k.t+300e3,k.c,k.o);t.lastBar=k.t;});
   });
   saveScalpHist();
 }
@@ -4354,7 +4402,7 @@ function evaluateSignals(manual){
     const vsCandles=PaperMath.closed(allC,900000);
     volSpike[sym]=computeVolSpike(sym,vsCandles);
     // Feed the self-learned session-hours table (Session tab) — real ATR% sample per tick
-    if(vsCandles&&vsCandles.length>15){
+    if(vsCandles&&vsCandles.length>15&&!vsCandles.some(k=>k.analysisOnly)&&Date.now()-vsCandles.at(-1).t<30*60000){
       const av=atr(vsCandles);const lastPx=vsCandles[vsCandles.length-1].c;
       if(av&&lastPx)recordHourSample(sym,av/lastPx*100);
     }
@@ -4521,6 +4569,7 @@ function closedMarketCard(sym,a){
   </div>`;
 }
 function signalQuality(sig,sym){
+  if(sig?.referenceOnly)return {score:0,label:'DELAYED REFERENCE',gatesOk:false,chips:[['WAIT FOR LIVE CANDLES','warn']]};
   if(!sig||sig.dataUnavailable)return {score:0,label:'DATA UNAVAILABLE',gatesOk:false,chips:[['WAIT FOR DATA','warn']]};
   if(sig.smart||sig.smartScore!=null){
     const sm=sig.smart,score=sm?sm.score:sig.smartScore;
@@ -4992,7 +5041,7 @@ function trendCell(sym){
   const t=marketTrend[sym];
   const spike=volSpike[sym];
   const spikeBadge=spike?.spiking?`<div class="spike-badge" title="Volatility expanding — ATR ${spike.atrRatio.toFixed(1)}x normal${spike.volRatio?` · Volume ${spike.volRatio.toFixed(1)}x`:''}">🔥 SPIKE</div>`:'';
-  if(!t)return `<div class="trend-cell"><div class="trend-vid" style="display:flex;align-items:center;justify-content:center;font-size:22px">⏳</div><div class="trend-sym">${ASSETS[sym].sym}</div><div class="trend-lbl" style="color:var(--dim)">DATA UNAVAILABLE</div></div>`;
+  if(!t)return `<div class="trend-cell"><div class="trend-vid" style="display:flex;align-items:center;justify-content:center;font-size:22px">⏳</div><div class="trend-sym">${ASSETS[sym].sym}</div><div class="trend-lbl" style="color:var(--dim)">${feedStatus(sym).reference?'DELAYED REFERENCE':'DATA UNAVAILABLE'}</div></div>`;
   const bull=t==='BULL';
   return `<div class="trend-cell ${bull?'bull':'bear'}">
     ${spikeBadge}
@@ -5032,6 +5081,7 @@ const openRec=sym=>activeSignals[sym]?signalHistory.find(r=>r.id===activeSignals
 async function checkTrendFlips(){
   for(const sym of SYMS){
     const r=openRec(sym);if(!r)continue;
+    if(getCandles(sym).some(k=>k.analysisOnly))continue; // Reference futures cannot trigger live reversal alerts.
     computeMTFTrend(sym);
     const t=mtfTrend[sym]||{};
     const against=v=>v&&((r.dir==='BUY'&&v==='BEAR')||(r.dir==='SELL'&&v==='BULL'));

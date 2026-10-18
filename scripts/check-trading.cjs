@@ -40,7 +40,9 @@ const sandbox={PaperMath:P,Date,Math,Map,SPREAD:{XAUUSD:0},ASSETS:{XAUUSD:{contr
   scalpLevels:(sym,dir,price)=>({entry:price,sl:price-1,tp:price+2,beAt:price+1.2,units:1})};
 vm.createContext(sandbox);vm.runInContext(extract('function scalpSimulate(sym,history,cfg){','// ── UI ──'),sandbox);
 // Use past, fully closed candles; forced signals isolate execution from indicator selection.
-const origin=Math.floor((Date.now()-3*864e5)/900000)*900000;
+// Anchor at IST midnight: the old wall-clock fixture sometimes crossed midnight
+// during its asserted one-day window, making CI fail depending on run time.
+const origin=Math.floor((Date.now()-3*864e5+19800000)/864e5)*864e5-19800000;
 const sample=Array.from({length:240},(_,i)=>({t:origin+i*300000,o:100,h:100.2,l:98,c:100,v:10}));
 sample[201].o=100.1;
 let result=sandbox.scalpSimulate('XAUUSD',sample,{dayStop:.5,goal:10,stopAtGoal:true,timeStopMin:45});
@@ -53,7 +55,11 @@ assert.equal(result.trades[0].exit,90,'replay stop gaps use adverse opening fill
 const target=sample.map(k=>({...k,h:103,l:100}));
 result=sandbox.scalpSimulate('XAUUSD',target,{dayStop:8,goal:1,stopAtGoal:true,timeStopMin:45});
 assert.equal(result.n,1,'daily profit goal is enforced');
-console.log('PASS next-open replay entries, adverse gaps, daily loss stop and daily goal');
+const crossing=sample.map(k=>({...k,t:k.t+6*3600000}));
+result=sandbox.scalpSimulate('XAUUSD',crossing,{dayStop:.5,goal:10,stopAtGoal:true,timeStopMin:45});
+assert.equal(result.n,2,'daily stop resets only on the next IST day');
+assert.notEqual(sandbox.istDayKey(result.trades[0].t),sandbox.istDayKey(result.trades[1].t));
+console.log('PASS next-open replay entries, adverse gaps, daily loss stop, IST-day reset and daily goal');
 
 const engineSource=fs.readFileSync('src/main/resources/static/paper-engine.js','utf8');
 const context={crypto:{randomUUID:()=> 'engine-test'},Date,PaperMath:P,prices:{XAUUSD:100},currentUser:{username:'u',role:'user'}};

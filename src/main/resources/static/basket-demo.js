@@ -136,7 +136,7 @@ function basketProfitTrigger(s,target){
 function basketCandleCheck(){
   var s=basketDemo.active;if(!s||!paperReady())return;
   var closed=kmrClosed(scalpData[s.sym]||[]).filter(k=>
-    k.t+300000<=Date.now()&&k.t>=Math.max(s.createdAt,...s.positions.map(p=>p.openedAt))&&k.t>(s.lastCheckedBar||0));
+    !k.analysisOnly&&k.t+300000<=Date.now()&&k.t>=Math.max(s.createdAt,...s.positions.map(p=>p.openedAt))&&k.t>(s.lastCheckedBar||0));
   for(var k of closed){
     var stops=s.positions.filter(p=>s.dir==='BUY'?k.l<=p.sl:k.h>=p.sl);
     if(stops.length){
@@ -185,7 +185,7 @@ async function basketEvaluate(sym){
   if(scalpHist.some(t=>t.status==='OPEN'))return;
   var s=basketDemo.active,st=scalpState[sym]||{},scan=st.scan,
     quote=prices[sym],c5=kmrClosed(scalpData[sym]||[]);
-  if(!scan||!scan.dir||!scan.gatesOk||st.block||st.feedError||
+  if(c5.some(k=>k.analysisOnly)||!scan||!scan.dir||!scan.gatesOk||st.block||st.feedError||
      !Number.isFinite(quote)||quote<=0||c5.length<60)return;
   var latest=c5[c5.length-1];
   if(!latest||Date.now()-latest.t>12*60000)return;

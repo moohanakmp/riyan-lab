@@ -2,6 +2,21 @@ package com.riyanlab;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 class MarketDataControllerTest {
+    @Test void referenceHistoryIsBoundedToKnownMetalsAndMajorFxFutures(){
+        String base="https://query1.finance.yahoo.com/v8/finance/chart/";
+        for(String symbol:new String[]{"GC","SI","PL","PA","6E","6B","6J","6A","6C","6S","6N"})
+            assertNotNull(MarketDataController.allowed(base+symbol+"%3DF?interval=15m&range=1mo"));
+        for(String query:new String[]{"interval=1m&range=5d","interval=5m&range=1mo","interval=30m&range=1mo","interval=60m&range=1y","interval=1d&range=5y"})
+            assertNotNull(MarketDataController.allowed(base+"GC%3DF?"+query));
+        for(String url:new String[]{base+"AAPL?interval=15m&range=1mo",base+"GC%3DF?interval=1m&range=max",
+            base+"GC%3DF?interval=15m&range=5y",base+"GC%3DF?interval=15m&range=1mo&callback=evil",
+            base+"GC%3DF?interval=15m&range=1mo&interval=1d",base+"GC%3DF?range=1mo",base+"GC%3DF",
+            base+"GC%253DF?interval=15m&range=1mo","https://query1.finance.yahoo.com.evil.test/v8/finance/chart/GC%3DF?interval=15m&range=1mo",
+            "https://query1.finance.yahoo.com:443/v8/finance/chart/GC%3DF?interval=15m&range=1mo",
+            "https://evil@query1.finance.yahoo.com/v8/finance/chart/GC%3DF?interval=15m&range=1mo",
+            base+"GC%3DF?interval=15m&range=1mo#fragment"})
+            assertThrows(org.springframework.web.server.ResponseStatusException.class,()->MarketDataController.allowed(url));
+    }
     @Test void onlyFixedPublicDataEndpointsAreAllowed(){
         assertNotNull(MarketDataController.allowed("https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=5m&limit=1000"));
         assertNotNull(MarketDataController.allowed("https://api.gold-api.com/price/XAU"));
