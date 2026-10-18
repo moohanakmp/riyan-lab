@@ -17,6 +17,21 @@
   const symbols=['XAUUSD','XAGUSD','BTCUSD'];
   let frame=0,lastScan=0,scanSym='',cached=null;
   function navigate(tab){const b=document.querySelector('#tabsRow [data-tab="'+tab+'"]');if(b&&b.style.display!=='none')b.click();}
+  // Real data visualizations only: observed quote samples and the engine quality score.
+  function drawGauge(score){
+    const ctx=$('orbit-gauge-chart').getContext('2d');if(!ctx)return;
+    ctx.clearRect(0,0,340,180);ctx.lineWidth=20;ctx.lineCap='round';
+    ctx.beginPath();ctx.arc(170,164,140,Math.PI,Math.PI*2);ctx.strokeStyle='#293d62';ctx.stroke();
+    if(score!=null&&score>0){ctx.beginPath();ctx.arc(170,164,140,Math.PI,Math.PI+Math.PI*score/100);ctx.strokeStyle='#38baff';ctx.stroke();}
+  }
+  function drawTrend(sym,change){
+    const canvas=$('orbit-spark-'+sym),data=(sparkBuf[sym]||[]).filter(Number.isFinite);
+    canvas.hidden=data.length<2;if(data.length<2)return;
+    const ctx=canvas.getContext('2d');if(!ctx)return;
+    const low=Math.min(...data),range=Math.max(...data)-low;
+    ctx.clearRect(0,0,96,44);ctx.lineWidth=1.5;ctx.strokeStyle=change==null?'#89a7d8':change>=0?'#26c9b8':'#f2667d';ctx.beginPath();
+    data.forEach((value,index)=>{const x=index/(data.length-1)*94+1,y=range?40-(value-low)/range*36:22;if(index)ctx.lineTo(x,y);else ctx.moveTo(x,y);});ctx.stroke();
+  }
   function update(){
     frame=0;
     const user=typeof currentUser==='undefined'?null:currentUser;
@@ -31,6 +46,7 @@
       $('orbit-change-'+sym).textContent=change==null?'Change unavailable':(change>=0?'+':'')+change.toFixed(2)+'%';
       $('orbit-change-'+sym).className='orbit-change '+(change==null?'':change>=0?'up':'dn');
       status.textContent=fresh?'Latest quote':'Quote unavailable / stale';
+      drawTrend(sym,change);
       const btn=$('orbit-card-'+sym);btn.classList.toggle('selected',selAsset===sym);
       btn.setAttribute('aria-pressed',String(selAsset===sym));
       btn.disabled=!hasAccess('chart');
@@ -46,6 +62,7 @@
     $('orbit-quality-symbol').textContent=ASSETS[sym].sym;
     $('orbit-quality-state').textContent=model.state;
     $('orbit-score').textContent=model.score==null?'—':model.score;
+    drawGauge(model.score);
     $('orbit-quality-reason').textContent=model.reason;
     $('orbit-quality-source').textContent=fs.source;
     $('orbit-gauge').value=model.score==null?0:model.score;
