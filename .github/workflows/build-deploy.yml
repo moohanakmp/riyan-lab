@@ -49,6 +49,7 @@ jobs:
           node scripts/check-trading.cjs
           node scripts/check-btc-feed.cjs
           node scripts/check-reference-feed.cjs
+          node scripts/check-public-market-fetch.cjs
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build

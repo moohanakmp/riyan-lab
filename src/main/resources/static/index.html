@@ -1093,6 +1093,7 @@ body{background:
 <button id="evFab" class="evfab" onclick="evwReopen()" aria-label="Show next event popup"></button>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script src="/trading-core.js?v=20261017-2"></script>
+<script src="/public-market-fetch.js?v=20261018-1"></script>
 <script src="/btc-feed.js?v=20261017-1"></script>
 <script src="/reference-feed.js?v=20261017-2"></script>
 <script src="/paper-engine.js?v=20261017-1"></script>
@@ -1682,13 +1683,11 @@ function loadTVChart(){
 }
 
 // ═══ OHLC SOURCES ══════════════════════════════════════════════════════════
-// Cache-buster: every live price/candle fetch goes through this so mobile browsers /
-// carrier proxies / any intermediate HTTP cache can never serve a stale response for
-// data that's supposed to be live. Without {cache:'no-store'} + a unique query param,
-// a fetch() can silently be answered from cache instead of hitting the network — which
-// is exactly what made Prices/Signals lag behind the TradingView chart on this build.
+// Public exchange candles retain the original direct browser route. Other feeds
+// use the authenticated backend. The shared adapter coalesces requests and applies
+// bounded caching/cooldowns; provider HTTP denials are never rerouted.
 function liveFetch(url){
-  return fetch('/api/v1/market/data?url='+encodeURIComponent(url),{credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(12000)});
+  return PublicMarketFetch.request(url);
 }
 async function fetchBinanceKlines(sym,iv,lim){
   if(sym==='BTCUSDT')return BtcFeed.candles(iv,lim);
