@@ -2,6 +2,14 @@ package com.riyanlab;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 class MarketDataControllerTest {
+    @Test void providerCooldownHonorsRetryAfterAndBoundsUntrustedValues(){
+        for(var example:java.util.Map.of("120",120000L,"0",60000L,"-5",60000L,"999999",3600000L,"invalid",60000L).entrySet()) {
+            var headers=java.net.http.HttpHeaders.of(java.util.Map.of("Retry-After",java.util.List.of(example.getKey())),(a,b)->true);
+            assertEquals(example.getValue().longValue(),MarketDataController.retryDelay(headers));
+        }
+        assertEquals(60000,MarketDataController.retryDelay(java.net.http.HttpHeaders.of(java.util.Map.of(),(a,b)->true)));
+    }
+
     @Test void referenceHistoryIsBoundedToKnownMetalsAndMajorFxFutures(){
         String base="https://query1.finance.yahoo.com/v8/finance/chart/";
         for(String symbol:new String[]{"GC","SI","PL","PA","6E","6B","6J","6A","6C","6S","6N"})

@@ -19,6 +19,9 @@ public class MarketDataController {
     private record Cached(String body,int status,long until) {}
     private final Map<String,Cached> cache=new ConcurrentHashMap<>();
     private final Semaphore permits=new Semaphore(6);
+    private final Map<String,Long> providerCooldown=new ConcurrentHashMap<>();
+    private final Object[] requestLocks=new Object[32];
+    { Arrays.setAll(requestLocks,i->new Object()); }
     public MarketDataController(AuthService auth){this.auth=auth;}
     // Fixed public instruments and paths only: this is not a general-purpose proxy.
     static URI allowed(String raw) {
@@ -79,13 +82,23 @@ public class MarketDataController {
     @GetMapping("/data")
     ResponseEntity<String> data(@RequestParam String url,HttpServletRequest request) {
         auth.require(request,false);
-        URI uri=allowed(url);long now=System.currentTimeMillis();
+        URI uri=allowed(url);
+        // Bounded striped locks coalesce identical requests across tabs and users.
+        synchronized(requestLocks[Math.floorMod(uri.toString().hashCode(),requestLocks.length)]) {
+            return load(uri);
+        }
+    }
+    private ResponseEntity<String> load(URI uri) {
+        long now=System.currentTimeMillis();
         Cached saved=cache.get(uri.toString());
         if(saved!=null&&saved.until>now)return response(saved);
+        if(providerCooldown.getOrDefault(uri.getHost(),0L)>now)
+            return response(new Cached("{\"error\":\"Market provider rate limited; retry after cooldown\",\"upstreamStatus\":429}",503,0));
         if(!permits.tryAcquire())throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"Market feed busy");
         try{
             var upstream=client.send(java.net.http.HttpRequest.newBuilder(uri).header("User-Agent","RiyanLab/1.0 public-market-data").timeout(Duration.ofSeconds(8)).GET().build(),HttpResponse.BodyHandlers.ofString());
             int status=upstream.statusCode();
+            if(status==429)providerCooldown.merge(uri.getHost(),System.currentTimeMillis()+retryDelay(upstream.headers()),Math::max);
             // Preserve bans/rate limits as unavailable. Never switch hosts to bypass them.
             long ttl=status==200?(uri.getPath().contains("/chart/")?60000:(uri.getPath().contains("klines")||uri.getPath().endsWith("/candles"))?30000:uri.getPath().endsWith("/stats")?60000:3000):60000;
             String body=status==200?upstream.body():"{\"error\":\"Market provider unavailable\",\"upstreamStatus\":"+status+"}";
@@ -96,6 +109,17 @@ public class MarketDataController {
         }catch(InterruptedException e){Thread.currentThread().interrupt();throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"Market request interrupted");}
         catch(Exception e){throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"Market feed timed out or unavailable");}
         finally{permits.release();}
+    }
+    static long retryDelay(java.net.http.HttpHeaders headers) {
+        String value=headers.firstValue("Retry-After").orElse("");
+        try { return Math.max(60000,Math.min(3600000,Math.multiplyExact(Long.parseLong(value),1000))); }
+        catch(RuntimeException ignored) {
+            try {
+                long delay=java.time.ZonedDateTime.parse(value,java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME)
+                    .toInstant().toEpochMilli()-System.currentTimeMillis();
+                return Math.max(60000,Math.min(3600000,delay));
+            }catch(RuntimeException invalid){return 60000;}
+        }
     }
     private ResponseEntity<String> response(Cached value){
         return ResponseEntity.status(value.status).cacheControl(CacheControl.noStore())
