@@ -14,15 +14,19 @@ import java.util.concurrent.*;
 @RequestMapping("/api/v1/market")
 public class MarketDataController {
     private final AuthService auth;
-    private final HttpClient client=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(4))
-        .followRedirects(HttpClient.Redirect.NEVER).build();
+    private final HttpClient client;
     private record Cached(String body,int status,long until) {}
     private final Map<String,Cached> cache=new ConcurrentHashMap<>();
     private final Semaphore permits=new Semaphore(6);
     private final Map<String,Long> providerCooldown=new ConcurrentHashMap<>();
     private final Object[] requestLocks=new Object[32];
     { Arrays.setAll(requestLocks,i->new Object()); }
-    public MarketDataController(AuthService auth){this.auth=auth;}
+    @org.springframework.beans.factory.annotation.Autowired
+    public MarketDataController(AuthService auth){
+        this(auth,HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(4))
+            .followRedirects(HttpClient.Redirect.NEVER).build());
+    }
+    MarketDataController(AuthService auth,HttpClient client){this.auth=auth;this.client=client;}
     // Fixed public instruments and paths only: this is not a general-purpose proxy.
     static URI allowed(String raw) {
         try {

@@ -2,6 +2,44 @@ package com.riyanlab;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 class MarketDataControllerTest {
+    @Test @SuppressWarnings({"unchecked","rawtypes"})
+    void rateLimitPausesOtherTimeframesWithoutBlockingOtherProviders() throws Exception {
+        var client=org.mockito.Mockito.mock(java.net.http.HttpClient.class);
+        var upstream=org.mockito.Mockito.mock(java.net.http.HttpResponse.class);
+        org.mockito.Mockito.when(upstream.statusCode()).thenReturn(429);
+        org.mockito.Mockito.when(upstream.headers()).thenReturn(java.net.http.HttpHeaders.of(java.util.Map.of(),(a,b)->true));
+        org.mockito.Mockito.when(client.send(org.mockito.ArgumentMatchers.any(java.net.http.HttpRequest.class),org.mockito.ArgumentMatchers.any(java.net.http.HttpResponse.BodyHandler.class))).thenReturn(upstream);
+        var controller=new MarketDataController(org.mockito.Mockito.mock(AuthService.class),client);
+        var req=new org.springframework.mock.web.MockHttpServletRequest();
+        assertEquals(503,controller.data("https://query1.finance.yahoo.com/v8/finance/chart/GC%3DF?interval=15m&range=1mo",req).getStatusCode().value());
+        assertEquals(503,controller.data("https://query1.finance.yahoo.com/v8/finance/chart/SI%3DF?interval=5m&range=1mo",req).getStatusCode().value());
+        org.mockito.Mockito.verify(client,org.mockito.Mockito.times(1)).send(org.mockito.ArgumentMatchers.any(java.net.http.HttpRequest.class),org.mockito.ArgumentMatchers.any(java.net.http.HttpResponse.BodyHandler.class));
+        org.mockito.Mockito.when(upstream.statusCode()).thenReturn(200);
+        org.mockito.Mockito.when(upstream.body()).thenReturn("{}");
+        assertEquals(200,controller.data("https://api.exchange.coinbase.com/products/BTC-USD/ticker",req).getStatusCode().value());
+    }
+    @Test @SuppressWarnings({"unchecked","rawtypes"})
+    void concurrentTabsShareOneUpstreamRequest() throws Exception {
+        var client=org.mockito.Mockito.mock(java.net.http.HttpClient.class);
+        var upstream=org.mockito.Mockito.mock(java.net.http.HttpResponse.class);
+        org.mockito.Mockito.when(upstream.statusCode()).thenReturn(200);
+        org.mockito.Mockito.when(upstream.body()).thenReturn("{}");
+        var entered=new java.util.concurrent.CountDownLatch(1);
+        var release=new java.util.concurrent.CountDownLatch(1);
+        org.mockito.Mockito.when(client.send(org.mockito.ArgumentMatchers.any(java.net.http.HttpRequest.class),org.mockito.ArgumentMatchers.any(java.net.http.HttpResponse.BodyHandler.class))).thenAnswer(call->{
+            entered.countDown();assertTrue(release.await(5,java.util.concurrent.TimeUnit.SECONDS));return upstream;
+        });
+        var controller=new MarketDataController(org.mockito.Mockito.mock(AuthService.class),client);
+        try(var pool=java.util.concurrent.Executors.newFixedThreadPool(2)) {
+            java.util.concurrent.Callable<Integer> fetch=()->controller.data("https://query1.finance.yahoo.com/v8/finance/chart/GC%3DF?interval=15m&range=1mo",new org.springframework.mock.web.MockHttpServletRequest()).getStatusCode().value();
+            var first=pool.submit(fetch);assertTrue(entered.await(5,java.util.concurrent.TimeUnit.SECONDS));
+            var second=pool.submit(fetch);release.countDown();
+            assertEquals(200,first.get(5,java.util.concurrent.TimeUnit.SECONDS));
+            assertEquals(200,second.get(5,java.util.concurrent.TimeUnit.SECONDS));
+        } finally {release.countDown();}
+        org.mockito.Mockito.verify(client,org.mockito.Mockito.times(1)).send(org.mockito.ArgumentMatchers.any(java.net.http.HttpRequest.class),org.mockito.ArgumentMatchers.any(java.net.http.HttpResponse.BodyHandler.class));
+    }
+
     @Test void providerCooldownHonorsRetryAfterAndBoundsUntrustedValues(){
         for(var example:java.util.Map.of("120",120000L,"0",60000L,"-5",60000L,"999999",3600000L,"invalid",60000L).entrySet()) {
             var headers=java.net.http.HttpHeaders.of(java.util.Map.of("Retry-After",java.util.List.of(example.getKey())),(a,b)->true);
