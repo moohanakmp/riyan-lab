@@ -25,3 +25,18 @@ assert.ok(!cardRule.includes('!important'),'Generic card styles must allow exist
 console.log('PASS original semantic style cascade and custom hero-image styles preserved');
 
 assert.ok(/\.pc\.sel\{border-color:var\(--acc\)!important/.test(css),'Selected prices must remain visible above the legacy glass border');
+
+const pages=context.OrbitalUI.workspaces,route=context.OrbitalUI.routeTarget,all=Object.keys(pages);
+assert.equal(all.length,15);
+for(const tab of all){
+ assert.equal(route('#'+tab,all),tab);
+ assert.equal(route('#'+tab,[]),null);
+ assert.ok(html.includes('id="'+pages[tab].panel+'"'));
+ for(const link of pages[tab].links)assert.ok(all.includes(link),'Missing related destination '+link);
+}
+for(const bad of ['#admin','#constructor','#__proto__','#%ZZ','#unknown','#javascript:alert(1)'])assert.equal(route(bad,['chart','analysis']),null);
+assert.equal(route('#%61nalysis',['analysis']),'analysis');
+assert.ok(src.includes("history.pushState(null,'','#'+button.dataset.tab)"));
+assert.ok(src.includes("addEventListener('popstate',routeFromLocation)"));
+assert.ok(!html.includes('border:1px solid var(--glass-bd)!important'),'Legacy glass skin must not override workspace surfaces');
+console.log('PASS all 15 deep links, permission filtering, malformed/unknown routes, destination integrity and retired legacy skin');
