@@ -661,7 +661,7 @@ body{background:
 .hero-prev{width:100%;height:90px;border-radius:12px;border:1px dashed rgba(255,255,255,.15);background:rgba(255,255,255,.03) center/cover no-repeat;margin:8px 0;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--dim)}
 
 </style>
-<link rel="stylesheet" href="/workspace-ui.css?v=20261018-1">
+<link rel="stylesheet" href="/workspace-ui.css?v=20261018-2">
 <link rel="preload" as="video" href="happy.mp4" type="video/mp4"><link rel="preload" as="video" href="bull.mp4" type="video/mp4"><link rel="preload" as="video" href="bear.mp4" type="video/mp4">
 </head>
 <body>
@@ -709,34 +709,62 @@ body{background:
       <div><div class="bname">KALAI <span>MARKETS</span></div><div class="bsub" id="userBadge">KMR · Live Trading</div></div>
     </div>
     <div class="hdr-btns">
-      <button class="rbtn" id="themeBtn" onclick="openThemeSheet()" style="display:none">🎨</button>
-      <button class="rbtn" id="notifBtn" onclick="toggleAlerts()" style="color:var(--grn);border-color:var(--grn)">🔔</button>
-      <button class="rbtn" onclick="manualRefresh()"><span class="spin" id="sicon">↻</span></button>
-      <button class="rbtn" onclick="doLogout()">⎋</button>
+      <button class="rbtn" id="themeBtn" onclick="openThemeSheet()" style="display:none" aria-label="Choose theme" title="Choose theme"><i class="bi bi-palette" aria-hidden="true"></i></button>
+      <button class="rbtn" id="notifBtn" onclick="toggleAlerts()" style="color:var(--grn);border-color:var(--grn)" aria-label="Toggle alerts" title="Toggle alerts"><i class="bi bi-bell" aria-hidden="true"></i></button>
+      <button class="rbtn" onclick="manualRefresh()" aria-label="Refresh market data" title="Refresh market data"><span class="spin" id="sicon">↻</span></button>
+      <button class="rbtn" onclick="doLogout()" aria-label="Sign out" title="Sign out"><i class="bi bi-box-arrow-right" aria-hidden="true"></i></button>
     </div>
   </div>
   <div class="sbar" id="sbar">Loading...</div>
 </div>
 <button id="installBtn" onclick="installApp()">⬇ Install Kalai Markets</button>
 <div class="tabs" id="tabsRow" style="display:none">
-  <button class="tab active" data-tab="dashboard" onclick="showTab('dashboard',this)"><span class="tab-ic">🏠</span><span class="tab-lbl">Home</span><i class="tab-ripple"></i></button>
-  <button class="tab" data-tab="prices" onclick="showTab('prices',this)"><span class="tab-ic">📊</span><span class="tab-lbl">Prices</span><i class="tab-ripple"></i></button>
-  <button class="tab" data-tab="chart" onclick="showTab('chart',this)"><span class="tab-ic">📈</span><span class="tab-lbl">Chart</span><i class="tab-ripple"></i></button>
-  <button class="tab" data-tab="signals" onclick="showTab('signals',this)"><span class="tab-ic">🎯</span><span class="tab-lbl">Signals</span><i class="tab-ripple"></i></button>
-  <button class="tab" data-tab="scalp" onclick="showTab('scalp',this)"><span class="tab-ic">💵</span><span class="tab-lbl">Low Profit</span><i class="tab-ripple"></i></button>
-  <button class="tab" data-tab="history" onclick="showTab('history',this)"><span class="tab-ic">📋</span><span class="tab-lbl">History</span><i class="tab-ripple"></i></button>
-  <button class="tab" data-tab="analysis" onclick="showTab('analysis',this)"><span class="tab-ic">🔬</span><span class="tab-lbl">Analysis</span><i class="tab-ripple"></i></button>
-  <button class="tab" data-tab="session" onclick="showTab('session',this)"><span class="tab-ic">🕐</span><span class="tab-lbl">Session</span><i class="tab-ripple"></i></button>
-  <button class="tab" data-tab="flow" onclick="showTab('flow',this)"><span class="tab-ic">🌊</span><span class="tab-lbl">Flow</span><i class="tab-ripple"></i></button>
-  <button class="tab" data-tab="manual" onclick="showTab('manual',this)"><span class="tab-ic">🧭</span><span class="tab-lbl">Manual</span><i class="tab-ripple"></i></button>
-  <button class="tab" data-tab="research" onclick="showTab('research',this)"><span class="tab-ic">🔎</span><span class="tab-lbl">Research</span><i class="tab-ripple"></i></button>
-  <button class="tab" data-tab="analytics" onclick="showTab('analytics',this)"><span class="tab-ic">📉</span><span class="tab-lbl">Analytics</span><i class="tab-ripple"></i></button>
-  <button class="tab" data-tab="pnl" onclick="showTab('pnl',this)" id="pnlTabBtn"><span class="tab-ic">💰</span><span class="tab-lbl">P&amp;L</span><i class="tab-ripple"></i></button>
-  <button class="tab" data-tab="admin" onclick="showTab('admin',this)" id="adminTabBtn" style="display:none"><span class="tab-ic">⚙</span><span class="tab-lbl">Admin</span><i class="tab-ripple"></i></button>
-  <button class="tab" data-tab="info" onclick="showTab('info',this)"><span class="tab-ic">ℹ</span><span class="tab-lbl">Info</span><i class="tab-ripple"></i></button>
+  <button class="tab" data-tab="chart" onclick="showTab('chart',this)"><span class="tab-ic"><i class="bi bi-grid-1x2" aria-hidden="true"></i></span><span class="tab-lbl">Markets</span><i class="tab-ripple"></i></button>
+  <button class="tab" data-tab="prices" onclick="showTab('prices',this)"><span class="tab-ic"><i class="bi bi-bar-chart" aria-hidden="true"></i></span><span class="tab-lbl">Prices</span><i class="tab-ripple"></i></button>
+  <button class="tab" data-tab="signals" onclick="showTab('signals',this)"><span class="tab-ic"><i class="bi bi-bullseye" aria-hidden="true"></i></span><span class="tab-lbl">Signals</span><i class="tab-ripple"></i></button>
+  <button class="tab" data-tab="analysis" onclick="showTab('analysis',this)"><span class="tab-ic"><i class="bi bi-activity" aria-hidden="true"></i></span><span class="tab-lbl">Analysis</span><i class="tab-ripple"></i></button>
+  <details id="orbitalMore" class="orbit-more"><summary>More <i class="bi bi-chevron-down" aria-hidden="true"></i></summary><div class="orbit-more-menu" aria-label="More workspace pages">
+  <button class="tab active" data-tab="dashboard" onclick="showTab('dashboard',this)"><span class="tab-ic"><i class="bi bi-house-door" aria-hidden="true"></i></span><span class="tab-lbl">Home</span><i class="tab-ripple"></i></button>
+  <button class="tab" data-tab="scalp" onclick="showTab('scalp',this)"><span class="tab-ic"><i class="bi bi-cash-stack" aria-hidden="true"></i></span><span class="tab-lbl">Low Profit</span><i class="tab-ripple"></i></button>
+  <button class="tab" data-tab="history" onclick="showTab('history',this)"><span class="tab-ic"><i class="bi bi-clock-history" aria-hidden="true"></i></span><span class="tab-lbl">History</span><i class="tab-ripple"></i></button>
+  <button class="tab" data-tab="session" onclick="showTab('session',this)"><span class="tab-ic"><i class="bi bi-clock" aria-hidden="true"></i></span><span class="tab-lbl">Session</span><i class="tab-ripple"></i></button>
+  <button class="tab" data-tab="flow" onclick="showTab('flow',this)"><span class="tab-ic"><i class="bi bi-water" aria-hidden="true"></i></span><span class="tab-lbl">Flow</span><i class="tab-ripple"></i></button>
+  <button class="tab" data-tab="manual" onclick="showTab('manual',this)"><span class="tab-ic"><i class="bi bi-compass" aria-hidden="true"></i></span><span class="tab-lbl">Manual</span><i class="tab-ripple"></i></button>
+  <button class="tab" data-tab="research" onclick="showTab('research',this)"><span class="tab-ic"><i class="bi bi-search" aria-hidden="true"></i></span><span class="tab-lbl">Research</span><i class="tab-ripple"></i></button>
+  <button class="tab" data-tab="analytics" onclick="showTab('analytics',this)"><span class="tab-ic"><i class="bi bi-graph-up" aria-hidden="true"></i></span><span class="tab-lbl">Analytics</span><i class="tab-ripple"></i></button>
+  <button class="tab" data-tab="pnl" onclick="showTab('pnl',this)" id="pnlTabBtn"><span class="tab-ic"><i class="bi bi-wallet2" aria-hidden="true"></i></span><span class="tab-lbl">P&amp;L</span><i class="tab-ripple"></i></button>
+  <button class="tab" data-tab="admin" onclick="showTab('admin',this)" id="adminTabBtn" style="display:none"><span class="tab-ic"><i class="bi bi-gear" aria-hidden="true"></i></span><span class="tab-lbl">Admin</span><i class="tab-ripple"></i></button>
+  <button class="tab" data-tab="info" onclick="showTab('info',this)"><span class="tab-ic"><i class="bi bi-info-circle" aria-hidden="true"></i></span><span class="tab-lbl">Info</span><i class="tab-ripple"></i></button>
+  </div></details>
 </div>
 <div class="scroll" id="mainScroll" style="display:none">
 
+
+<section id="orbitalOverview" hidden aria-label="Market overview">
+  <div class="orbit-hero">
+    <div class="orbit-hero-copy"><p class="orbit-eyebrow">KALAI MARKETS · YOUR TRADING WORKSPACE</p>
+      <h1>Read the market.<br><span>Find your moment.</span></h1>
+      <p>Track the markets. Understand the setup. Wait for confirmation.</p>
+    </div>
+  </div>
+  <div class="orbit-quotes" aria-label="Select a market">
+<button type="button" class="orbit-quote" id="orbit-card-XAUUSD" aria-label="Open Gold chart" aria-pressed="false">
+    <img src="assets/orbital-gold.webp" alt="" width="144" height="108" decoding="async">
+    <span class="orbit-quote-copy"><span class="orbit-asset">XAU/USD <small>Gold</small></span>
+    <strong id="orbit-price-XAUUSD">—</strong><span class="orbit-change" id="orbit-change-XAUUSD">Change unavailable</span>
+    <span class="orbit-quote-status" id="orbit-status-XAUUSD">Waiting for quote</span></span>
+  </button><button type="button" class="orbit-quote" id="orbit-card-XAGUSD" aria-label="Open Silver chart" aria-pressed="false">
+    <img src="assets/orbital-silver.webp" alt="" width="144" height="108" decoding="async">
+    <span class="orbit-quote-copy"><span class="orbit-asset">XAG/USD <small>Silver</small></span>
+    <strong id="orbit-price-XAGUSD">—</strong><span class="orbit-change" id="orbit-change-XAGUSD">Change unavailable</span>
+    <span class="orbit-quote-status" id="orbit-status-XAGUSD">Waiting for quote</span></span>
+  </button><button type="button" class="orbit-quote" id="orbit-card-BTCUSD" aria-label="Open Bitcoin chart" aria-pressed="false">
+    <img src="assets/orbital-bitcoin.webp" alt="" width="144" height="108" decoding="async">
+    <span class="orbit-quote-copy"><span class="orbit-asset">BTC/USD <small>Bitcoin</small></span>
+    <strong id="orbit-price-BTCUSD">—</strong><span class="orbit-change" id="orbit-change-BTCUSD">Change unavailable</span>
+    <span class="orbit-quote-status" id="orbit-status-BTCUSD">Waiting for quote</span></span>
+  </button>
+</div></section>
 
 <!-- DASHBOARD (HOME) — default tab: today's P&L, live prices, and open signals in one view -->
 <div id="tdb" style="display:none">
@@ -761,12 +789,25 @@ body{background:
 
 <!-- CHART -->
 <div id="tc" style="display:none">
+ <div class="orbit-chart-layout"><div class="orbit-chart-main">
   <div class="cwrap">
     <div class="chdr"><div class="csym-txt" id="csym">XAU/USD · Gold</div><div class="tfs"><button class="tf" onclick="setTF('1',this)">1m</button><button class="tf" onclick="setTF('5',this)">5m</button><button class="tf" onclick="setTF('15',this)">15m</button><button class="tf active" onclick="setTF('60',this)">1H</button><button class="tf" onclick="setTF('D',this)">1D</button></div></div>
     <div class="tv-container"><div class="tv-loading" id="tvLoading">📈 Loading chart...</div><div id="tvWidgetWrap" style="height:100%"></div></div>
     <div class="tv-note">TradingView · OANDA/Binance data · Pinch to zoom</div>
   </div>
   <div class="qa-row"><button class="qa active" id="qa-XAUUSD" onclick="pickChart('XAUUSD')">🥇 XAU</button><button class="qa" id="qa-XAGUSD" onclick="pickChart('XAGUSD')">🥈 XAG</button><button class="qa" id="qa-BTCUSD" onclick="pickChart('BTCUSD')">₿ BTC</button></div>
+
+ </div><aside class="orbit-quality" aria-label="Current signal quality">
+   <div class="orbit-quality-heading"><h2>Signal Quality</h2><span id="orbit-quality-state">DATA UNAVAILABLE</span></div>
+   <div class="orbit-quality-market" id="orbit-quality-symbol">XAU/USD</div>
+   <div class="orbit-score-wrap"><strong id="orbit-score">—</strong><span>/ 100</span></div>
+   <progress id="orbit-gauge" max="100" value="0" aria-label="Setup quality"></progress>
+   <h3>Build confidence before entry.</h3>
+   <p id="orbit-quality-reason">Waiting for complete candle history</p>
+   <div id="orbit-quality-groups"></div>
+   <div class="orbit-quality-foot"><p>Engine v3 · Completed candles</p><p id="orbit-quality-source"></p><small>Setup quality is not a win probability. All entry and risk checks still apply.</small></div>
+   <button type="button" id="orbit-ideas">View Trade Ideas <i class="bi bi-arrow-right" aria-hidden="true"></i></button>
+ </aside></div>
 </div>
 
 <!-- SIGNALS -->
@@ -6102,5 +6143,6 @@ initAuth();
 </script>
 
 <button id="riyanSyncBtn" type="button" onclick="riyanConnect()" style="position:fixed;bottom:8px;right:8px;z-index:9999;padding:7px 11px;border-radius:15px;background:#284f72;color:white;border:1px solid #8ac8e7;font-size:11px">☁ DB Sync</button>
+<script src="orbital-ui.js?v=20261018-2" defer></script>
 </body>
 </html>
