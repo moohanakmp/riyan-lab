@@ -17,3 +17,5 @@ Validation:
 - Same fixture after change: about 2.5 ms. Timing is informational; deterministic storage-operation and correctness assertions are the CI checks.
 - Existing trading, basket, BTC, reference, public-routing, sync and frontend regressions remain required. Java/PostgreSQL integration runs in CI.
 - Provider HTTP 429/451 restrictions and Render free-tier cold starts are separate limits; these changes do not claim to remove them.
+
+Live follow-up: authenticated navigation opened all tabs; the read-only staging audit reported 38 PASS and 15 provider warnings (no FAIL). Chart navigation unnecessarily recreated the TradingView iframe; the follow-up reuses a loaded chart when instrument/timeframe are unchanged, with explicit refresh and missing-iframe recovery preserved. Regression checks cover these cases.

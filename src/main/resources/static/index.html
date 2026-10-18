@@ -1671,10 +1671,12 @@ function setTF(tf,btn){curTF=tf;document.querySelectorAll('.tf').forEach(b=>b.cl
 function setFilter(f,btn){histFilter=f;document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');renderHistory();}
 
 // ═══ TRADINGVIEW CHART ═════════════════════════════════════════════════════
-let tvCount=0;
-function loadTVChart(){
-  const a=ASSETS[selAsset];tvCount++;const uid='tv'+tvCount;
-  document.getElementById('tvWidgetWrap').innerHTML=`<div id="${uid}" style="height:100%;width:100%"></div>`;
+let tvCount=0,tvKey='';
+function loadTVChart(force=false){
+  const a=ASSETS[selAsset],key=a.tvSym+'|'+curTF,host=document.getElementById('tvWidgetWrap');
+  if(!force&&key===tvKey&&host.querySelector('iframe'))return;
+  tvKey=key;tvCount++;const uid='tv'+tvCount;
+  host.innerHTML=`<div id="${uid}" style="height:100%;width:100%"></div>`;
   document.getElementById('tvLoading').style.display='flex';
   const cfg={container_id:uid,autosize:true,symbol:a.tvSym,interval:curTF,timezone:'Asia/Kolkata',theme:'dark',style:'1',locale:'en',toolbar_bg:'#0f131a',enable_publishing:false,hide_side_toolbar:true,allow_symbol_change:false,save_image:false,backgroundColor:'rgba(10,12,16,1)',gridColor:'rgba(33,38,45,0.8)',hide_volume:false,support_host:'https://www.tradingview.com',overrides:{'paneProperties.background':'#0a0c10','paneProperties.backgroundType':'solid','mainSeriesProperties.candleStyle.upColor':'#26a69a','mainSeriesProperties.candleStyle.downColor':'#ef5350','mainSeriesProperties.candleStyle.borderUpColor':'#26a69a','mainSeriesProperties.candleStyle.borderDownColor':'#ef5350','mainSeriesProperties.candleStyle.wickUpColor':'#26a69a','mainSeriesProperties.candleStyle.wickDownColor':'#ef5350'}};
   const go=()=>{try{new window.TradingView.widget(cfg);}catch(e){}setTimeout(()=>document.getElementById('tvLoading').style.display='none',2500);};
@@ -1887,7 +1889,7 @@ async function manualRefresh(){
   document.getElementById('sicon').classList.add('spinning');
   SYMS.forEach(k=>{ohlcData[k]['15m']=[];ohlcData[k]['1h']=[];ohlcData[k]['4h']=[];});
   await bootstrapAll();
-  if(document.getElementById('tc').style.display!=='none')loadTVChart();
+  if(document.getElementById('tc').style.display!=='none')loadTVChart(true);
   document.getElementById('sicon').classList.remove('spinning');
 }
 

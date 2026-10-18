@@ -51,5 +51,16 @@ function fixture(){
   setSbar(){},calibrateMetal(){},Date,renderFeedStatus(){},SYMS:[],freshQuote:()=>false,signalHistory:[],evaluateSignals(){},document:{getElementById:()=>({style:{display:'none'}})}});
  vm.runInContext(extract('async function bootstrapAll(){','async function manualRefresh(){'),boot);
  const startup=boot.bootstrapAll();assert.deepEqual(events.slice(0,2),['crypto','metals'],'prices start before history completes');pending.forEach(r=>r());await startup;
- console.log('PASS shared refresh success/failure recovery, analysis request coalescing/retry and non-blocking quote startup');
+ let widgets=0,hasFrame=false;
+ const host={querySelector:()=>hasFrame?{}:null,set innerHTML(value){hasFrame=false;}},loading={style:{}};
+ const chart=vm.createContext({ASSETS:{XAUUSD:{tvSym:'OANDA:XAUUSD'},XAGUSD:{tvSym:'OANDA:XAGUSD'}},selAsset:'XAUUSD',curTF:'60',
+  document:{getElementById:id=>id==='tvWidgetWrap'?host:loading},setTimeout(){},
+  window:{TradingView:{widget:function(){widgets++;hasFrame=true;}}}});
+ vm.runInContext(extract("let tvCount=0,tvKey='';",'// ═══ OHLC SOURCES'),chart);
+ chart.loadTVChart();chart.loadTVChart();assert.equal(widgets,1,'tab revisit reuses the loaded iframe');
+ chart.curTF='5';chart.loadTVChart();assert.equal(widgets,2,'timeframe change reloads chart');
+ chart.selAsset='XAGUSD';chart.loadTVChart();assert.equal(widgets,3,'instrument change reloads chart');
+ chart.loadTVChart(true);assert.equal(widgets,4,'explicit manual refresh reloads chart');
+ hasFrame=false;chart.loadTVChart();assert.equal(widgets,5,'missing iframe can recover');
+ console.log('PASS shared refresh recovery, analysis coalescing/retry, early quote startup and chart reuse/refresh');
 })().catch(e=>{console.error(e);process.exitCode=1;});
