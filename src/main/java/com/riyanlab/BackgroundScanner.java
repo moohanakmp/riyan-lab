@@ -21,6 +21,8 @@ public class BackgroundScanner {
     private final String owner="server-"+UUID.randomUUID();
     private final AtomicBoolean busy=new AtomicBoolean();
     private Path runtime;
+    private volatile String phase="STARTING",cycleError="";
+    private volatile long cycleStartedAt=0,cycleFinishedAt=0;
     @Value("${app.background.enabled:true}") private boolean enabled;
     @Value("${app.background.node:node}") private String node;
     public BackgroundScanner(JdbcTemplate jdbc,ObjectMapper json,BackgroundFeeds feeds,PaperTradingService paper,RecordController records){this.jdbc=jdbc;this.json=json;this.feeds=feeds;this.paper=paper;this.records=records;}
@@ -34,6 +36,7 @@ public class BackgroundScanner {
     @Scheduled(initialDelayString="${app.background.initial-delay:20000}",fixedDelayString="${app.background.interval:20000}")
     public void scan(){
         if(!enabled||!busy.compareAndSet(false,true))return;
+        cycleStartedAt=System.currentTimeMillis();phase="CHECKING_OWNERSHIP";cycleError="";
         try{
             var users=jdbc.queryForList("""
                 SELECT u.id,u.username,u.role FROM auth_users u
@@ -43,15 +46,16 @@ public class BackgroundScanner {
                   AND (l.username IS NULL OR l.expires_at<=now() OR l.owner=?)
                 ORDER BY u.id
                 """,owner);
-            if(users.isEmpty())return;
-            var snapshot=feeds.snapshot();var calendar=feeds.calendar();
+            if(users.isEmpty()){phase="BROWSER_OR_PAUSED";return;}
+            phase="LOADING_CALENDAR";var calendar=feeds.calendar();phase="LOADING_MARKETS";var snapshot=feeds.snapshot();
+            phase="SCANNING_ACCOUNTS";
             for(var user:users){
                 var identity=new AuthService.Identity(((Number)user.get("id")).longValue(),(String)user.get("username"),(String)user.get("role"));
                 if(!paper.backgroundLease(identity.username(),owner))continue;
                 try{runUser(identity,snapshot,calendar);}catch(Exception e){status(identity.username(),"ERROR",json.createObjectNode().put("reason",e.getClass().getSimpleName()+": "+Objects.toString(e.getMessage(),"Scanner failed").substring(0,Math.min(260,Objects.toString(e.getMessage(),"Scanner failed").length()))));}
             }
-        }catch(Exception e){System.err.println("Background scanner cycle failed: "+e.getClass().getSimpleName());}
-        finally{busy.set(false);}
+        }catch(Exception e){phase="ERROR";cycleError=e.getClass().getSimpleName()+": "+Objects.toString(e.getMessage(),"Cycle failed");System.err.println("Background scanner cycle failed: "+cycleError);}
+        finally{cycleFinishedAt=System.currentTimeMillis();busy.set(false);}
     }
     private void runUser(AuthService.Identity identity,ObjectNode snapshot,Map<String,Object> calendar)throws Exception{
         var settings=jdbc.query("SELECT config::text FROM background_scanner_settings WHERE username=?",(r,n)->r.getString(1),identity.username());
@@ -93,6 +97,8 @@ public class BackgroundScanner {
             }
             var detail=json.createObjectNode().put("saved",saved).put("rejected",rejected).put("paperOnly",true);
             detail.set("reasons",reasons);detail.set("instruments",result.path("diagnostics"));
+            detail.put("calendarAt",((Number)calendar.getOrDefault("calendarAt",0)).longValue());
+            detail.put("calendarError",Objects.toString(calendar.getOrDefault("calendarError","")));
             detail.put("basket",Boolean.TRUE.equals(openBasket)?"Existing basket remains browser managed; baseline entries are blocked":"Browser-only basket mode unchanged");
             status(identity.username(),"SCANNING",detail);
         }finally{if(process!=null&&process.isAlive())process.destroyForcibly();Files.deleteIfExists(output);Files.deleteIfExists(error);}
@@ -113,7 +119,7 @@ public class BackgroundScanner {
         ON CONFLICT(username) DO UPDATE SET state=EXCLUDED.state,details=EXCLUDED.details,checked_at=now()
         """,user,state,details.toString());}
     public Map<String,Object> status(String user){
-        var out=new LinkedHashMap<String,Object>();out.put("available",enabled);out.put("hosting","Render free services may sleep without incoming traffic; an always-on host is needed for uninterrupted scans.");out.put("intervalSeconds",20);
+        var out=new LinkedHashMap<String,Object>();out.put("available",enabled);out.put("phase",phase);out.put("busy",busy.get());out.put("cycleStartedAt",cycleStartedAt);out.put("cycleFinishedAt",cycleFinishedAt);out.put("cycleError",cycleError);out.put("hosting","Render free services may sleep without incoming traffic; an always-on host is needed for uninterrupted scans.");out.put("intervalSeconds",20);
         var settings=jdbc.queryForList("SELECT enabled FROM background_scanner_settings WHERE username=?",user);out.put("enabled",settings.isEmpty()||Boolean.TRUE.equals(settings.getFirst().get("enabled")));
         var rows=jdbc.queryForList("SELECT state,checked_at,details::text AS details FROM background_scanner_status WHERE username=?",user);
         if(!rows.isEmpty())out.putAll(rows.getFirst());
