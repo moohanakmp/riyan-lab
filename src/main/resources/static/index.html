@@ -4221,7 +4221,7 @@ function renderScalpTab(){
   const c=scalpCfg;
   el.innerHTML=`
   <div class="sc-hero">
-    <div><div class="sc-h1">💵 Low-Profit Scalps</div><div class="sc-note">${basketTxt(paperEngine.reason)} · account limits: $4 planned open risk / $8 daily loss / 5 positions</div><div class="sc-h2">5-minute paper setups · estimated costs · losses possible</div></div>
+    <div><div class="sc-h1">💵 Low-Profit Scalps</div><div class="sc-note" id="scalpEngineStatus">${basketTxt(paperEngine.reason)} · account limits: $4 planned open risk / $8 daily loss / 5 positions</div><div class="sc-h2">5-minute paper setups · estimated costs · losses possible</div></div>
     <button class="sc-switch ${c.auto?'on':''}" onclick="scalpToggleAuto()"><i></i><span>${c.auto?'AUTO ON':'AUTO OFF'}</span></button>
   </div>
   <div id="scalpLive"></div>
@@ -4253,6 +4253,8 @@ function renderScalpBt(){
     return`<div class="sc-btc"><b>${ICONS[s]} ${ASSETS[s].sym}</b><div class="sc-btn ${r.net>=0?'up':'dn'}">${r.net>=0?'+':''}$${r.net.toFixed(2)}</div><span>${r.n} trades · ${r.winRate.toFixed(0)}% won · ${r.tradesPerDay.toFixed(1)}/day</span><span>≈ ${r.perDay>=0?'+':''}$${r.perDay.toFixed(2)} per day · worst dip −$${r.maxDD.toFixed(2)}</span><span class="sc-dim">${Object.entries(r.bySetup).map(([k,v])=>`${k}: ${v.n} (${v.net>=0?'+':''}$${v.net.toFixed(1)})`).join(' · ')||'no setups triggered'}</span></div>`;}).join('')}</div>`;
 }
 function renderScalpLive(){
+  const status=document.getElementById('scalpEngineStatus');
+  if(status)status.textContent=paperEngine.reason+' · account limits: $4 planned open risk / $8 daily loss / 5 positions';
   const el=document.getElementById('scalpLive');if(!el)return;
   const day=scalpToday(),c=scalpCfg;
   const pct=Math.max(0,Math.min(100,day.pnl/c.goal*100));
