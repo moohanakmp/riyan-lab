@@ -2137,7 +2137,8 @@ function kmrSmartScan(candles15,h1,h4,ctx){
   const rsiOk=r==null||(dir==='BUY'?r<tune.rsiHardHi:r>tune.rsiHardLo);
   gate('rsi',rsiOk,`RSI ${r!=null?r.toFixed(0):'—'} ${rsiOk?'not at an extreme':'at an exhaustion extreme'}`,'Exhaustion zone — wait for RSI to cool back toward 50');
   const newsHit=(ctx.events||[]).find(ev=>ev.ts>=ctx.now-15*60000&&ev.ts<=ctx.now+30*60000);
-  gate('news',!newsHit,newsHit?`High-impact news: ${newsHit.title} ${ev2txt(newsHit,ctx.now)}`:'No high-impact USD news in the next 30 min',newsHit?'Stand aside until 15 min after the release — spreads and spikes are unpredictable':'');
+  const newsReady=ctx.newsReady!==false;
+  gate('news',newsReady&&!newsHit,!newsReady?'Economic calendar unavailable or stale — new entries paused':newsHit?`High-impact news: ${newsHit.title} ${ev2txt(newsHit,ctx.now)}`:'No high-impact USD news in the next 30 min',!newsReady?'Wait for a validated news schedule':newsHit?'Stand aside until 15 min after the release — spreads and spikes are unpredictable':'');
   const rollover=ctx.isMetal&&ctx.istHour>=2&&ctx.istHour<4;
   gate('roll',!rollover,rollover?'Daily rollover hours (02:00–04:00 IST) — spreads widen':'Outside rollover hours','Wait until after 04:00 IST');
   const volAgainst=vp.ok&&dir&&((dir==='BUY'&&vp.buyPct<40)||(dir==='SELL'&&vp.buyPct>60));
@@ -2285,7 +2286,7 @@ function kmrNewsEvents(){
 function kmrScan(sym,candles){
   const c=candles||kmrClosed(getCandles(sym));
   return kmrSmartScan(c,kmrClosed(ohlcData[sym]['1h']),kmrClosed(ohlcData[sym]['4h']),{
-    tune:SIG_TUNE[sym]||SIG_TUNE.XAUUSD,obs:orderBlocks(sym),events:kmrNewsEvents(),
+    tune:SIG_TUNE[sym]||SIG_TUNE.XAUUSD,obs:orderBlocks(sym),events:kmrNewsEvents(),newsReady:calendarReady(),
     now:Date.now(),istHour:kmrIstHour(),isMetal:sym!=='BTCUSD',dec:ASSETS[sym].dec});
 }
 const KMR_VOL_SOURCE=new Proxy({},{get:(_,sym)=>sym==='BTCUSD'?'Coinbase BTC/USD traded volume':metalRaw[sym]?.analysisOnly?`${metalSrc[sym]} · futures contracts, not spot/broker volume`:`${metalSrc[sym]||'History unavailable'}${metalRaw[sym]?' traded volume':''}${/PAXG/.test(metalSrc[sym]||'')?' (token proxy, not spot-gold volume)':''}`});
