@@ -14,12 +14,13 @@ public class BackgroundFeeds {
     private final MarketDataController market;
     private final ObjectMapper json;
     private final HttpClient client;
+    private final MetalHistory metals;
     private JsonNode calendar;
     private long calendarAt=0,nextCalendar=0;
     private String calendarError="Not checked yet";
     @org.springframework.beans.factory.annotation.Autowired
     public BackgroundFeeds(MarketDataController market,ObjectMapper json){this(market,json,HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(4)).build());}
-    BackgroundFeeds(MarketDataController market,ObjectMapper json,HttpClient client){this.market=market;this.json=json;this.client=client;}
+    BackgroundFeeds(MarketDataController market,ObjectMapper json,HttpClient client){this.market=market;this.json=json;this.client=client;this.metals=new MetalHistory(null,market,json);}
     private JsonNode get(String url)throws Exception{
         var response=market.publicData(url);
         if(!response.getStatusCode().is2xxSuccessful())throw new IllegalStateException("Provider unavailable: "+response.getBody());
@@ -70,7 +71,7 @@ public class BackgroundFeeds {
     private ObjectNode instrument(String sym){
         var out=json.createObjectNode();var bars=out.putObject("bars");
         boolean btc=sym.equals("BTCUSD");
-        out.put("source",btc?"Coinbase BTC/USD":"Binance "+(sym.equals("XAUUSD")?"XAUUSDT":"XAGUSDT")+" perp");
+        out.put("source",btc?"Coinbase BTC/USD":"OKX "+(sym.equals("XAUUSD")?"XAU":"XAG")+"/USDT perp");
         try{
             for(String tf:List.of("5m","15m","1h","4h")){
                 if(btc&&tf.equals("4h")){bars.set(tf,aggregate(bars.path("1h"),4));continue;}
@@ -88,8 +89,7 @@ public class BackgroundFeeds {
                     }
                     normalized=normalize(raw,minutes*60000L,System.currentTimeMillis(),true,json);
                 }else{
-                    var raw=get("https://fapi.binance.com/fapi/v1/klines?symbol="+(sym.equals("XAUUSD")?"XAUUSDT":"XAGUSDT")+"&interval="+tf+"&limit="+count);
-                    normalized=normalize(raw,minutes*60000L,System.currentTimeMillis(),false,json);
+                    normalized=metals.candles(sym,tf,count);
                 }
                 if(tf.equals("5m"))out.set("five",normalized);else bars.set(tf,normalized);
             }

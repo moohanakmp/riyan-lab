@@ -1766,10 +1766,16 @@ async function historyAttempt(key,fn){
   try{return await fn();}catch(e){historyBackoff.set(key,Date.now()+60000);throw e;}
 }
 function metalHistorySources(sym){
-  const sources=[{name:`Binance ${FAPI_SYM[sym]} perp`,fn:(iv,lim)=>historyAttempt('futures:'+sym,()=>fetchFapiKlines(FAPI_SYM[sym],iv,lim))}];
+  const sources=[{name:`OKX ${sym==='XAUUSD'?'XAU':'XAG'}/USDT perp`,fn:(iv,lim)=>historyAttempt('okx:'+sym,()=>fetchOkxMetal(sym,iv,lim))},
+    {name:`Binance ${FAPI_SYM[sym]} perp`,fn:(iv,lim)=>historyAttempt('futures:'+sym,()=>fetchFapiKlines(FAPI_SYM[sym],iv,lim))}];
   if(sym==='XAUUSD')sources.push({name:'Binance PAXG/USDT proxy',fn:(iv,lim)=>historyAttempt('paxg',()=>fetchBinanceKlines('PAXGUSDT',iv,lim))});
   sources.push({name:ReferenceFeed.info(sym).source,reference:true,fn:(iv,lim)=>ReferenceFeed.candles(sym,iv,lim)});
   return sources;
+}
+async function fetchOkxMetal(sym,iv,lim){
+  const bars=await riyanApi('/api/v1/market/metals?symbol='+encodeURIComponent(sym)+'&interval='+encodeURIComponent(iv)+'&limit='+Math.min(lim,1500));
+  if(!Array.isArray(bars)||!bars.length||bars.some((k,i)=>!PaperMath.valid(k)||k.complete!==true||k.analysisOnly||k.t+k.ms>Date.now()||i>0&&k.t<=bars[i-1].t))throw Error('Invalid completed metal history');
+  return bars;
 }
 async function fetchFapiKlines(sym,iv,lim,endTime){
   const r=await liveFetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${sym}&interval=${iv}&limit=${Math.min(lim,1500)}${endTime?`&endTime=${endTime}`:''}`);
@@ -2810,6 +2816,10 @@ function formatWeekdayResults(rows,pipSize){
 let flowFetchError={};
 async function pagedKlines(sources,iv,rounds){
   for(const src of sources){
+    if(src.provider==='okx'){
+      try{return {candles:await fetchOkxMetal(src.sym,iv,Math.min(1500,src.max*rounds)),src:src.label};}
+      catch(e){flowFetchError._last=String(e.message||e);continue;}
+    }
     if(src.provider==='reference'){
       try{return {candles:await ReferenceFeed.candles(src.sym,iv,Math.min(5000,src.max*rounds)),src:src.label};}
       catch(e){flowFetchError._last=String(e.message||e);continue;}
@@ -2843,6 +2853,7 @@ async function pagedKlines(sources,iv,rounds){
 function flowSources(sym){
   if(sym==='BTCUSD')return [{provider:'coinbase',max:1000,label:'Coinbase BTC/USD'}];
   const sources=[];
+  if(FAPI_SYM[sym])sources.push({provider:'okx',sym,max:1500,label:`OKX ${sym==='XAUUSD'?'XAU':'XAG'}/USDT perp`});
   if(FAPI_SYM[sym])sources.push({key:'futures:'+sym,base:'https://fapi.binance.com/fapi/v1/klines',sym:FAPI_SYM[sym],max:1500,label:`Binance ${FAPI_SYM[sym]} perp`});
   if(sym==='XAUUSD')sources.push({key:'paxg',base:'https://api.binance.com/api/v3/klines',sym:'PAXGUSDT',max:1000,label:'Binance PAXG proxy'});
   sources.push({provider:'reference',sym,max:1500,label:ReferenceFeed.info(sym).source});

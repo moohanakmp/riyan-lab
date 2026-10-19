@@ -33,6 +33,23 @@ public class MarketDataController {
             URI u=URI.create(raw.replace("[","%5B").replace("]","%5D").replace("\"","%22"));
             if(!"https".equals(u.getScheme())||u.getPort()!=-1||u.getUserInfo()!=null||u.getFragment()!=null)throw new IllegalArgumentException();
             if("api.gold-api.com".equals(u.getHost())&&Set.of("/price/XAU","/price/XAG").contains(u.getPath())&&u.getQuery()==null)return u;
+            if("www.okx.com".equals(u.getHost())){
+                if(!"/api/v5/market/candles".equals(u.getPath())||u.getQuery()==null)throw new IllegalArgumentException();
+                Map<String,String> q=new HashMap<>();
+                for(String item:u.getQuery().split("&")){
+                    String[] kv=item.split("=",-1);
+                    if(kv.length!=2||q.put(kv[0],kv[1])!=null)throw new IllegalArgumentException();
+                }
+                if(!Set.of("instId","bar","limit","after").containsAll(q.keySet())||
+                   !Set.of("XAU-USDT-SWAP","XAG-USDT-SWAP").contains(q.get("instId"))||
+                   !Set.of("1m","5m","15m","30m","1H","4H","1Dutc").contains(q.get("bar"))||
+                   !"300".equals(q.get("limit")))throw new IllegalArgumentException();
+                if(q.containsKey("after")){
+                    long after=Long.parseLong(q.get("after"));
+                    if(after<=0||after>System.currentTimeMillis()+60000)throw new IllegalArgumentException();
+                }
+                return u;
+            }
             if("query1.finance.yahoo.com".equals(u.getHost())){
                 // Delayed futures reference history, never a broker/execution price feed.
                 if(!Set.of("GC=F","SI=F","PL=F","PA=F","6E=F","6B=F","6J=F","6A=F","6C=F","6S=F","6N=F")
@@ -108,7 +125,7 @@ public class MarketDataController {
             int status=upstream.statusCode();
             if(status==429)providerCooldown.merge(uri.getHost(),System.currentTimeMillis()+retryDelay(upstream.headers()),Math::max);
             // Preserve bans/rate limits as unavailable. Never switch hosts to bypass them.
-            long ttl=status==200?(uri.getPath().contains("/chart/")?60000:(uri.getPath().contains("klines")||uri.getPath().endsWith("/candles"))?30000:uri.getPath().endsWith("/stats")?60000:3000):60000;
+            long ttl=status==200?(uri.getHost().equals("www.okx.com")&&uri.getQuery().contains("after=")?3600000:uri.getPath().contains("/chart/")?60000:(uri.getPath().contains("klines")||uri.getPath().endsWith("/candles"))?30000:uri.getPath().endsWith("/stats")?60000:3000):60000;
             String body=status==200?upstream.body():"{\"error\":\"Market provider unavailable\",\"upstreamStatus\":"+status+"}";
             if(body.length()>2_000_000)throw new IllegalStateException("Oversized market response");
             Cached result=new Cached(body,status==200?200:503,now+ttl);

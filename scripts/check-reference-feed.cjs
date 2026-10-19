@@ -115,4 +115,26 @@ const F=feed(()=>{throw Error('Unexpected network')});
  vm.runInContext(basket.slice(basket.indexOf('function basketCandleCheck(){'),basket.indexOf('function basketManage(){')),ctx);
  vm.runInContext('basketCandleCheck()',ctx);assert.equal(settled,1,'reference candles cannot close a basket');
  console.log('PASS reference auto/manual/scalp entry rejection, scalp/basket P&L isolation and preserved live entry/settlement');
+ // New shared live metals endpoint must feed every consumer, ahead of blocked providers.
+ const liveCalls=[];
+ ctx.prices={XAUUSD:101,XAGUSD:101};
+ ctx.riyanApi=async path=>{
+  liveCalls.push(path);const q=new URL('https://app.test'+path).searchParams;
+  const ms={'5m':300000,'15m':900000,'1h':3600000,'4h':14400000,'1d':86400000}[q.get('interval')];
+  const end=Math.floor(Date.now()/ms)*ms;
+  return Array.from({length:100},(_,i)=>({t:end-(100-i)*ms,ms,o:100,h:102,l:99,c:101,v:12,complete:true,source:'OKX metal perp'}));
+ };
+ vm.runInContext('historyBackoff.clear()',ctx);
+ for(const sym of ['XAUUSD','XAGUSD']){
+  assert.equal(await vm.runInContext('fetchMetalOHLC',ctx)(sym),true);
+  assert.match(vm.runInContext('metalSrc',ctx)[sym],/OKX/);
+  const five=await vm.runInContext('scalpFetch',ctx)(sym,300);
+  assert.equal(five.length,100);assert.equal(ctx.scalpState[sym].referenceOnly,false);
+  const flow=await vm.runInContext('pagedKlines',ctx)(vm.runInContext('flowSources',ctx)(sym),'15m',3);
+  assert.match(flow.src,/OKX/);assert.equal(flow.candles.length,100);
+ }
+ assert(liveCalls.some(p=>p.includes('interval=4h')));assert(liveCalls.some(p=>p.includes('interval=5m')));
+ ctx.riyanApi=async()=>[{t:Date.now(),ms:900000,o:100,h:102,l:99,c:101,complete:false}];
+ await assert.rejects(vm.runInContext('fetchOkxMetal',ctx)('XAUUSD','15m',100),/Invalid completed/);
+ console.log('PASS shared OKX metals across Auto/Manual, Low Profit and Flow; forming bars rejected');
 })().catch(e=>{console.error(e);process.exitCode=1;});

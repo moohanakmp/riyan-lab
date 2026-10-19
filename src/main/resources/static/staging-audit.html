@@ -82,6 +82,14 @@ button.onclick=async()=>{
     add('Market feed: '+name,r.ok&&valid?'PASS':'WARN','HTTP '+r.status+(r.data?.upstreamStatus?'; provider HTTP '+r.data.upstreamStatus:'')+(Array.isArray(r.data)?'; candles '+r.data.length:''));
    }catch(e){add('Market feed: '+name,'WARN',e.message)}
   }
+  for(const sym of ['XAUUSD','XAGUSD']){
+   try{
+    const r=await api('/api/v1/market/metals?symbol='+sym+'&interval=15m&limit=100');
+    const bars=Array.isArray(r.data)?r.data:[],last=bars.at(-1);
+    const valid=bars.length>=60&&bars.every(k=>PaperMath.valid(k)&&k.complete===true&&!k.analysisOnly)&&last.t+900000<=Date.now()&&Date.now()-(last.t+900000)<900000;
+    add('Primary OKX metal candles: '+sym,r.ok&&valid?'PASS':'WARN','HTTP '+r.status+'; '+bars.length+' confirmed candles; '+(last?.source||'unavailable'));
+   }catch(e){add('Primary OKX metal candles: '+sym,'WARN',e.message)}
+  }
   for(const [sym,ticker] of Object.entries({XAUUSD:'XAUUSDT',XAGUSD:'XAGUSDT'})){
    try{
     const r=await PublicMarketFetch.request('https://fapi.binance.com/fapi/v1/klines?symbol='+ticker+'&interval=15m&limit=100');
