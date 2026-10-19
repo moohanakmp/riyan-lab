@@ -2369,7 +2369,7 @@ function runManualAnalysis(sym){
   const h1=kmrClosed(ohlcData[sym]['1h']).map(k=>k.c);
   const fails=s.gates.filter(g=>!g.ok);
   return{
-    ready:true,tradeable:!entryBlock&&!!tier,quality:tier?'confirmed':'fallback',tier,dir:fdir,scan:s,plan,
+    ready:true,generatedAt:Date.now(),tradeable:!entryBlock&&!!tier,quality:tier?'confirmed':'fallback',tier,dir:fdir,scan:s,plan,
     entry:plan.entry,sl:plan.sl,tp:plan.tp2,tp1:plan.tp1,tp2:plan.tp2,tp3:plan.tp3,rr:plan.rr,atrVal:s.atrV,
     nearestSup:lv.sup[0]||null,nearestRes:lv.res[0]||null,relevantOB:s.ob,
     bias4h:s.bias4h,bias1h:s.bias1h,rsi1h:h1.length>15?rsi(h1,14):null,macd1h:h1.length>40?macd(h1):null,
@@ -3094,7 +3094,7 @@ function manualResultBodyHtml(sym,res){
   let h=`<div class="plan-top">${kmrRing(sc?sc.score:0,conf?(res.dir==='BUY'?'#22c55e':'#ef4444'):'#e8a33d',86)}
     <div class="plan-hd"><div class="plan-badges"><span class="sig-badge ${res.dir==='BUY'?'sig-buy':'sig-sell'}">${res.dir}</span>${conf?`<span class="badge-high">✓ ${res.tier} · CONFIRMED</span>`:`<span class="badge-med plan-lc">⚠ LOWER CONFIDENCE</span>`}</div>
     <div class="plan-sub">${res.tradeable===false?'PLAN ONLY — new entries paused':p.entryType==='LIMIT'?'⏳ Place a LIMIT order':'⚡ MARKET entry now'} · R:R 1:${res.rr.toFixed(1)}</div>
-    <div class="plan-sub">Engine v3 quality ${sc?sc.score:0}/100</div></div></div>`;
+    <div class="plan-sub">Engine v3 quality ${sc?sc.score:0}/100</div><div class="plan-sub">Analysis snapshot${res.generatedAt?' · '+new Date(res.generatedAt).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata'})+' IST':''} · Analyze again to refresh conditions</div></div></div>`;
   if(!conf)h+=`<div class="plan-warn"><b>Why not confirmed:</b> ${res.reason}.<br><b>What a disciplined trader waits for:</b> ${res.wait||'more confluence'}.</div>`;
   const row=(lbl,val,why,cls)=>`<div class="plan-row ${cls||''}"><div><span>${lbl}</span><em>${why}</em></div><b>${fmtP(sym,val)}</b></div>`;
   h+=`<div class="plan-ladder">
@@ -4448,8 +4448,8 @@ function setEvidenceHtml(el,html){
 function marketEvidenceHtml(e,sym,expanded=false){
   if(!e?.ready)return `<div class="sc-dim">Pattern/volume context: ${basketTxt(e?.reason||'Collecting closed candles')}</div>`;
   const detected=e.patterns.filter(p=>p.detected),active=e.concepts.filter(p=>p.active),num=n=>Number.isFinite(n)?n.toFixed(2):'Unavailable';
-  const summary=detected.length?detected.map(p=>p.name+(p.confirmed?' · confirmed close':' · needs confirmation')).join(' / '):'No contextual candlestick pattern on the latest close';
-  let h=`<div class="market-evidence"><div class="sc-row"><b>Volume momentum · ${basketTxt(e.momentum)}</b><span class="sc-dim">${e.relVol==null?'No usable volume':e.relVol.toFixed(2)+'× relative volume'}</span></div><p>${basketTxt(summary)}</p><div class="sc-ind"><span>Est. Δ <b>${num(e.delta)}</b></span><span>Est. CVD (60 bars) <b>${num(e.cvd)}</b></span><span>CMF 20 <b>${num(e.cmf)}</b></span><span>VWAP 20 <b>${Number.isFinite(e.vwap)?fmtP(sym,e.vwap):'Unavailable'}</b></span></div><p class="sc-dim">${basketTxt(e.divergence?e.divergence+' price/estimated-CVD divergence':'No price/estimated-CVD divergence')}${e.absorptionCandidate?' · High-volume rejection: absorption-like candidate, not proof of absorption':''}.</p><p class="sc-dim">${basketTxt(e.deltaMethod)}. Bid × ask at each price, stacked imbalances and true trade-side delta: unavailable from this candle feed.</p>`;
+  const summary=detected.length?detected.map(p=>p.name+(p.dir==='NEUTRAL'?' · indecision':p.confirmed?' · confirmed close':' · needs confirmation')).join(' / '):'No contextual candlestick pattern on the latest close';
+  let h=`<div class="market-evidence"><div class="sc-row"><b>Volume momentum · ${basketTxt(e.momentum)} · ${(e.step||300000)/60000}m</b><span class="sc-dim">${e.relVol==null?'No usable volume':e.relVol.toFixed(2)+'× relative volume'}</span></div><p>${basketTxt(summary)}</p><div class="sc-ind"><span>Est. Δ <b>${num(e.delta)}</b></span><span>Est. CVD (60 bars) <b>${num(e.cvd)}</b></span><span>CMF 20 <b>${num(e.cmf)}</b></span><span>VWAP 20 <b>${Number.isFinite(e.vwap)?fmtP(sym,e.vwap):'Unavailable'}</b></span></div><p class="sc-dim">${basketTxt(e.divergence?e.divergence+' price/estimated-CVD divergence':'No price/estimated-CVD divergence')}${e.absorptionCandidate?' · High-volume rejection: absorption-like candidate, not proof of absorption':''}.</p><p class="sc-dim">${basketTxt(e.deltaMethod)}. Bid × ask at each price, stacked imbalances and true trade-side delta: unavailable from this candle feed.</p>`;
   h+=`<details data-evidence-section="concepts" data-evidence-symbol="${sym}" ${expanded?'open':''}><summary>Structure &amp; liquidity evidence · ${active.length} active</summary><div class="evidence-concepts">${e.concepts.map(c=>`<div class="cond ${c.active?'cond-yes':'cond-no'}"><b>${c.active?'✓':'·'} ${basketTxt(c.name)} · ${basketTxt(c.dir)}</b><div class="sc-dim">${basketTxt(c.detail)}${Number.isFinite(c.level)?' · '+fmtP(sym,c.level):''}</div></div>`).join('')}</div></details>`;
   h+=`<details data-evidence-section="patterns" data-evidence-symbol="${sym}"><summary>Candlestick library · ${e.patterns.length} definitions · ${detected.length} detected</summary><p class="sc-dim">Closed candles only. Reversal labels require prior trend context; single-bar reversals need a later confirming close. Star/piercing variants use non-gap FX adaptations. Indecision never authorizes an entry.</p><div class="evidence-table"><table><thead><tr><th>Pattern</th><th>Direction</th><th>Current evidence</th></tr></thead><tbody>${e.patterns.map(p=>`<tr><td>${basketTxt(p.name)}</td><td>${basketTxt(p.dir)}</td><td>${p.detected?p.confirmed?'Confirmed close':basketTxt(p.confirmation):'Not detected'}</td></tr>`).join('')}</tbody></table></div></details><p class="sc-dim">${basketTxt(e.note)}</p></div>`;
   return h;
@@ -4657,7 +4657,7 @@ let lastGuardToast={};
 let signalEntryPending={},signalEntryStatus={};
 function marketEvidenceSnapshot(e){
   if(!e?.ready)return null;
-  return{version:'context-v1',lastAt:e.lastAt,entryData:e.entryData,momentum:e.momentum,relVol:e.relVol,delta:e.delta,cvd:e.cvd,cmf:e.cmf,vwap:e.vwap,obv:e.obv,pressure:e.pressure,divergence:e.divergence,deltaMethod:e.deltaMethod,footprintAvailable:false,patterns:e.patterns.filter(p=>p.detected).map(p=>({name:p.name,dir:p.dir,confirmed:p.confirmed,confirmation:p.confirmation})),concepts:e.concepts.filter(c=>c.active)};
+  return{version:'context-v1',step:e.step,lastAt:e.lastAt,entryData:e.entryData,momentum:e.momentum,relVol:e.relVol,delta:e.delta,cvd:e.cvd,cmf:e.cmf,vwap:e.vwap,obv:e.obv,pressure:e.pressure,divergence:e.divergence,deltaMethod:e.deltaMethod,footprintAvailable:false,patterns:e.patterns.filter(p=>p.detected).map(p=>({name:p.name,dir:p.dir,confirmed:p.confirmed,confirmation:p.confirmation})),concepts:e.concepts.filter(c=>c.active)};
 }
 
 // Same read-only account preflight for Auto, Manual and Low Profit. Server remains authoritative.

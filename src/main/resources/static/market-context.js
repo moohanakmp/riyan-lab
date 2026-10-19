@@ -110,7 +110,7 @@ function analyze(bars,options={}){
  const divergent=priceChange>0&&slope<0?'BEARISH':priceChange<0&&slope>0?'BULLISH':null;
  const signals=concepts(c,A),catalog=patterns(c,A),range=last.h-last.l;
  const absorption=relVol>=1.5&&range>0&&Math.abs(last.c-last.o)/range<=.35&&(Math.max(last.o,last.c)-last.l>=range*.55||last.h-Math.min(last.o,last.c)>=range*.55);
- return{ready:true,entryData:!c.some(k=>k.analysisOnly)&&now-last.t<=step*2,lastAt:last.t,A,patterns:catalog,concepts:signals,rows,volumeReady:volOk,relVol,cmf,vwap,pressure,delta:volOk?tail.delta:null,cvd:volOk?tail.cvd:null,obv:volOk?tail.obv:null,momentum:direction,divergence:divergent,absorptionCandidate:volOk&&absorption,
+ return{ready:true,step,entryData:!c.some(k=>k.analysisOnly)&&now-last.t<=step*2,lastAt:last.t,A,patterns:catalog,concepts:signals,rows,volumeReady:volOk,relVol,cmf,vwap,pressure,delta:volOk?tail.delta:null,cvd:volOk?tail.cvd:null,obv:volOk?tail.obv:null,momentum:direction,divergence:divergent,absorptionCandidate:volOk&&absorption,
   deltaMethod:'Estimated from candle close location; not trade-side delta',footprintAvailable:false,
   triggerBuy:catalog.some(p=>p.confirmed&&p.dir==='BUY'),triggerSell:catalog.some(p=>p.confirmed&&p.dir==='SELL'),
   note:'Patterns are contextual evidence, not stand-alone orders. Weekday direction claims are unvalidated and are not entry rules.'};
