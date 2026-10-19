@@ -2344,7 +2344,7 @@ function runManualAnalysis(sym){
   if(candles.some(k=>k.analysisOnly))return{ready:false,referenceOnly:true,reason:'Delayed futures reference loaded. Volume and trend analysis are available; entry/SL/TP plans require fresh spot/broker candles. '+KMR_VOL_SOURCE[sym]};
   if(!candles||candles.length<60||live==null)return{ready:false,reason:'Still gathering candle history for this asset — try again in a moment.'};
   const s=kmrScan(sym,candles);
-  const entryBlock=!freshQuote(sym)?'Fresh quote unavailable — plan only':!calendarReady()?'Economic calendar unavailable — plan only; new entries paused':null;
+  const entryBlock=!freshQuote(sym)?'Fresh quote unavailable — plan only':Date.now()-candles.at(-1).t>30*60e3?'Candle history stale — plan only; new entries paused':!calendarReady()?'Economic calendar unavailable — plan only; new entries paused':null;
   const tier=entryBlock?null:s.tier;
   const fdir=s.dir||(s.bias1h==='BULL'?'BUY':s.bias1h==='BEAR'?'SELL':s.structure.state==='BULL'?'BUY':s.structure.state==='BEAR'?'SELL':(s.e50!=null&&s.price<s.e50?'SELL':'BUY'));
   const plan=kmrTradePlan({...s,dir:fdir,price:live},ASSETS[sym].dec);

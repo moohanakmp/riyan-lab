@@ -28,5 +28,6 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('nod
  const manual=context.runManualAnalysis('BTCUSD');assert.equal(manual.ready,true);assert.equal(manual.tradeable,false);assert.equal(manual.tier,null);assert.equal(manual.quality,'fallback');assert(manual.plan,'technical plan is preserved');
  vm.runInContext(html.slice(html.indexOf('function signalQuality('),html.indexOf('function qualityMeterHtml(')),context);
  assert.equal(context.signalQuality(blocked,'BTCUSD').label,'NEWS UNAVAILABLE');
+ now+=31*60000;const stalePlan=context.runManualAnalysis('BTCUSD');assert.equal(stalePlan.tradeable,false);assert.match(stalePlan.reason,/history stale/);
  console.log('PASS shared calendar fetch, true source age, bounded stale cache, outage/recovery, future-clock and coverage expiry gates');
 })().catch(e=>{console.error(e);process.exitCode=1;});
