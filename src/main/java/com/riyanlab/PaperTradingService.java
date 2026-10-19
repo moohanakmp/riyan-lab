@@ -66,6 +66,15 @@ public class PaperTradingService {
         return jdbc.update("""
             INSERT INTO paper_engine_leases(username,owner,expires_at) VALUES(?,?,now()+interval '40 seconds')
             ON CONFLICT(username) DO UPDATE SET owner=EXCLUDED.owner,expires_at=EXCLUDED.expires_at
+            WHERE paper_engine_leases.owner=EXCLUDED.owner OR paper_engine_leases.expires_at<=now() OR paper_engine_leases.owner LIKE 'server-%'
+            """,user,owner)>0;
+    }
+    @Transactional
+    public boolean backgroundLease(String user,String owner){
+        lock(user);
+        return jdbc.update("""
+            INSERT INTO paper_engine_leases(username,owner,expires_at) VALUES(?,?,now()+interval '40 seconds')
+            ON CONFLICT(username) DO UPDATE SET owner=EXCLUDED.owner,expires_at=EXCLUDED.expires_at
             WHERE paper_engine_leases.owner=EXCLUDED.owner OR paper_engine_leases.expires_at<=now()
             """,user,owner)>0;
     }

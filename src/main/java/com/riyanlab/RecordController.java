@@ -105,6 +105,13 @@ public class RecordController {
     public ResponseEntity<Map<String,Object>> put(@PathVariable String type,
            @PathVariable String sourceId,HttpServletRequest request,@RequestBody JsonNode payload) {
         AuthService.Identity identity=auth.require(request,true);
+        return saveForEngine(identity,type,sourceId,payload,request.getHeader("X-Paper-Engine"));
+    }
+
+    // Internal scheduler uses the same validated, audited write path. No HTTP bypass endpoint.
+    @Transactional
+    public ResponseEntity<Map<String,Object>> saveForEngine(AuthService.Identity identity,String type,
+            String sourceId,JsonNode payload,String engineOwner) {
         auth.mayWrite(identity,type);
         scope(identity,type,sourceId);
         if(sourceId.isBlank()||sourceId.length()>200 || !payload.isObject() ||
@@ -129,7 +136,7 @@ public class RecordController {
         if(PaperTradingService.isTrade(type)||"basket-sessions".equals(type)) {
             paper.lock(identity.username());
             jdbc.queryForList("SELECT pg_advisory_xact_lock(hashtextextended(?,0))","record:"+type+":"+sourceId);
-            paper.requireLease(identity.username(),request.getHeader("X-Paper-Engine"));
+            paper.requireLease(identity.username(),engineOwner);
             List<String> owners=jdbc.query("SELECT created_by FROM "+target+" WHERE source_id=?",(rs,n)->rs.getString(1),sourceId);
             if(!owners.isEmpty()&&!identity.username().equals(owners.get(0)))
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Paper ledger is user-owned");

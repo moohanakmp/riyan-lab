@@ -86,6 +86,10 @@ public class MarketDataController {
     @GetMapping("/data")
     ResponseEntity<String> data(@RequestParam String url,HttpServletRequest request) {
         auth.require(request,false);
+        return publicData(url);
+    }
+    // Fixed allowlist and shared provider cooldowns also apply to the background scanner.
+    ResponseEntity<String> publicData(String url) {
         URI uri=allowed(url);
         // Bounded striped locks coalesce identical requests across tabs and users.
         synchronized(requestLocks[Math.floorMod(uri.toString().hashCode(),requestLocks.length)]) {
