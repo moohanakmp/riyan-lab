@@ -3136,7 +3136,7 @@ function renderManualTab(){
       </span>
     </div><div class="ib">${res?manualResultBodyHtml(sym,res):`<span style="color:var(--dim)">Tap Analyze to run a fresh lookup for ${a.sym}.</span>`}</div></div>`;
   });
-  el.innerHTML=html;
+  setEvidenceHtml(el,html);
 }
 
 // ═══ RESEARCH — multi-year DAILY historical pattern matching ═══════════════════════════
@@ -4166,6 +4166,7 @@ function scalpEvaluate(sym){
   const c5=kmrClosed(scalpData[sym]||[]);
   const scan=scalpScan(sym,c5,scalpClosed15m(sym,c5,now),kmrClosed(ohlcData[sym]?.['1h']||[]),scalpCtx(sym,now));
   st.scan=scan;
+  if(st.noteBar!==scan.barT){st.note='';st.noteBar=scan.barT;}
   const live=prices[sym];
   // preview of size for the watch card
   if(scan.A&&live){const pv=scalpLevels(sym,scan.dir||(scan.trend==='BEAR'?'SELL':'BUY'),live,scan,c5,scalpCfg);st.preview=pv;}
@@ -4433,13 +4434,24 @@ function renderScalpLive(){
   renderBasketDemo();
 }
 
+function setEvidenceHtml(el,html){
+  const states=new Map([...el.querySelectorAll('details[data-evidence-section]')].map(d=>[d.dataset.evidenceSymbol+'|'+d.dataset.evidenceSection,d.open]));
+  const focused=document.activeElement?.closest('details[data-evidence-section]'),focusKey=focused?focused.dataset.evidenceSymbol+'|'+focused.dataset.evidenceSection:null;
+  el.innerHTML=html;
+  for(const d of el.querySelectorAll('details[data-evidence-section]')){
+    const key=d.dataset.evidenceSymbol+'|'+d.dataset.evidenceSection;
+    if(states.has(key))d.open=states.get(key);
+    if(key===focusKey)d.querySelector('summary')?.focus({preventScroll:true});
+  }
+}
+
 function marketEvidenceHtml(e,sym,expanded=false){
   if(!e?.ready)return `<div class="sc-dim">Pattern/volume context: ${basketTxt(e?.reason||'Collecting closed candles')}</div>`;
   const detected=e.patterns.filter(p=>p.detected),active=e.concepts.filter(p=>p.active),num=n=>Number.isFinite(n)?n.toFixed(2):'Unavailable';
   const summary=detected.length?detected.map(p=>p.name+(p.confirmed?' · confirmed close':' · needs confirmation')).join(' / '):'No contextual candlestick pattern on the latest close';
   let h=`<div class="market-evidence"><div class="sc-row"><b>Volume momentum · ${basketTxt(e.momentum)}</b><span class="sc-dim">${e.relVol==null?'No usable volume':e.relVol.toFixed(2)+'× relative volume'}</span></div><p>${basketTxt(summary)}</p><div class="sc-ind"><span>Est. Δ <b>${num(e.delta)}</b></span><span>Est. CVD (60 bars) <b>${num(e.cvd)}</b></span><span>CMF 20 <b>${num(e.cmf)}</b></span><span>VWAP 20 <b>${Number.isFinite(e.vwap)?fmtP(sym,e.vwap):'Unavailable'}</b></span></div><p class="sc-dim">${basketTxt(e.divergence?e.divergence+' price/estimated-CVD divergence':'No price/estimated-CVD divergence')}${e.absorptionCandidate?' · High-volume rejection: absorption-like candidate, not proof of absorption':''}.</p><p class="sc-dim">${basketTxt(e.deltaMethod)}. Bid × ask at each price, stacked imbalances and true trade-side delta: unavailable from this candle feed.</p>`;
-  h+=`<details ${expanded?'open':''}><summary>Structure &amp; liquidity evidence · ${active.length} active</summary><div class="evidence-concepts">${e.concepts.map(c=>`<div class="cond ${c.active?'cond-yes':'cond-no'}"><b>${c.active?'✓':'·'} ${basketTxt(c.name)} · ${basketTxt(c.dir)}</b><div class="sc-dim">${basketTxt(c.detail)}${Number.isFinite(c.level)?' · '+fmtP(sym,c.level):''}</div></div>`).join('')}</div></details>`;
-  h+=`<details><summary>Candlestick library · ${e.patterns.length} definitions · ${detected.length} detected</summary><p class="sc-dim">Closed candles only. Reversal labels require prior trend context; single-bar reversals need a later confirming close. Star/piercing variants use non-gap FX adaptations. Indecision never authorizes an entry.</p><div class="evidence-table"><table><thead><tr><th>Pattern</th><th>Direction</th><th>Current evidence</th></tr></thead><tbody>${e.patterns.map(p=>`<tr><td>${basketTxt(p.name)}</td><td>${basketTxt(p.dir)}</td><td>${p.detected?p.confirmed?'Confirmed close':basketTxt(p.confirmation):'Not detected'}</td></tr>`).join('')}</tbody></table></div></details><p class="sc-dim">${basketTxt(e.note)}</p></div>`;
+  h+=`<details data-evidence-section="concepts" data-evidence-symbol="${sym}" ${expanded?'open':''}><summary>Structure &amp; liquidity evidence · ${active.length} active</summary><div class="evidence-concepts">${e.concepts.map(c=>`<div class="cond ${c.active?'cond-yes':'cond-no'}"><b>${c.active?'✓':'·'} ${basketTxt(c.name)} · ${basketTxt(c.dir)}</b><div class="sc-dim">${basketTxt(c.detail)}${Number.isFinite(c.level)?' · '+fmtP(sym,c.level):''}</div></div>`).join('')}</div></details>`;
+  h+=`<details data-evidence-section="patterns" data-evidence-symbol="${sym}"><summary>Candlestick library · ${e.patterns.length} definitions · ${detected.length} detected</summary><p class="sc-dim">Closed candles only. Reversal labels require prior trend context; single-bar reversals need a later confirming close. Star/piercing variants use non-gap FX adaptations. Indecision never authorizes an entry.</p><div class="evidence-table"><table><thead><tr><th>Pattern</th><th>Direction</th><th>Current evidence</th></tr></thead><tbody>${e.patterns.map(p=>`<tr><td>${basketTxt(p.name)}</td><td>${basketTxt(p.dir)}</td><td>${p.detected?p.confirmed?'Confirmed close':basketTxt(p.confirmation):'Not detected'}</td></tr>`).join('')}</tbody></table></div></details><p class="sc-dim">${basketTxt(e.note)}</p></div>`;
   return h;
 }
 function volumeDeltaCandlesHtml(e,sym){
@@ -4495,7 +4507,7 @@ function renderVolumeTrap(){
   const rsiValues=[],adxValues=[],atrValues=[];
   for(let i=Math.max(30,c.length-48);i<c.length;i++){const w=c.slice(Math.max(0,i-80),i+1);rsiValues.push(rsi(w.map(k=>k.c),14));adxValues.push(kmrAdx(w)?.adx);atrValues.push(atr(w));}
   h+='<div class="volume-trap-charts">'+volumeTrapChart(c.map(k=>k.v),'Traded volume','#38baff',true)+volumeTrapChart(rsiValues,'RSI 14','var(--acc)')+volumeTrapChart(adxValues,'ADX 14 · 5m','var(--grn)')+volumeTrapChart(atrValues,'ATR 14 · 5m','var(--red)')+volumeTrapChart(evidence?.volumeReady?evidence.rows.map(k=>k.cvd):[],'Estimated cumulative delta','#a58bff')+volumeTrapChart(evidence?.volumeReady?evidence.rows.map(k=>k.obv):[],'OBV','#38baff')+'</div>';
-  el.innerHTML=h;
+  setEvidenceHtml(el,h);
 }
 
 // ═══ POSITION SIZING — S&R BASED ══════════════════════════════════════════
@@ -4807,7 +4819,7 @@ function renderSignals(){
   });
   if(!html)html=`<div style="text-align:center;color:var(--dim);font-size:12px;padding:30px 0">No signals available for your access level right now.</div>`;
   html=`<div class="notice"><b>PAPER ONLY</b> · ${basketTxt(paperEngine.reason)}<br>Signal score measures rule agreement, not win probability. Reference quotes and modeled costs can differ from your broker.</div><div class="vp-strip">${SYMS.map(x=>kmrVolumeCardHtml(x,true)).join('')}</div>`+html;
-  document.getElementById('signalsContainer').innerHTML=html;
+  setEvidenceHtml(document.getElementById('signalsContainer'),html);
 }
 
 // Active signal card — every level frozen exactly as sent to Telegram/Email

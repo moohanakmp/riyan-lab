@@ -40,5 +40,11 @@ const sig={state:'SELL',confidence:'MED',lot:.01,price:4146.6,atrVal:2,smart,con
  // Accepted server record survives optional UI/notification errors.
  c.console={warn(){}};c.paperReady=()=>true;c.paperSaveEntry=async()=>true;c.saveSignal=async()=>{};c.saveSigMeta=async()=>{};c.fireAlert=()=>{throw Error('optional alert failure');};c.marketEvidenceSnapshot=()=>null;c.ICONS={XAUUSD:'Gold'};
  vm.runInContext(extract('recordSignal'),c);assert.equal(await c.recordSignal('XAUUSD',sig,{sl:4149.6,tp:4137,tp1:4143.6,tp2:4140.6,tp3:4137,posUnits:1,lot:.01},false),true);assert(c.activeSignals.XAUUSD);
+ // Periodic refresh must preserve expanded pattern/structure panels and keyboard focus.
+ const detail=(sym,key,open)=>({dataset:{evidenceSymbol:sym,evidenceSection:key},open,querySelector:()=>({focus:()=>{focused=true;}})});
+ let focused=false,live=[detail('XAUUSD','patterns',true),detail('BTCUSD','patterns',false)];
+ const previous=live[0],el={querySelectorAll:()=>live,set innerHTML(v){live=[detail('XAUUSD','patterns',false),detail('BTCUSD','patterns',true)];}};
+ c.document={activeElement:{closest:()=>previous}};vm.runInContext(extract('setEvidenceHtml'),c);c.setEvidenceHtml(el,'fresh quotes');
+ assert.equal(live[0].open,true);assert.equal(live[1].open,false);assert.equal(focused,true);
  console.log('PASS 83/100 technical setup, all 12 gates, exact risk blockers, preserved structural stops, account limits, in-flight dedup, rejected-candle retry, accepted-only consumption, manual-plan queue preservation and post-acceptance alert failure');
 })().catch(e=>{console.error(e);process.exitCode=1;});
