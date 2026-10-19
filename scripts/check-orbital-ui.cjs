@@ -27,7 +27,7 @@ console.log('PASS original semantic style cascade and custom hero-image styles p
 assert.ok(/\.pc\.sel\{border-color:var\(--acc\)!important/.test(css),'Selected prices must remain visible above the legacy glass border');
 
 const pages=context.OrbitalUI.workspaces,route=context.OrbitalUI.routeTarget,all=Object.keys(pages);
-assert.equal(all.length,15);
+assert.equal(all.length,16);
 for(const tab of all){
  assert.equal(route('#'+tab,all),tab);
  assert.equal(route('#'+tab,[]),null);
@@ -39,4 +39,4 @@ assert.equal(route('#%61nalysis',['analysis']),'analysis');
 assert.ok(src.includes("history.pushState(null,'','#'+button.dataset.tab)"));
 assert.ok(src.includes("addEventListener('popstate',routeFromLocation)"));
 assert.ok(!html.includes('border:1px solid var(--glass-bd)!important'),'Legacy glass skin must not override workspace surfaces');
-console.log('PASS all 15 deep links, permission filtering, malformed/unknown routes, destination integrity and retired legacy skin');
+console.log('PASS all 16 deep links, permission filtering, malformed/unknown routes, destination integrity and retired legacy skin');

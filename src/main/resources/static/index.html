@@ -655,7 +655,7 @@ body{background:
 .hero-prev{width:100%;height:90px;border-radius:12px;border:1px dashed rgba(255,255,255,.15);background:rgba(255,255,255,.03) center/cover no-repeat;margin:8px 0;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--dim)}
 
 </style>
-<link rel="stylesheet" href="/workspace-ui.css?v=20261018-6">
+<link rel="stylesheet" href="/workspace-ui.css?v=20261019-volume-trap">
 <link rel="preload" as="video" href="happy.mp4" type="video/mp4"><link rel="preload" as="video" href="bull.mp4" type="video/mp4"><link rel="preload" as="video" href="bear.mp4" type="video/mp4">
 </head>
 <body>
@@ -722,6 +722,7 @@ body{background:
   <button class="tab" data-tab="scalp" onclick="showTab('scalp',this)"><span class="tab-ic"><i class="bi bi-cash-stack" aria-hidden="true"></i></span><span class="tab-lbl">Low Profit</span><i class="tab-ripple"></i></button>
   <button class="tab" data-tab="history" onclick="showTab('history',this)"><span class="tab-ic"><i class="bi bi-clock-history" aria-hidden="true"></i></span><span class="tab-lbl">History</span><i class="tab-ripple"></i></button>
   <button class="tab" data-tab="session" onclick="showTab('session',this)"><span class="tab-ic"><i class="bi bi-clock" aria-hidden="true"></i></span><span class="tab-lbl">Session</span><i class="tab-ripple"></i></button>
+  <button class="tab" data-tab="volumeTrap" onclick="showTab('volumeTrap',this)"><span class="tab-ic"><i class="bi bi-bar-chart-line" aria-hidden="true"></i></span><span class="tab-lbl">Volume Trap</span><i class="tab-ripple"></i></button>
   <button class="tab" data-tab="flow" onclick="showTab('flow',this)"><span class="tab-ic"><i class="bi bi-water" aria-hidden="true"></i></span><span class="tab-lbl">Flow</span><i class="tab-ripple"></i></button>
   <button class="tab" data-tab="manual" onclick="showTab('manual',this)"><span class="tab-ic"><i class="bi bi-compass" aria-hidden="true"></i></span><span class="tab-lbl">Manual</span><i class="tab-ripple"></i></button>
   <button class="tab" data-tab="research" onclick="showTab('research',this)"><span class="tab-ic"><i class="bi bi-search" aria-hidden="true"></i></span><span class="tab-lbl">Research</span><i class="tab-ripple"></i></button>
@@ -905,6 +906,13 @@ body{background:
     </div>
   </div>
 </div>
+
+<div id="tvt" style="display:none"><div class="sig-wrap">
+  <div class="sec-ttl">Volume Trap · Support &amp; Resistance</div>
+  <div class="qa-row"><button class="qa" data-trap-symbol="XAUUSD" onclick="volumeTrapPick('XAUUSD')">Gold</button><button class="qa" data-trap-symbol="XAGUSD" onclick="volumeTrapPick('XAGUSD')">Silver</button><button class="qa" data-trap-symbol="BTCUSD" onclick="volumeTrapPick('BTCUSD')">Bitcoin</button><button class="anal-refresh" id="volumeTrapRefresh" onclick="volumeTrapRefresh()">Refresh scanner</button></div>
+  <div class="notice">Confirmed repeated levels + closed 5m rejection + increased traded volume. Failed breaks are labelled as traps. Volume pressure is estimated from candle location, not actual buyer/seller order flow. Metals use the named proxy/perpetual source. These are paper setups, not guaranteed profits.</div>
+  <div id="volumeTrapContainer" role="status"></div>
+</div></div>
 
 <!-- MANUAL ANALYSIS — on-demand lookup, kept fully separate from the auto pipeline that
      feeds Dashboard/P&L. Follows the uploaded guide's actual 4-step process (real 4H bias,
@@ -1306,7 +1314,7 @@ function applyRoleUI(){
     if(t==='history')visible=hasAccess('historyHigh')||hasAccess('historyMed')||hasAccess('historyOverall');
     if(t==='analysis')visible=hasAccess('analysis');
     if(t==='session')visible=hasAccess('session');
-    if(t==='flow')visible=hasAccess('flow');
+    if(t==='flow'||t==='volumeTrap')visible=hasAccess('flow');
     if(t==='manual')visible=hasAccess('manual');
     if(t==='research')visible=hasAccess('research');
     if(t==='analytics')visible=hasAccess('analytics');
@@ -1629,7 +1637,7 @@ function showTab(n,el){
   if(n==='history'&&!(hasAccess('historyHigh')||hasAccess('historyMed')||hasAccess('historyOverall')))return showNoAccess('history');
   if(n==='analysis'&&!hasAccess('analysis'))return showNoAccess('analysis');
   if(n==='session'&&!hasAccess('session'))return showNoAccess('session');
-  if(n==='flow'&&!hasAccess('flow'))return showNoAccess('flow');
+  if((n==='flow'||n==='volumeTrap')&&!hasAccess('flow'))return showNoAccess('flow');
   if(n==='manual'&&!hasAccess('manual'))return showNoAccess('manual');
   if(n==='research'&&!hasAccess('research'))return showNoAccess('research');
   if(n==='analytics'&&!hasAccess('analytics'))return showNoAccess('analytics');
@@ -1637,8 +1645,8 @@ function showTab(n,el){
   if(n==='admin'&&(!currentUser||currentUser.role!=='admin'))return;
 
   if(n==='pnl'&&!(hasAccess('pnlReport')||(currentUser&&currentUser.role==='admin')))return showNoAccess('pnl');
-  ['tdb','tp','tc','ts','tsc','th','tan','tse','tfl','tma','tre','tay','ti','tad','tpn'].forEach(id=>document.getElementById(id).style.display='none');
-  const panel=document.getElementById({dashboard:'tdb',prices:'tp',chart:'tc',signals:'ts',scalp:'tsc',history:'th',analysis:'tan',session:'tse',flow:'tfl',manual:'tma',research:'tre',analytics:'tay',admin:'tad',info:'ti',pnl:'tpn'}[n]);
+  ['tdb','tp','tc','ts','tsc','th','tan','tse','tfl','tvt','tma','tre','tay','ti','tad','tpn'].forEach(id=>document.getElementById(id).style.display='none');
+  const panel=document.getElementById({dashboard:'tdb',prices:'tp',chart:'tc',signals:'ts',scalp:'tsc',history:'th',analysis:'tan',session:'tse',flow:'tfl',volumeTrap:'tvt',manual:'tma',research:'tre',analytics:'tay',admin:'tad',info:'ti',pnl:'tpn'}[n]);
   panel.style.display='block';
   panel.classList.remove('tab-fade');void panel.offsetWidth;panel.classList.add('tab-fade');
   magicPop(el);
@@ -1654,6 +1662,7 @@ function showTab(n,el){
   if(n==='analysis')refreshAnalysis(false);
   if(n==='session')renderSessionTab();
   if(n==='flow')renderFlowTab();
+  if(n==='volumeTrap')renderVolumeTrap();
   if(n==='manual')renderManualTab();
   if(n==='research')renderResearchTab();
   if(n==='analytics')renderAnalyticsTab();
@@ -2301,7 +2310,7 @@ function feedStatus(sym){
 }
 function renderFeedStatus(){
   const states=SYMS.map(sym=>({sym,...feedStatus(sym)}));
-  for(const id of ['tdb','tp','tc','ts','tsc','th','tan','tse','tfl','tma','tre','tay','ti','tpn']){
+  for(const id of ['tdb','tp','tc','ts','tsc','th','tan','tse','tfl','tvt','tma','tre','tay','ti','tpn']){
     const panel=document.getElementById(id);if(!panel||panel.style.display==='none')continue;
     let note=panel.querySelector('[data-feed-status]');
     if(!note){note=document.createElement('details');note.className='notice';note.dataset.feedStatus='';note.append(document.createElement('summary'),document.createElement('div'));panel.prepend(note);}
@@ -3856,7 +3865,7 @@ async function evwBackgroundNews(){
 //    stop moves to breakeven at 60% of the way to TP, 45-min time stop.
 //  • The LOT is sized so TP pays your $ target; it is cut if the stop would cost more than your max loss.
 //  • Daily goal and daily stop: the engine pauses itself when either is reached.
-const SCALP_DEF={target:2,maxLoss:4,goal:10,dayStop:8,stopAtGoal:true,auto:true,continuation:false,assets:{XAUUSD:true,XAGUSD:true,BTCUSD:true},timeStopMin:45};
+const SCALP_DEF={target:2,maxLoss:4,goal:10,dayStop:8,stopAtGoal:true,auto:true,continuation:false,levels:true,assets:{XAUUSD:true,XAGUSD:true,BTCUSD:true},timeStopMin:45};
 let scalpCfg=(()=>{try{const c=JSON.parse(localStorage.getItem('kmr_scalp_cfg')||'null');return c?{...SCALP_DEF,...c,assets:{...SCALP_DEF.assets,...(c.assets||{})}}:{...SCALP_DEF,assets:{...SCALP_DEF.assets}};}catch(e){return{...SCALP_DEF,assets:{...SCALP_DEF.assets}};}})();
 let scalpHist=[]; // Restore only the authenticated owner; preserve legacy cache without importing it.
 let scalpData={XAUUSD:[],XAGUSD:[],BTCUSD:[]},scalpState={XAUUSD:{},XAGUSD:{},BTCUSD:{}};
@@ -3924,6 +3933,78 @@ function scalpClosed15m(sym,c5,now=Date.now()){
   if(aggregated.length>=55)return aggregated;
   return valid?primary:[];
 }
+// Confirmed pivots only: the signal candle never contributes to its own level.
+function kmrLevelZones(c,A){
+  if(!Array.isArray(c)||c.length<30||!Number.isFinite(A)||A<=0)return{support:[],resistance:[]};
+  const prior=c.slice(-121,-1),p=kmrPivots(prior,2),tol=A*0.2;
+  const group=(points,high)=>{
+    const zones=[];
+    for(const point of points){
+      const k=prior[point.i];
+      // Flat runs are not repeated independent tests of a level.
+      if(![prior[point.i-1],prior[point.i+1]].every(x=>high?x.h<k.h:x.l>k.l))continue;
+      let z=zones.find(z=>Math.abs(point.p-z.level)<=tol&&point.i-z.last>=3&&Math.max(z.high,point.p)-Math.min(z.low,point.p)<=2*tol);
+      if(!z){zones.push({level:point.p,low:point.p,high:point.p,touches:1,last:point.i});continue;}
+      z.level=(z.level*z.touches+point.p)/(z.touches+1);z.touches++;z.low=Math.min(z.low,point.p);z.high=Math.max(z.high,point.p);z.last=point.i;
+    }
+    return zones.filter(z=>z.touches>=2).sort((a,b)=>a.level-b.level);
+  };
+  return{support:group(p.L,false),resistance:group(p.H,true)};
+}
+function kmrLevelSetup(c,ctx={}){
+  const out={dir:null,gates:[],why:[],zones:{support:[],resistance:[]},reason:'Waiting for confirmed support/resistance and volume'};
+  const gate=(ok,label)=>{out.gates.push({ok:!!ok,label});return !!ok;};
+  const now=ctx.now??Date.now(),closed=PaperMath.closed(c||[],300000,now);
+  if(!gate(closed.length>=60,'At least 60 valid closed 5m candles'))return out;
+  const last=closed.at(-1),prev=closed.at(-2),A=atr(closed);
+  if(!gate(Number.isFinite(A)&&A>0,'Usable 5m ATR'))return out;
+  out.A=A;out.price=last.c;out.barT=last.t;out.zones=kmrLevelZones(closed,A);
+  gate(now-last.t<=12*60000,'Recent closed 5m candle');
+  gate(!closed.some(k=>k.analysisOnly),'Live source; delayed references cannot trigger entries');
+  // Do not bridge missing 5m bars to create a level/volume confirmation.
+  gate(closed.slice(-30).every((k,i,a)=>!i||k.t-a[i-1].t===300000),'Continuous recent 5m history');
+  const vols=closed.slice(-21,-1),volumeOk=vols.every(k=>Number.isFinite(k.v)&&k.v>0)&&last.v>0;
+  out.relVol=volumeOk?last.v/(vols.reduce((n,k)=>n+k.v,0)/vols.length):null;
+  gate(volumeOk,'Real volume on the trigger and prior 20 candles');
+  const range=last.h-last.l,upper=last.h-Math.max(last.o,last.c),lower=Math.min(last.o,last.c)-last.l;
+  const sell=out.zones.resistance.filter(z=>last.h>=z.low-0.1*A&&last.c<z.level&&prev.c<=z.high+0.2*A&&last.c>=z.level-0.8*A);
+  const buy=out.zones.support.filter(z=>last.l<=z.high+0.1*A&&last.c>z.level&&prev.c>=z.low-0.2*A&&last.c<=z.level+0.8*A);
+  const bearish=range>0&&last.c<last.o&&upper/range>=0.35&&(last.c-last.l)/range<=0.35;
+  const bullish=range>0&&last.c>last.o&&lower/range>=0.35&&(last.c-last.l)/range>=0.65;
+  const z=bearish?sell.at(-1):bullish?buy[0]:null,dir=z?(bearish?'SELL':'BUY'):null;
+  gate(!!z,'Repeated level touched and rejected by a directional closed candle');
+  gate(out.relVol!=null&&out.relVol>=1.2,'Trigger volume at least 1.2× its prior 20-bar average');
+  const pressure=kmrVolumePressure(closed,20);out.pressure=pressure;
+  gate(pressure.ok&&(!dir||(dir==='BUY'?pressure.buyPct>=42:pressure.buyPct<=58)),'Estimated volume pressure is not strongly opposing the entry');
+  // Range reversals are allowed, but never blindly fade a strong 15m trend.
+  gate(!dir||!(ctx.adx>=30&&((dir==='SELL'&&ctx.trend==='BULL')||(dir==='BUY'&&ctx.trend==='BEAR'))),'No reversal against a strong 15m trend');
+  if(z){
+    out.level=z;out.candidateDir=dir;
+    out.stop=dir==='BUY'?Math.min(z.low,last.l)-0.15*A:Math.max(z.high,last.h)+0.15*A;
+    const opposing=dir==='BUY'?out.zones.resistance.find(x=>x.level>last.c):out.zones.support.filter(x=>x.level<last.c).at(-1);
+    out.targetBarrier=opposing?(dir==='BUY'?opposing.low-0.1*A:opposing.high+0.1*A):null;
+    out.trap=dir==='BUY'?last.l<z.low&&last.c>z.high:last.h>z.high&&last.c<z.low;
+    out.why=[`${z.touches} confirmed prior ${dir==='BUY'?'support':'resistance'} touches`,`${dir==='BUY'?'Bullish':'Bearish'} rejection candle closed`,out.relVol==null?'Volume unavailable':`Trigger volume ${out.relVol.toFixed(2)}× average`,out.trap?'Failed break reclaimed the level':'Rejection held inside the level'];
+  }
+  out.gatesOk=out.gates.every(g=>g.ok);
+  if(out.gatesOk)out.dir=dir;
+  out.reason=out.gates.find(g=>!g.ok)?.label||'Confirmed level rejection with volume';
+  return out;
+}
+function kmrLevelPlan(sym,dir,entry,scan,cfg){
+  const level=scan.levelSetup,A=scan.A,spread=SPREAD[sym]||0,sgn=dir==='BUY'?1:-1;
+  if(!level||!level.gatesOk||level.dir!==dir||!Number.isFinite(entry)||entry<=0)return{reject:'Level setup is not confirmed'};
+  const slDist=sgn*(entry-level.stop),units=0.01*ASSETS[sym].contractSz;
+  if(!Number.isFinite(slDist)||slDist<=0)return{reject:'Price has crossed the structural invalidation stop'};
+  const risk=slDist+spread,slUsd=risk*units;
+  if(slUsd>cfg.maxLoss+1e-6)return{reject:`Structural stop risks $${slUsd.toFixed(2)} at 0.01 lot — above $${cfg.maxLoss}`};
+  let tpDist=1.8*risk+spread;
+  if(level.targetBarrier!=null)tpDist=Math.min(tpDist,sgn*(level.targetBarrier-entry));
+  const reward=tpDist-spread,rr=reward/risk;
+  if(!Number.isFinite(rr)||rr<1.3)return{reject:'Next opposing level leaves less than 1.3× reward/risk after spread'};
+  return{entry,sl:level.stop,tp:entry+sgn*tpDist,beAt:entry+sgn*tpDist*0.6,lot:0.01,units,tpUsd:reward*units,slUsd,tpDist,slDist,rr};
+}
+
 // ctx: {now, events, isMetal, marketOpen, spread, cfg, dec}
 function scalpScan(sym,c5,c15,h1,ctx){
   const out={sym,gates:[],dir:null,setup:null,why:[],look:''};
@@ -4017,6 +4098,14 @@ function scalpScan(sym,c5,c15,h1,ctx){
       out.dir='SELL';out.setup='Range fade';out.tpCap=last.c-bb.m;out.why=[`Ranging (ADX ${adx!=null?adx.toFixed(0):'—'})`,`Tagged the upper Bollinger band ${fmtP(sym,bb.u)} and closed back inside`,`Target: middle band ${fmtP(sym,bb.m)}`];}
     else if(!out.look)out.look=`Range — waiting for a tag of ${fmtP(sym,bb.l)} (buy) or ${fmtP(sym,bb.u)} (sell)`;
   }
+  // Additional support/resistance setup; original candidates retain priority.
+  if(ctx.levels===true){
+    const level=kmrLevelSetup(c5,{now:ctx.now,trend,adx});
+    if(!out.dir&&level.dir&&level.gatesOk){
+      out.dir=level.dir;out.setup=level.trap?'Volume trap at support/resistance':'Support/resistance rejection';
+      out.why=level.why;out.levelSetup=level;out.strategyVersion='sr-volume-v1';
+    }
+  }
   // Non-actionable price watch. Never pass this to scalpOpen directly:
   // only a later confirmed candle and all original gates can create an entry.
   if(!out.dir&&e9[n]!=null&&A>0){
@@ -4038,6 +4127,7 @@ function scalpScan(sym,c5,c15,h1,ctx){
 }
 function scalpLevels(sym,dir,entry,scan,c5,cfg){
   if(!['BUY','SELL'].includes(dir)||!Number.isFinite(entry)||entry<=0||!Number.isFinite(scan?.A)||scan.A<=0||!Array.isArray(c5)||c5.length<3||!Number.isFinite(cfg?.maxLoss)||cfg.maxLoss<=0)return{reject:'Invalid setup or risk inputs'};
+  if(scan.strategyVersion==='sr-volume-v1')return kmrLevelPlan(sym,dir,entry,scan,cfg);
   const A=scan.A,spread=SPREAD[sym]||0,cs=ASSETS[sym].contractSz,sgn=dir==='BUY'?1:-1;
   let tpDist=Math.max(0.8*A,2.5*spread);
   if(scan.tpCap)tpDist=Math.min(tpDist,Math.max(scan.tpCap,0.45*A));
@@ -4060,7 +4150,7 @@ function scalpLevels(sym,dir,entry,scan,c5,cfg){
   const units=lot*cs;
   return{entry,tp:entry+sgn*tpDist,sl:entry-sgn*slDist,beAt:entry+sgn*tpDist*0.6,lot:+lot.toFixed(2),units,tpUsd:net*units,slUsd,tpDist,slDist};
 }
-function scalpCtx(sym,now){return{now,newsReady:calendarReady(now),events:kmrNewsEvents(),isMetal:sym!=='BTCUSD',marketOpen:sym==='BTCUSD'||isMetalsMarketOpen(),spread:SPREAD[sym]||0,dec:ASSETS[sym].dec,continuation:!!scalpCfg.continuation};}
+function scalpCtx(sym,now){return{now,newsReady:calendarReady(now),events:kmrNewsEvents(),isMetal:sym!=='BTCUSD',marketOpen:sym==='BTCUSD'||isMetalsMarketOpen(),spread:SPREAD[sym]||0,dec:ASSETS[sym].dec,continuation:!!scalpCfg.continuation,levels:scalpCfg.levels!==false};}
 function scalpEvaluate(sym){
   const st=scalpState[sym],now=Date.now();
   const c5=kmrClosed(scalpData[sym]||[]);
@@ -4100,7 +4190,7 @@ async function scalpOpen(sym,scan,lv){
     marketDataSource:scalpState[sym]?.feedSource||null,
     strategyVersion:scan.strategyVersion||'v28-original',
     conditions:{closed5mBarAt:scan.barT,trend15m:scan.trend,ADX:scan.adx,RSI7:scan.rsi7,
-      ATR5m:scan.A,relativeVolume:scan.relVol,gates:scan.gates,ema9:scan.e9,
+      ATR5m:scan.A,relativeVolume:scan.relVol,gates:scan.gates,levelSetup:scan.levelSetup||null,ema9:scan.e9,
       ema21:scan.e21,maxLoss:scalpCfg.maxLoss,target:scalpCfg.target}};
   t.entryBar=scan.barT;t.owner=currentUser?.username;t.accountingVersion=2;t.updatedAt=t.t;
   t.spreadPerUnit=SPREAD[sym]||0;t.signalKey='scalp:'+sym+':5m:'+scan.barT+':'+scan.dir;
@@ -4201,7 +4291,7 @@ function scalpSimulate(sym,history,cfg){
     const next=all[i+1],endT=all[i].t+300e3,day=daily.get(istDayKey(next.t))||0;
     if(next.t<cool||day<=-cfg.dayStop||(cfg.stopAtGoal&&day>=cfg.goal)){i++;continue;}
     const win=all.slice(0,i+1),c15=aggMinutes(win,15).filter(k=>k.t+900e3<=endT);
-    const scan=scalpScan(sym,win,c15,null,{now:endT,events:[],isMetal:sym!=='BTCUSD',marketOpen:true,spread,dec:ASSETS[sym].dec,continuation:!!cfg.continuation});
+    const scan=scalpScan(sym,win,c15,null,{now:endT,events:[],isMetal:sym!=='BTCUSD',marketOpen:true,spread,dec:ASSETS[sym].dec,continuation:!!cfg.continuation,levels:cfg.levels!==false});
     if(!scan.dir||!scan.gatesOk){i++;continue;}
     const sgn=scan.dir==='BUY'?1:-1,ran=sgn*(next.o-scan.price);
     if(ran>0.4*scan.A||ran<-0.5*scan.A){i++;continue;}
@@ -4234,7 +4324,7 @@ function scalpSimulate(sym,history,cfg){
 }
 // ── UI ──
 function scalpToggleAuto(){scalpCfg.auto=!scalpCfg.auto;saveScalpCfg();renderScalpTab();}
-function scalpSet(k,v){if(k.startsWith('asset:')){scalpCfg.assets[k.slice(6)]=!!v;}else if(k==='stopAtGoal'||k==='continuation'){scalpCfg[k]=!!v;}else{const x=parseFloat(v);if(isFinite(x)&&x>0)scalpCfg[k]=k==='maxLoss'?Math.min(x,4):k==='dayStop'?Math.min(x,8):x;}saveScalpCfg();renderScalpLive();}
+function scalpSet(k,v){if(k.startsWith('asset:')){scalpCfg.assets[k.slice(6)]=!!v;}else if(k==='stopAtGoal'||k==='continuation'||k==='levels'){scalpCfg[k]=!!v;}else{const x=parseFloat(v);if(isFinite(x)&&x>0)scalpCfg[k]=k==='maxLoss'?Math.min(x,4):k==='dayStop'?Math.min(x,8):x;}saveScalpCfg();renderScalpLive();}
 function scalpCloseNow(id){const t=scalpHist.find(x=>x.id===id&&x.status==='OPEN');if(t&&freshQuote(t.sym)){scalpClose(t,prices[t.sym],'MANUAL');renderScalpLive();}}
 function scalpResetToday(){if(!confirm('Clear today\'s closed scalps from the log?'))return;const dk=istDayKey(Date.now());scalpHist=scalpHist.filter(t=>t.status==='OPEN'||istDayKey(t.closedAt||t.t)!==dk);saveScalpHist();renderScalpLive();}
 function renderScalpTab(){
@@ -4256,8 +4346,9 @@ function renderScalpTab(){
     </div>
     <div class="sc-chk">${SYMS.map(s=>`<label><input type="checkbox" ${c.assets[s]?'checked':''} onchange="scalpSet('asset:${s}',this.checked)"> ${ICONS[s]} ${ASSETS[s].sym}</label>`).join('')}
       <label><input type="checkbox" ${c.stopAtGoal?'checked':''} onchange="scalpSet('stopAtGoal',this.checked)"> Pause when the daily goal is hit</label>
+      <label><input type="checkbox" ${c.levels!==false?'checked':''} onchange="scalpSet('levels',this.checked)"> Support/resistance rejection + volume (paper)</label>
       <label><input type="checkbox" ${c.continuation?'checked':''} onchange="scalpSet('continuation',this.checked)"> Experimental EMA9 continuation entries (opt in)</label></div>
-    <div class="sc-note">Paper entries use a fixed 0.01 lot. TP targets your requested profit after estimated spread. The structural stop stays intact; a setup is skipped when its planned loss exceeds your per-trade or account risk limit. EMA9 continuation is optional/experimental: its stop uses the last closed swing plus ATR buffer and can be hit more often. Preview is not a signal.</div>
+    <div class="sc-note">Paper entries use a fixed 0.01 lot. Standard targets use 5m ATR. Level setups target 1.8× net risk, capped before the next opposing level; setups below 1.3× are rejected. The dollar target is a planning reference, not a guaranteed payout. The structural stop stays intact; a setup is skipped when its planned loss exceeds your per-trade or account risk limit. Support/resistance entries require repeated level tests, a closed rejection, 1.2× volume and at least 1.3× net reward/risk. EMA9 continuation is optional/experimental: its stop uses the last closed swing plus ATR buffer and can be hit more often. Preview is not a signal.</div>
   </div></div>
   <div class="ic"><div class="it">🧪 Replay — how would these settings have done?</div><div class="ib">
     <div class="sc-note" style="margin-bottom:8px">Runs this exact engine over the last ~3.5 days of real 5-minute candles, candle by candle, with no peeking ahead. News pauses aren't replayed, so live results can differ.</div>
@@ -4323,6 +4414,52 @@ function renderScalpLive(){
   else h+=`<div class="ic"><div class="ib">${recent.map(t=>`<div class="lvl-row"><span class="lvl-tag ${t.dir==='BUY'?'sup':'res'}">${t.dir}</span><span style="flex:1">${ICONS[t.sym]} ${ASSETS[t.sym].sym} <span class="sc-dim">${t.setup} · ${{TP:'TP',SL:'SL',BE:'BE',TIME:'time',MANUAL:'manual'}[t.status]||t.status} · ${new Date(t.closedAt||t.t).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</span></span><b class="${t.pnl>=0?'up':'dn'}">${t.pnl>=0?'+':'−'}$${Math.abs(t.pnl).toFixed(2)}</b></div>`).join('')}</div></div>`;
   el.innerHTML=h;
   renderBasketDemo();
+}
+
+// Volume Trap reuses the live scanner's candles; opening this page never creates an order.
+let volumeTrapSym='XAUUSD';
+function volumeTrapPick(sym){if(!SYMS.includes(sym))return;volumeTrapSym=sym;renderVolumeTrap();}
+function volumeTrapChart(values,label,color,volume=false){
+  const series=values.slice(-48).filter(Number.isFinite);
+  if(series.length<2)return `<div class="sc-dim">${label}: waiting for data</div>`;
+  const lo=volume?0:Math.min(...series),hi=Math.max(...series),range=hi-lo||1;
+  const points=series.map((v,i)=>`${(8+i/(series.length-1)*584).toFixed(1)},${(82-(v-lo)/range*66).toFixed(1)}`).join(' ');
+  const bars=volume?series.map((v,i)=>`<rect x="${(8+i/series.length*584).toFixed(1)}" y="${(82-v/range*66).toFixed(1)}" width="${Math.max(1,584/series.length-2).toFixed(1)}" height="${(v/range*66).toFixed(1)}" fill="${color}"/>`).join(''):'';
+  return `<div class="ic"><div class="ib"><b>${label}</b><span class="sc-dim" style="float:right">${series.at(-1).toFixed(2)}</span><svg viewBox="0 0 600 90" role="img" aria-label="${label}, last ${series.length} closed candles" style="display:block;width:100%;height:110px"><line x1="8" y1="82" x2="592" y2="82" stroke="var(--bdr)"/>${volume?bars:`<polyline points="${points}" fill="none" stroke="${color}" stroke-width="2"/>`}</svg><div class="sc-dim">Range ${lo.toFixed(2)}–${hi.toFixed(2)} · oldest → newest</div></div></div>`;
+}
+async function volumeTrapRefresh(){
+  const b=document.getElementById('volumeTrapRefresh');if(b)b.disabled=true;
+  try{await scalpLoop();renderVolumeTrap();}finally{if(b)b.disabled=false;}
+}
+function renderVolumeTrap(){
+  const el=document.getElementById('volumeTrapContainer');if(!el)return;
+  const sym=volumeTrapSym,now=Date.now(),c=PaperMath.closed(scalpData[sym]||[],300000,now),st=scalpState[sym]||{};
+  document.querySelectorAll('[data-trap-symbol]').forEach(b=>{b.classList.toggle('active',b.dataset.trapSymbol===sym);b.setAttribute('aria-pressed',String(b.dataset.trapSymbol===sym));});
+  if(c.length<60){el.innerHTML='<div class="ic"><div class="ib">Waiting for 60 valid closed 5-minute candles. Shared scanner will refresh automatically.</div></div>';return;}
+  const c15=scalpClosed15m(sym,c,now),dmi=kmrAdx(c15),bias=kmrTfBias(c15);
+  const model=kmrLevelSetup(c,{now,trend:bias,adx:dmi?.adx});
+  const last=c.at(-1),sr={A:model.A,levelSetup:model,strategyVersion:'sr-volume-v1'};
+  const plan=model.dir?scalpLevels(sym,model.dir,prices[sym],sr,c,scalpCfg):null;
+  const context=scalpScan(sym,c,c15,kmrClosed(ohlcData[sym]?.['1h']||[]),scalpCtx(sym,now));
+  const common=context.gates.find(g=>!g.ok)?.label;
+  const pause=!scalpCfg.auto?'Low Profit AUTO is off':!scalpCfg.assets[sym]?'Asset disabled':scalpCfg.levels===false?'Level entries disabled in Low Profit settings':!paperReady()?paperEngine.reason:!freshQuote(sym)?'Fresh quote required':st.feedError||common||null;
+  const issue=pause||(!model.dir?model.reason:plan?.reject)||null;
+  const status=issue?'WATCH / BLOCKED':model.dir+' CANDIDATE';
+  const fmt=p=>Number.isFinite(p)?fmtP(sym,p):'—';
+  const sup=model.zones.support.filter(z=>z.level<=last.c).at(-1),res=model.zones.resistance.find(z=>z.level>=last.c);
+  const zones=[['Support',sup],['Resistance',res]].map(([name,z])=>`<div class="lvl-row"><b>${name}</b><span>${fmt(z?.level)}</span><span class="sc-dim">${z?z.touches+' prior touches':'No repeated confirmed level'}</span></div>`).join('');
+  const details=model.gates.map(g=>`<div class="cond ${g.ok?'cond-yes':'cond-no'}"><span>${g.ok?'✓':'·'}</span> ${basketTxt(g.label)}</div>`).join('');
+  const hasPlan=plan&&!plan.reject;
+  const pressure=model.pressure;
+  let h=`<div class="ic"><div class="ib"><div class="sc-row"><b>${ICONS[sym]} ${ASSETS[sym].sym} · ${status}</b><span>${fmt(prices[sym])}</span></div><p>${basketTxt(issue||'Confirmed rejection; entry still requires duplicate, position, cooldown and account-risk approval in Low Profit.')}</p>${zones}
+    <div class="sc-ind"><span>Relative volume <b>${model.relVol==null?'—':model.relVol.toFixed(2)+'×'}</b></span><span>15m ADX <b>${dmi?dmi.adx.toFixed(0):'—'}</b></span><span>${model.trap?'Failed-break trap detected':'No confirmed failed-break trap'}</span></div>
+    ${pressure?.ok?`<div class="sc-dim">Estimated pressure: ${pressure.buyPct.toFixed(0)}% buy / ${pressure.sellPct.toFixed(0)}% sell · ${pressure.divergence||'No divergence'}</div>`:''}
+    ${hasPlan?`<div class="sc-lvls"><span>Conditional ${model.dir} ${fmt(plan.entry)}</span><span>TP ${fmt(plan.tp)}</span><span>SL ${fmt(plan.sl)}</span></div><p class="sc-dim">0.01 lot · estimated reward +$${plan.tpUsd.toFixed(2)} / risk −$${plan.slUsd.toFixed(2)} · ${plan.rr.toFixed(2)}× net reward/risk. Candidate only; this page does not place entries.</p>`:'<p class="sc-dim">No executable plan until the level, candle, volume and risk checks pass.</p>'}
+    <div class="cond-grid">${details}</div><p class="data-src">${basketTxt(st.feedSource||'Source unavailable')} · last closed 5m candle ${new Date(last.t).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit'})} IST</p></div></div>`;
+  const rsiValues=[],adxValues=[],atrValues=[];
+  for(let i=Math.max(30,c.length-48);i<c.length;i++){const w=c.slice(Math.max(0,i-80),i+1);rsiValues.push(rsi(w.map(k=>k.c),14));adxValues.push(kmrAdx(w)?.adx);atrValues.push(atr(w));}
+  h+='<div class="volume-trap-charts">'+volumeTrapChart(c.map(k=>k.v),'Traded volume','#38baff',true)+volumeTrapChart(rsiValues,'RSI 14','var(--acc)')+volumeTrapChart(adxValues,'ADX 14 · 5m','var(--grn)')+volumeTrapChart(atrValues,'ATR 14 · 5m','var(--red)')+'</div>';
+  el.innerHTML=h;
 }
 
 // ═══ POSITION SIZING — S&R BASED ══════════════════════════════════════════
@@ -5870,6 +6007,7 @@ async function bootApp(){
     if(document.getElementById('th').style.display!=='none')renderHistory();
     if(document.getElementById('tan').style.display!=='none')renderAnalysis();
     if(document.getElementById('tse').style.display!=='none')renderSessionTab();
+    if(document.getElementById('tvt').style.display!=='none')renderVolumeTrap();
     if(document.getElementById('tdb').style.display!=='none')renderDashboard();
   },5000);
   setInterval(()=>{resyncOHLC().then(()=>{evaluateSignals();}).catch(()=>{});},180000);
@@ -6100,7 +6238,7 @@ function riyanSnapshot(){
       lastFiveMinuteBarAt:scalpData[sym]?.at(-1)?.t||null,feedSource:state.feedSource||null,
       feedError:state.feedError||null,blocked:state.block||null,
       pendingSetup:state.scan?.setup||null,
-      continuationEnabled:!!scalpCfg.continuation,watchCandidate:state.scan?.watch||null,
+      continuationEnabled:!!scalpCfg.continuation,levelsEnabled:scalpCfg.levels!==false,watchCandidate:state.scan?.watch||null,
       lookingFor:state.scan?.look||null,
       indicators:{trend15m:state.scan?.trend||null,adx:state.scan?.adx??null,
         rsi7:state.scan?.rsi7??null,atr5m:state.scan?.A??null,
@@ -6190,7 +6328,7 @@ initAuth();
 </script>
 
 <button id="riyanSyncBtn" type="button" onclick="riyanConnect()" style="position:fixed;bottom:8px;right:8px;z-index:9999;padding:7px 11px;border-radius:15px;background:#284f72;color:white;border:1px solid #8ac8e7;font-size:11px">☁ DB Sync</button>
-<script src="orbital-ui.js?v=20261018-5" defer></script>
+<script src="orbital-ui.js?v=20261019-levels" defer></script>
 <script src="/background-client.js?v=20261019-calendar"></script>
 </body>
 </html>

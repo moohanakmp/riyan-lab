@@ -216,3 +216,5 @@ body[data-workspace-tab=chart] #workspaceRelated{padding-top:9px}
 /* Keep heading labels beside their icon; trailing controls stay right aligned. */
 #mainScroll .it,#mainScroll .sec-ttl{justify-content:flex-start!important}
 #mainScroll .it>button:last-child,#mainScroll .it>select:last-child,#mainScroll .sec-ttl>.tag:last-child{margin-left:auto}
+
+.volume-trap-charts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.volume-trap-charts .ic{margin:0}@media(max-width:650px){.volume-trap-charts{grid-template-columns:1fr}}

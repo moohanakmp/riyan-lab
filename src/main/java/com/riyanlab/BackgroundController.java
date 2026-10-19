@@ -30,6 +30,7 @@ public class BackgroundController {
             if(!Double.isFinite(n)||n<=0||(field.equals("maxLoss")&&n>4)||(field.equals("dayStop")&&n>8))throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Invalid paper risk settings");
         }
         for(String key:List.of("auto","stopAtGoal","continuation"))if(!scalp.path(key).isBoolean())throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Invalid strategy switch");
+        if(scalp.has("levels")&&!scalp.path("levels").isBoolean())throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Invalid level strategy switch");
         for(String sym:List.of("XAUUSD","XAGUSD","BTCUSD"))if(!scalp.path("assets").path(sym).isBoolean())throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Invalid asset switch");
         jdbc.update("""
             INSERT INTO background_scanner_settings(username,enabled,config) VALUES(?,?,?::jsonb)
