@@ -67,8 +67,8 @@ async function scan(job){
  `,context,{timeout:5000});
  await vm.runInContext(`(async()=>{
   for(const sym of SYMS)await checkOutcome(sym,prices[sym]);
-  scalpCandleCheck();scalpManageAll();evaluateSignals();
-  for(const sym of SYMS){scalpEvaluate(sym);const st=scalpState[sym],s=computeSignal(sym);diagnostics[sym]={auto:s.reason||s.wait||s.state,lowProfit:st.block||st.note||st.scan?.look||'Waiting for confirmed setup',source:st.feedSource,quoteAt:quoteAt[sym]||0,last15m:ohlcData[sym]['15m']?.at(-1)?.t||0,last5m:scalpData[sym]?.at(-1)?.t||0};}
+  scalpCandleCheck();scalpManageAll();if(job.allowEntries!==false)evaluateSignals();
+  for(const sym of SYMS){if(job.allowEntries!==false)scalpEvaluate(sym);else scalpState[sym].block="Open the app once to synchronize your strategy and risk settings";const st=scalpState[sym],s=computeSignal(sym);diagnostics[sym]={auto:s.reason||s.wait||s.state,lowProfit:st.block||st.note||st.scan?.gates?.find(g=>!g.ok)?.label||st.scan?.look||'Waiting for confirmed setup',source:st.feedSource,quoteAt:quoteAt[sym]||0,last15m:ohlcData[sym]['15m']?.at(-1)?.t||0,last5m:scalpData[sym]?.at(-1)?.t||0};}
  })()`,context,{timeout:5000});
  await Promise.all(pending);
  vm.runInContext(`for(const r of scalpHist)__save('low-profit',r.id||r.t,r);`,context,{timeout:2000});

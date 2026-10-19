@@ -1,0 +1,22 @@
+# Proposed free-tier wake-up workflow. Inactive here by design.
+# To activate, copy this file to .github/workflows/background-wake.yml on main.
+# GitHub schedules only run from the repository default branch.
+name: Keep staging signal scanner reachable
+on:
+  schedule:
+    - cron: '2-59/5 * * * *'
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: staging-background-wake
+  cancel-in-progress: false
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Wake staging service and check health
+        shell: bash
+        run: |
+          curl --fail --silent --show-error --max-time 110 --retry 1 --retry-delay 5 \
+            https://riyan-lab-staging.onrender.com/api/v1/health

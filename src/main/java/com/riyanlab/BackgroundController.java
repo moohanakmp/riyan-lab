@@ -21,7 +21,7 @@ public class BackgroundController {
         ObjectNode config=((ObjectNode)input).deepCopy();var scalp=config.path("scalp");
         for(String field:List.of("maxLoss","dayStop","target","goal","timeStopMin")){
             double n=scalp.path(field).asDouble(Double.NaN);
-            if(!Double.isFinite(n)||n<=0||n>10000||(field.equals("maxLoss")&&n>4)||(field.equals("dayStop")&&n>8))throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Invalid paper risk settings");
+            if(!Double.isFinite(n)||n<=0||(field.equals("maxLoss")&&n>4)||(field.equals("dayStop")&&n>8))throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Invalid paper risk settings");
         }
         for(String key:List.of("auto","stopAtGoal","continuation"))if(!scalp.path(key).isBoolean())throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Invalid strategy switch");
         for(String sym:List.of("XAUUSD","XAGUSD","BTCUSD"))if(!scalp.path("assets").path(sym).isBoolean())throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Invalid asset switch");

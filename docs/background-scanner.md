@@ -16,7 +16,7 @@ Render free web services stop after 15 minutes without incoming traffic. An in-p
 
 An active browser retains its normal lease. After it stops renewing (40 seconds), the server can claim ownership. A returning browser can preempt a server owner and restores the authoritative database ledger before generating new entries. All writes use the same transactional RecordController/PaperTradingService validation, account advisory locks, durable signal keys and audit records. Concurrent or stale owners cannot write. New entries remain paper-only, 0.01 lot, at most five simultaneous positions, with existing $4 account risk and $8 daily-loss safeguards. No broker orders are issued.
 
-Low Profit settings are synchronized from the browser with account ownership and CSRF checks. Existing saved diagnostics seed the configuration until the first synchronization. The user can pause background scanning without disabling the browser engine. Basket mode blocks new baseline scalp entries; the existing basket simulation remains browser managed. Background device push, email and Telegram delivery are not implemented; their existing browser paths are unchanged.
+Low Profit settings are synchronized from the browser with account ownership and CSRF checks. Existing saved diagnostics seed the configuration until the first synchronization. Until the account has synchronized its complete settings once, the server manages existing positions but does not create new entries; it must not guess personal risk/goal settings. The user can pause background scanning without disabling the browser engine. Basket mode blocks new baseline scalp entries; the existing basket simulation remains browser managed. Background device push, email and Telegram delivery are not implemented; their existing browser paths are unchanged.
 
 Signals and Settings show the last server check, current owner and per-instrument wait reasons. A heartbeat means a scan ran; it does not mean an entry qualified. Background entries and updates appear through the existing database restoration when the app is reopened.
 
@@ -26,3 +26,7 @@ Signals and Settings show the last server check, current owner and per-instrumen
 - Java feed normalization and calendar/cache/rate-limit tests.
 - PostgreSQL integration: closed-browser settlement and audit, exclusive browser/server leases, returning-browser takeover, and rejection of a stale writer.
 - No synthetic quotes, fabricated trades or test users are inserted into staging by diagnostic tests.
+
+## Optional free-tier wake-up workflow
+
+`ops/background-wake.yml` is a prepared, inactive proposal. Copy it to `.github/workflows/background-wake.yml` on the default branch (`main`) to run a public health request every five minutes. It requires no credentials, checkout, API mutation, or order endpoint. GitHub can delay or drop scheduled jobs, so this is best-effort and not an always-on trading guarantee. It is deliberately not activated because the user requested implementation changes remain on `staging/backend-auth-20261016`; activation needs the explicit default-branch exception. No production application files need to be merged.

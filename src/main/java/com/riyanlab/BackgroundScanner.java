@@ -62,6 +62,7 @@ public class BackgroundScanner {
         var job=json.createObjectNode().put("username",identity.username()).put("role",identity.role()).put("now",System.currentTimeMillis());
         ObjectNode config=settings.isEmpty()?legacyConfig(identity.username()):(ObjectNode)json.readTree(settings.getFirst());
         job.set("config",config.path("scalp").isObject()?config.path("scalp"):config);
+        job.put("allowEntries",!settings.isEmpty());
         job.put("basketEnabled",config.path("basketEnabled").asBoolean());
         Boolean openBasket=jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM basket_scalp_positions WHERE created_by=? AND status='OPEN')",Boolean.class,identity.username());
         if(Boolean.TRUE.equals(openBasket))job.put("basketActive",true);
@@ -81,6 +82,8 @@ public class BackgroundScanner {
             var result=json.readTree(Files.readString(output));
             var changes=new ArrayList<JsonNode>();result.path("changes").forEach(changes::add);
             changes.sort(Comparator.comparing(c->!existing.contains(c.path("type").asText()+"|"+c.path("id").asText())));
+            Boolean permitted=jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM auth_users u LEFT JOIN background_scanner_settings s ON s.username=u.username WHERE u.username=? AND u.active=true AND u.role IN ('admin','user') AND COALESCE(s.enabled,true))",Boolean.class,identity.username());
+            if(!Boolean.TRUE.equals(permitted)){status(identity.username(),"PAUSED",json.createObjectNode().put("reason","Background disabled or account no longer active"));return;}
             int saved=0,rejected=0;var reasons=json.createArrayNode();
             for(var change:changes){
                 String type=change.path("type").asText();if(!Set.of("auto-signals","manual-signals","low-profit").contains(type))throw new IllegalStateException("Unexpected background record type");

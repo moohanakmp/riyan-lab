@@ -22,15 +22,18 @@ const {scan,normalize}=require('../src/main/resources/background/scanner.cjs');
  assert(!source.includes('fetch('),'worker has no arbitrary network or notification channel');
  // Actual indicator rules over deterministic sample history; no stubbed trade decisions.
  let seed=7123;const rand=()=>((seed=Math.imul(seed,1664525)+1013904223|0)>>>0)/4294967296;
- let entry=null;
+ let entry=null,eligibleJob=null;
  for(let attempt=0;attempt<100&&!entry;attempt++){
   let price=100;const five=Array.from({length:300},(_,i)=>{const o=price;price+=((rand()-.45)*1.2);return {t:now-10000-(300-i)*300000,ms:300000,o,h:Math.max(o,price)+rand()*.8,l:Math.min(o,price)-rand()*.8,c:price,v:10+rand()*20};});
   const Paper=require('../src/main/resources/static/trading-core.js');
   const bars={'15m':Paper.aggregate(five,15),'1h':Paper.aggregate(five,60),'4h':Paper.aggregate(five,240)};
-  result=await scan({...base,calendar:[],calendarAt:now,feeds:{XAUUSD:{price,quoteAt:now,five,bars,source:'test only'}}});
+  eligibleJob={...base,calendar:[],calendarAt:now,feeds:{XAUUSD:{price,quoteAt:now,five,bars,source:'test only'}}};
+  result=await scan(eligibleJob);
   entry=result.changes.find(x=>x.type==='low-profit'&&x.record.status==='OPEN');
  }
  assert(entry,'unchanged real indicator strategy must generate eligible background paper entry');assert.equal(entry.record.generator,'server-background');assert.equal(entry.record.accountingVersion,2);assert.equal(entry.record.lot,.01);assert(entry.record.conditions.gates.every(g=>g.ok));
+ assert.equal((await scan({...eligibleJob,allowEntries:false})).changes.length,0,'unsynchronized personal settings cannot create new entries');
+ assert.equal((await scan({...eligibleJob,calendar:null,calendarAt:0})).changes.length,0,'calendar failure must block real eligible setups');
  const replay=await scan({...base,calendar:[],calendarAt:now,history:[{id:entry.id,type:entry.type,record:entry.record}],feeds:{}});
  assert(!replay.changes.some(x=>x.record.status==='OPEN'&&x.id!==entry.id),'restarted worker cannot duplicate an open trade');
  console.log('PASS background no-data/stale fail-closed, real indicator entry, exact ladder and adverse-gap lifecycle, restart ownership inputs, shared strategies and no outbound alerts');
