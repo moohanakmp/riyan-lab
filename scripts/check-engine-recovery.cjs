@@ -13,6 +13,23 @@ const P=require('../src/main/resources/static/trading-core.js');
  assert.equal(restores,1,'no duplicate concurrent restorations');
  releaseRestore(true);await ready;assert.equal(ctx.paperReady(),true);assert.equal(basket,1);
  time+=31000;assert.equal(ctx.paperReady(),false,'readiness still expires');
+ // A fresh lease for account A must never authorize account B, including the renewal throttle.
+ const oldUser=ctx.currentUser;ctx.currentUser={username:'second',role:'user'};
+ ctx.paperEngine.until=time+20000;ctx.paperEngine.leaseUntil=time+30000;
+ assert.equal(ctx.paperReady(),false,'readiness belongs to the lease account');
+ const beforeSwitch=leases;await ctx.paperRenewLease();
+ assert.equal(leases,beforeSwitch+1,'switching accounts must acquire a new server lease');
+ assert.equal(ctx.paperEngine.user,'second');assert.equal(ctx.paperReady(),false,'new account still requires ledger restore');
+ ctx.currentUser=oldUser;
+ // A high setup score cannot turn a failed trigger into an approved entry.
+ const qualityHtml=fs.readFileSync('src/main/resources/static/index.html','utf8');
+ const quality=vm.createContext({});
+ vm.runInContext(qualityHtml.slice(qualityHtml.indexOf('function signalQuality('),qualityHtml.indexOf('function waitCard(')),quality);
+ const high={smart:{score:81,gatesOk:false,tier:null,dir:'SELL',gates:[{key:'trigger',ok:false}]}};
+ const result=quality.signalQuality(high,'XAUUSD');assert.equal(result.score,81);assert.equal(result.gatesOk,false);
+ const meter=quality.qualityMeterHtml(high,'XAUUSD');
+ assert(meter.includes('STAND ASIDE'));assert(meter.includes('not win probability'));assert(meter.includes('Entry blocked'));
+ assert(!meter.includes('TRADE-READY'));
  // Complete paginated owner snapshot is shared by signal and basket restoration.
  let calls=0;ctx.riyanApi=async()=>{calls++;return[{record_type:'low-profit',source_id:'one',payload:'{}'}];};
  ctx.paperLedgerCache=null;const [one,two]=await Promise.all([ctx.paperReadLedger(),ctx.paperReadLedger()]);assert.equal(calls,1);assert.equal(one,two);assert.equal(one['low-profit'].length,1);

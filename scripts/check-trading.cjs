@@ -68,7 +68,7 @@ context.quoteAt.XAUUSD=Date.now()-31000;assert.equal(context.freshQuote('XAUUSD'
 context.quoteAt.XAUUSD=Date.now()+10000;assert.equal(context.freshQuote('XAUUSD'),false);
 context.quoteAt.XAUUSD=Date.now();assert.equal(context.freshQuote('XAUUSD'),true);
 context.paperEngine.until=Date.now()-1;assert.equal(context.paperReady(),false);
-context.paperEngine.until=Date.now()+1000;assert.equal(context.paperReady(),true);
+context.paperEngine.user='u';context.paperEngine.until=Date.now()+1000;assert.equal(context.paperReady(),true);
 context.currentUser=null;assert.equal(context.paperReady(),false);
 console.log('PASS stale/future quote, expired engine lease and logout gates');
 
@@ -92,6 +92,15 @@ for(const file of ['trading-core.js','paper-engine.js','basket-demo.js','basket-
  assert.equal(concurrent,first,'heartbeat and background sync must share the active flush');
  release();const result=await concurrent;
  assert.equal(result.pending,0);assert.equal(result.sent,1);assert.equal(requests,1);
+ // A bounded batch leaves durable work; subsequent retry ticks resume it without a new snapshot.
+ let batchTime=100000;
+ sync.Date={now:()=>batchTime};sync.riyanApi=async()=>{batchTime+=7000;};
+ saved.set('riyan_pending_syncuser',JSON.stringify({
+  'analysis|two':{type:'analysis',id:'two',value:'{"ok":2}'},
+  'analysis|three':{type:'analysis',id:'three',value:'{"ok":3}'}}));
+ assert.equal((await sync.riyanProcessQueue()).pending,1);
+ assert.equal((await sync.riyanProcessQueue()).pending,0);
+ assert(html.includes('setInterval(()=>{riyanProcessQueue();},10000)'),'queue continuation must not depend on 60-second snapshots');
  let deadline,cleared=false;
  const api=vm.createContext({AbortController,Error,riyanCsrf:'test',paperEngine:{id:'test'},
   setTimeout:fn=>{deadline=fn;return 1;},clearTimeout:()=>{cleared=true;},

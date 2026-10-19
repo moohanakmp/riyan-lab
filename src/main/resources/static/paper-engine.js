@@ -1,20 +1,21 @@
 'use strict';
 var quoteAt={};
-var paperEngine={id:crypto.randomUUID(),until:0,leaseUntil:0,busy:false,lastCheck:0,reason:'Connecting to paper engine'};
+var paperEngine={id:crypto.randomUUID(),user:null,until:0,leaseUntil:0,busy:false,lastCheck:0,reason:'Connecting to paper engine'};
 function freshQuote(sym){return PaperMath.positive(prices[sym])&&Date.now()-(quoteAt[sym]||0)<30000&&Date.now()>=(quoteAt[sym]||0);}
-function paperReady(){return !!currentUser&&currentUser.role!=='guest'&&Date.now()<paperEngine.until;}
+function paperReady(){return !!currentUser&&currentUser.role!=='guest'&&paperEngine.user===currentUser.username&&Date.now()<paperEngine.until;}
 // Lease renewal is independent of slow queue/ledger restoration.
 async function paperRenewLease(){
   const user=currentUser?.username;
   if(!user||currentUser.role==='guest')return false;
-  if(paperEngine.leaseBusy)return Date.now()<paperEngine.leaseUntil;
+  if(paperEngine.user!==user){paperEngine.until=0;paperEngine.leaseUntil=0;paperEngine.lastLeaseAttempt=0;}
+  if(paperEngine.leaseBusy)return paperEngine.user===user&&Date.now()<paperEngine.leaseUntil;
   if(Date.now()-(paperEngine.lastLeaseAttempt||0)<10000&&Date.now()<paperEngine.leaseUntil)return true;
   paperEngine.leaseBusy=true;paperEngine.lastLeaseAttempt=Date.now();
   try{
     const result=await riyanApi('/api/v1/paper/lease',{method:'POST'});
     if(currentUser?.username!==user)return false;
     if(!result.owned){paperEngine.until=0;paperEngine.leaseUntil=0;paperEngine.reason='Another engine owns this account';return false;}
-    paperEngine.leaseUntil=Date.now()+30000;return true;
+    paperEngine.user=user;paperEngine.leaseUntil=Date.now()+30000;return true;
   }finally{paperEngine.leaseBusy=false;}
 }
 async function paperHeartbeat(){
@@ -29,7 +30,7 @@ async function paperHeartbeat(){
       paperEngine.reason='Synchronizing paper ledger';
       if(paperPendingTrades(user)){
         const sync=await riyanProcessQueue(true);
-        if(!sync||sync.error||paperPendingTrades(user))throw Error('Pending or rejected trade records need synchronization');
+        if(!sync||sync.error||paperPendingTrades(user))throw Error(paperSyncReason(user));
       }
       paperLedgerCache=null;
       if(!await riyanRestore())throw Error('Trade history unavailable');
@@ -76,6 +77,14 @@ async function paperSaveEntry(type,id,record){
   }
 }
 
+function paperSyncReason(user){
+  try{
+    const trade=r=>['auto-signals','manual-signals','low-profit','basket-positions','basket-sessions'].includes(r.type);
+    const pending=Object.values(JSON.parse(localStorage.getItem('riyan_pending_'+user)||'{}')).filter(trade);
+    const failed=Object.values(JSON.parse(localStorage.getItem('riyan_failed_'+user)||'{}')).filter(trade);
+    return failed.length?failed.length+' rejected paper records require review in DB Sync':pending.length+' paper records awaiting synchronization; automatic retry active';
+  }catch(e){return 'Local synchronization records could not be read';}
+}
 function paperPendingTrades(user){
   try{return ['riyan_pending_','riyan_failed_'].some(prefix=>Object.values(JSON.parse(localStorage.getItem(prefix+user)||'{}')).some(r=>['auto-signals','manual-signals','low-profit','basket-positions','basket-sessions'].includes(r.type)));}
   catch(e){return true;}

@@ -1138,7 +1138,7 @@ body{background:
 <script src="/public-market-fetch.js?v=20261019-recovery"></script>
 <script src="/btc-feed.js?v=20261019-recovery"></script>
 <script src="/reference-feed.js?v=20261017-2"></script>
-<script src="/paper-engine.js?v=20261019-recovery"></script>
+<script src="/paper-engine.js?v=20261019-readiness"></script>
 <script src="/basket-demo.js?v=20261019-recovery"></script>
 <script src="/basket-replay.js?v=20261017-1"></script>
 <script>
@@ -4071,7 +4071,7 @@ function scalpEvaluate(sym){
   if(scan.A&&live){const pv=scalpLevels(sym,scan.dir||(scan.trend==='BEAR'?'SELL':'BUY'),live,scan,c5,scalpCfg);st.preview=pv;}
   const day=scalpToday();
   st.block=!scalpCfg.auto?'Auto scalping is OFF':!scalpCfg.assets[sym]?'This asset is switched off':
-    !paperReady()?'Paper engine waiting for server ownership / synchronization':
+    !paperReady()?(typeof paperEngine!=='undefined'?paperEngine.reason:'Connecting to paper engine'):
     !freshQuote(sym)?'Fresh quote unavailable — entries paused':
     c5.some(k=>k.analysisOnly)||ohlcData[sym]?.['15m']?.some(k=>k.analysisOnly)||ohlcData[sym]?.['1h']?.some(k=>k.analysisOnly)?'Delayed futures reference — analysis/replay only; entries paused':
     st.feedError?'Candle feed unavailable — '+st.feedError:
@@ -4670,7 +4670,7 @@ function signalQuality(sig,sym){
 }
 function qualityMeterHtml(sig,sym){
   const q=signalQuality(sig,sym),state=q.gatesOk===false?'STAND ASIDE':q.score>=70?'TRADE-READY':q.score>=55?'WAIT / WATCH':'AVOID',chips=q.chips.map(x=>`<div class="quality-chip ${x[1]}">${x[0]}</div>`).join('');
-  return `<div class="quality-card"><div class="quality-head"><span class="quality-title">KMR SIGNAL QUALITY · ENGINE v3</span><span class="quality-score">${q.score}/100</span></div><div class="quality-track"><div class="quality-fill" style="width:${q.score}%"></div></div><div class="quality-foot"><span class="quality-state">${state}</span><span>${q.label}</span></div><div class="quality-grid">${chips}</div></div>`;
+  return `<div class="quality-card"><div class="quality-head"><span class="quality-title">KMR SIGNAL QUALITY · ENGINE v3</span><span class="quality-score">${q.score}/100</span></div><div class="quality-track"><div class="quality-fill" style="width:${q.score}%"></div></div><div class="quality-foot"><span class="quality-state">${state}</span><span>${q.label}</span></div><div class="quality-grid">${chips}</div><div style="margin-top:10px;font-size:11px;color:var(--mut)">Setup quality, not win probability. ${q.gatesOk===false?'Entry blocked: required gates have not all passed.':'Entry also requires current data, engine ownership and account risk approval.'}</div></div>`;
 }
 function waitCard(sym,a,sig,isAdmin){
   const cooling=Date.now()<(sigCooldown[sym]||0);
@@ -4682,7 +4682,7 @@ function waitCard(sym,a,sig,isAdmin){
     const ch=(!sig.conditions||sig.conditions.length===0)
       ?`<div class="cond cond-no" style="grid-column:1/-1"><div class="cond-lbl">${sig.reason||'Loading...'}</div></div>`
       :sig.conditions.map(c=>`<div class="cond ${c.pass?'cond-yes':'cond-no'}"><div class="cond-icon">${c.pass?'✓':'·'}</div><div class="cond-lbl">${c.label}</div></div>`).join('');
-    body=qualityMeterHtml(sig,sym)+`<div class="conf-row"><div class="conf-bar-wrap"><div class="conf-bar" style="width:${sig.total?sig.score/sig.total*100:0}%;background:${barCol}"></div></div><div class="conf-lbl">${sig.score}/${sig.total} checks</div></div>
+    body=qualityMeterHtml(sig,sym)+`<div class="conf-row"><div class="conf-bar-wrap"><div class="conf-bar" style="width:${sig.total?sig.score/sig.total*100:0}%;background:${barCol}"></div></div><div class="conf-lbl">${sig.score}/${sig.total} supporting factors</div></div>
       <div class="cond-grid">${ch}</div>
       <div style="text-align:center;font-size:9.5px;color:var(--dim);padding:2px 0">${coolTxt||sig.reason||'Waiting for confluence'}</div>
       <div class="data-src">${metalSrcNote(sym)} · closed candles only</div>`;
@@ -5874,6 +5874,8 @@ async function bootApp(){
   },5000);
   setInterval(()=>{resyncOHLC().then(()=>{evaluateSignals();}).catch(()=>{});},180000);
   setInterval(()=>{riyanSnapshot();riyanProcessQueue();},60000);
+  // Continue bounded queue batches without waiting for the next full snapshot.
+  setInterval(()=>{riyanProcessQueue();},10000);
   setTimeout(()=>{riyanSnapshot();riyanProcessQueue();},12000);
   // Event watch: calendar + gold headlines in the background so the popup works on any tab
   setTimeout(()=>{evwBackgroundFeeds();setTimeout(evwBackgroundNews,8000);},3000);
