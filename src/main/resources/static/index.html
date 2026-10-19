@@ -2323,10 +2323,10 @@ function computeSignal(sym){
     marketTrend[sym]=null;
     return{state:'WAIT',dataUnavailable:true,score:0,total:8,conditions:[],reason:candles.length<60?`Candle history incomplete (${candles.length}/60 closed 15m bars) — entries paused`:`Last closed 15m bar is ${Math.round((Date.now()-candles.at(-1).t)/60000)} min old — waiting for provider history`,lot:0,confidence:null};
   }
-  const s=kmrScan(sym,candles);
-  if(!freshQuote(sym)||!calendarReady())return{state:'WAIT',score:0,total:8,conditions:[],reason:!freshQuote(sym)?'Fresh quote unavailable':'Economic calendar unavailable — entries paused',lot:0,confidence:null};
   const C=candles.map(k=>k.c),e50=ema(C,50),px=C[C.length-1];
   marketTrend[sym]=e50==null?null:(px>e50?'BULL':'BEAR'); // trend strip + flip watch keep their old meaning
+  if(!freshQuote(sym)||!calendarReady())return{state:'WAIT',quoteUnavailable:!freshQuote(sym),newsUnavailable:!calendarReady(),score:0,total:8,conditions:[],reason:!freshQuote(sym)?'Fresh quote unavailable':'Economic calendar unavailable — entries paused',lot:0,confidence:null};
+  const s=kmrScan(sym,candles);
   const mtf=computeMTFTrend(sym);
   const conds=s.factors.length?s.factors.map(f=>({label:f.label,pass:f.pass})):s.gates.map(g=>({label:g.label,pass:g.ok}));
   const base={score:conds.filter(c=>c.pass).length,total:conds.length||8,conditions:conds,price:s.price,rsiVal:s.rsi,
@@ -2344,17 +2344,19 @@ function runManualAnalysis(sym){
   if(candles.some(k=>k.analysisOnly))return{ready:false,referenceOnly:true,reason:'Delayed futures reference loaded. Volume and trend analysis are available; entry/SL/TP plans require fresh spot/broker candles. '+KMR_VOL_SOURCE[sym]};
   if(!candles||candles.length<60||live==null)return{ready:false,reason:'Still gathering candle history for this asset — try again in a moment.'};
   const s=kmrScan(sym,candles);
+  const entryBlock=!freshQuote(sym)?'Fresh quote unavailable — plan only':!calendarReady()?'Economic calendar unavailable — plan only; new entries paused':null;
+  const tier=entryBlock?null:s.tier;
   const fdir=s.dir||(s.bias1h==='BULL'?'BUY':s.bias1h==='BEAR'?'SELL':s.structure.state==='BULL'?'BUY':s.structure.state==='BEAR'?'SELL':(s.e50!=null&&s.price<s.e50?'SELL':'BUY'));
   const plan=kmrTradePlan({...s,dir:fdir,price:live},ASSETS[sym].dec);
   const lv=keyLevels(sym);
   const h1=kmrClosed(ohlcData[sym]['1h']).map(k=>k.c);
   const fails=s.gates.filter(g=>!g.ok);
   return{
-    ready:true,tradeable:true,quality:s.tier?'confirmed':'fallback',tier:s.tier,dir:fdir,scan:s,plan,
+    ready:true,tradeable:!entryBlock,quality:tier?'confirmed':'fallback',tier,dir:fdir,scan:s,plan,
     entry:plan.entry,sl:plan.sl,tp:plan.tp2,tp1:plan.tp1,tp2:plan.tp2,tp3:plan.tp3,rr:plan.rr,atrVal:s.atrV,
     nearestSup:lv.sup[0]||null,nearestRes:lv.res[0]||null,relevantOB:s.ob,
     bias4h:s.bias4h,bias1h:s.bias1h,rsi1h:h1.length>15?rsi(h1,14):null,macd1h:h1.length>40?macd(h1):null,
-    reason:s.tier?s.reason:(fails.map(g=>g.label).join(' · ')||s.reason),wait:s.wait,
+    reason:entryBlock||(s.tier?s.reason:(fails.map(g=>g.label).join(' · ')||s.reason)),wait:entryBlock?'Wait for fresh quotes and a validated news schedule':s.wait,
   };
 }
 
@@ -3069,12 +3071,12 @@ async function runManualFor(sym){
 function manualResultBodyHtml(sym,res){
   if(!res)return`<div class="kmr-empty">Not analyzed yet.</div>`;
   if(!res.ready)return`<div class="kmr-empty"><div class="kmr-spinner"></div>${res.reason}</div>`;
-  const sc=res.scan,p=res.plan,conf=res.quality==='confirmed',dec=ASSETS[sym].dec;
+  const sc=res.scan,p=res.plan,conf=res.tradeable!==false&&res.quality==='confirmed',dec=ASSETS[sym].dec;
   const col=res.dir==='BUY'?'var(--grn)':'var(--red)';
   const u1=0.01*ASSETS[sym].contractSz,risk1=p.risk*u1,risk2=risk1*2;
   let h=`<div class="plan-top">${kmrRing(sc?sc.score:0,conf?(res.dir==='BUY'?'#22c55e':'#ef4444'):'#e8a33d',86)}
     <div class="plan-hd"><div class="plan-badges"><span class="sig-badge ${res.dir==='BUY'?'sig-buy':'sig-sell'}">${res.dir}</span>${conf?`<span class="badge-high">✓ ${res.tier} · CONFIRMED</span>`:`<span class="badge-med plan-lc">⚠ LOWER CONFIDENCE</span>`}</div>
-    <div class="plan-sub">${p.entryType==='LIMIT'?'⏳ Place a LIMIT order':'⚡ MARKET entry now'} · R:R 1:${res.rr.toFixed(1)}</div>
+    <div class="plan-sub">${res.tradeable===false?'PLAN ONLY — new entries paused':p.entryType==='LIMIT'?'⏳ Place a LIMIT order':'⚡ MARKET entry now'} · R:R 1:${res.rr.toFixed(1)}</div>
     <div class="plan-sub">Engine v3 quality ${sc?sc.score:0}/100</div></div></div>`;
   if(!conf)h+=`<div class="plan-warn"><b>Why not confirmed:</b> ${res.reason}.<br><b>What a disciplined trader waits for:</b> ${res.wait||'more confluence'}.</div>`;
   const row=(lbl,val,why,cls)=>`<div class="plan-row ${cls||''}"><div><span>${lbl}</span><em>${why}</em></div><b>${fmtP(sym,val)}</b></div>`;
@@ -4644,6 +4646,8 @@ function closedMarketCard(sym,a){
   </div>`;
 }
 function signalQuality(sig,sym){
+  if(sig?.quoteUnavailable)return {score:0,label:'QUOTE UNAVAILABLE',gatesOk:false,chips:[['WAIT FOR LIVE PRICE','warn']]};
+  if(sig?.newsUnavailable)return {score:0,label:'NEWS UNAVAILABLE',gatesOk:false,chips:[['NEW ENTRIES PAUSED','warn']]};
   if(sig?.referenceOnly)return {score:0,label:'DELAYED REFERENCE',gatesOk:false,chips:[['WAIT FOR LIVE CANDLES','warn']]};
   if(!sig||sig.dataUnavailable)return {score:0,label:'DATA UNAVAILABLE',gatesOk:false,chips:[['WAIT FOR DATA','warn']]};
   if(sig.smart||sig.smartScore!=null){
@@ -4853,7 +4857,7 @@ async function claimAlertOnce(key){
   }catch(e){return false;} // No durable claim: do not duplicate outbound alerts.
 }
 async function recordSignal(sym,sig,pos,manual){
-  if(!paperReady()||!freshQuote(sym)||activeSignals[sym])return; // server-coordinated paper entries only
+  if(!paperReady()||!freshQuote(sym)||!calendarReady()||activeSignals[sym])return; // server-coordinated paper entries only
   const id=Date.now()+Math.floor(Math.random()*100);
   const r={id,ts:Date.now(),sym,dir:sig.state,price:sig.price,tp:pos.tp,sl:pos.sl,
     tp1:pos.tp1,tp2:pos.tp2,tp3:pos.tp3,tp1Hit:false,tp2Hit:false,
