@@ -739,6 +739,7 @@ body{background:
   <nav id="workspaceRelated" aria-label="Related workflows"></nav>
   <details id="workspaceDirectory"><summary>All workspaces <i class="bi bi-grid-1x2" aria-hidden="true"></i></summary><nav id="workspaceAllLinks" aria-label="All workspace links"></nav></details>
 </section>
+<div id="calendarHealth" class="notice" role="status" aria-live="polite" hidden></div>
 <section id="orbitalOverview" hidden aria-label="Market overview">
   <div class="orbit-hero">
     <div class="orbit-hero-copy"><p class="orbit-eyebrow">KALAI MARKETS · YOUR TRADING WORKSPACE</p>
@@ -2317,7 +2318,7 @@ function computeSignal(sym){
     return{state:'WAIT',dataUnavailable:true,score:0,total:8,conditions:[],reason:candles.length<60?`Candle history incomplete (${candles.length}/60 closed 15m bars) — entries paused`:`Last closed 15m bar is ${Math.round((Date.now()-candles.at(-1).t)/60000)} min old — waiting for provider history`,lot:0,confidence:null};
   }
   const s=kmrScan(sym,candles);
-  if(!freshQuote(sym)||calendarCache===null||Date.now()-calendarCacheAt>30*60e3)return{state:'WAIT',score:0,total:8,conditions:[],reason:!freshQuote(sym)?'Fresh quote unavailable':'Economic calendar unavailable — entries paused',lot:0,confidence:null};
+  if(!freshQuote(sym)||!calendarReady())return{state:'WAIT',score:0,total:8,conditions:[],reason:!freshQuote(sym)?'Fresh quote unavailable':'Economic calendar unavailable — entries paused',lot:0,confidence:null};
   const C=candles.map(k=>k.c),e50=ema(C,50),px=C[C.length-1];
   marketTrend[sym]=e50==null?null:(px>e50?'BULL':'BEAR'); // trend strip + flip watch keep their old meaning
   const mtf=computeMTFTrend(sym);
@@ -4050,7 +4051,7 @@ function scalpLevels(sym,dir,entry,scan,c5,cfg){
   const units=lot*cs;
   return{entry,tp:entry+sgn*tpDist,sl:entry-sgn*slDist,beAt:entry+sgn*tpDist*0.6,lot:+lot.toFixed(2),units,tpUsd:net*units,slUsd,tpDist,slDist};
 }
-function scalpCtx(sym,now){return{now,newsReady:calendarCache!==null&&now-calendarCacheAt<30*60e3,events:kmrNewsEvents(),isMetal:sym!=='BTCUSD',marketOpen:sym==='BTCUSD'||isMetalsMarketOpen(),spread:SPREAD[sym]||0,dec:ASSETS[sym].dec,continuation:!!scalpCfg.continuation};}
+function scalpCtx(sym,now){return{now,newsReady:calendarReady(now),events:kmrNewsEvents(),isMetal:sym!=='BTCUSD',marketOpen:sym==='BTCUSD'||isMetalsMarketOpen(),spread:SPREAD[sym]||0,dec:ASSETS[sym].dec,continuation:!!scalpCfg.continuation};}
 function scalpEvaluate(sym){
   const st=scalpState[sym],now=Date.now();
   const c5=kmrClosed(scalpData[sym]||[]);
@@ -4511,7 +4512,7 @@ function evaluateSignals(manual){
       const liveEntry=prices[sym];
       const atrV=sig.atrVal||atr(sig.candles)||sig.price*0.001;
       const guardMsg=msg=>{if(lastGuardToast[sym]!==candleTs){lastGuardToast[sym]=candleTs;showToast(msg,'#e8a33d');}};
-      if(!freshQuote(sym)||calendarCache===null||Date.now()-calendarCacheAt>30*60e3)return;
+      if(!freshQuote(sym)||!calendarReady())return;
       const plan=sig.smart?kmrTradePlan({...sig.smart,price:liveEntry},ASSETS[sym].dec):null;
       if(!plan)return;
       const sgn=sig.state==='BUY'?1:-1;
@@ -5310,47 +5311,47 @@ async function fetchNews(sym){
   feedError.news=lastErr;
   return null;
 }
-let calendarCache=null,calendarCacheAt=0;
-// The direct nfs.faireconomy.media JSON export is what forexfactory.com's own calendar
-// runs on (Fair Economy operates it) — forexfactory.com itself is Cloudflare-protected
-// HTML and can't be fetched cross-origin from a browser at all, so pointing at
-// forexfactory.com directly is never an option for an automated fetch. The JSON export is
-// built for desktop trading terminals (MT4/5 WebRequest, Python) which don't enforce CORS
-// the way a browser does. r.jina.ai (an AI content-reader proxy, a genuinely different
-// *category* of service than a "CORS relay") is tried first — it isn't on the same
-// proxy-domain blocklists that appear to be catching allorigins/corsproxy/codetabs on some
-// networks. The direct export, its CDN mirror, and the CORS relays are the fallback chain
-// after that. If every automated source fails on a given network, the UI always also shows
-// a direct "Open on Forex Factory ↗" link as a guaranteed fallback.
-const CAL_URL='https://nfs.faireconomy.media/ff_calendar_thisweek.json';
-const CAL_URL2='https://cdn-nfs.faireconomy.media/ff_calendar_thisweek.json';
-const CALENDAR_SOURCES=[
-  '/api/v1/paper/background/calendar',
-  'https://r.jina.ai/'+CAL_URL,
-  'https://r.jina.ai/'+CAL_URL2,
-  CAL_URL,
-  CAL_URL2,
-  'https://api.allorigins.win/raw?url='+encodeURIComponent(CAL_URL),
-  'https://corsproxy.io/?url='+encodeURIComponent(CAL_URL),
-  'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(CAL_URL),
-];
-let calendarFailedAt=0;
-const CALENDAR_RETRY_COOLDOWN_MS=30000; // don't hammer a failing calendar chain every time an asset tab is switched
-let calendarPromise=null;
+let calendarCache=null,calendarCacheAt=0,calendarHealth=null;
+let calendarFailedAt=0,calendarLastCheckAt=0,calendarPromise=null;
+const CALENDAR_RETRY_COOLDOWN_MS=30000;
+function calendarReady(now=Date.now()){
+  return Array.isArray(calendarCache)&&calendarCacheAt>0&&now>=calendarCacheAt&&now-calendarCacheAt<30*60e3&&
+    (typeof calendarHealth==='undefined'||!calendarHealth||(calendarHealth.ready!==false&&now<calendarHealth.expiresAt));
+}
+function renderCalendarHealth(){
+  const box=document.getElementById('calendarHealth');if(!box)return;
+  box.hidden=!currentUser;if(box.hidden)return;
+  const ready=calendarReady(),now=Date.now();
+  const age=calendarCacheAt?Math.max(0,Math.floor((now-calendarCacheAt)/60000)):null;
+  const text=ready?'News protection ready · schedule checked '+age+' min ago'+(feedError.calendar?' · refresh delayed; using the still-valid schedule':''):
+    'New entries paused · news schedule unavailable or stale. Existing paper positions continue to be managed when prices and engine ownership are available.';
+  box.textContent=text;
+  if(calendarHealth?.source){const source=document.createElement('span');source.textContent=' · '+calendarHealth.source;box.append(source);}
+  if(!ready&&calendarHealth?.retryAt>now){const retry=document.createElement('span');retry.textContent=' · next check '+new Date(calendarHealth.retryAt).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});box.append(retry);}
+}
 async function fetchEconCalendar(force){
   if(calendarPromise)return calendarPromise;
   calendarPromise=fetchEconCalendarImpl(force);
   try{return await calendarPromise;}finally{calendarPromise=null;}
 }
 async function fetchEconCalendarImpl(force){
-  if(!force&&calendarCache&&Date.now()-calendarCacheAt<ANALYSIS_CACHE_MS)return calendarCache;
-  if(!force&&Date.now()-calendarFailedAt<CALENDAR_RETRY_COOLDOWN_MS)return null;
-  await throttleFeedCall();
-  const {data,error}=await fetchJsonRobust(CALENDAR_SOURCES,{timeoutMs:8000,validate:d=>Array.isArray(d)&&d.length>0,extractJson:true});
-  feedError.calendar=data?null:error;
-  if(data){calendarCache=data;calendarCacheAt=Date.now();updateNewsLog();return calendarCache;}
-  calendarFailedAt=Date.now();
-  return null; // all sources failed/blocked — caller shows the manual Forex Factory link, nothing crashes
+  const now=Date.now();
+  if(!force&&calendarReady(now)&&now-calendarLastCheckAt<5*60e3)return calendarCache;
+  if(now-calendarFailedAt<CALENDAR_RETRY_COOLDOWN_MS)return null;
+  try{
+    const data=await riyanApi('/api/v1/paper/background/calendar-status');
+    calendarLastCheckAt=Date.now();
+    if(!data||typeof data.ready!=='boolean')throw Error('Invalid calendar status');
+    calendarHealth=data;
+    if(!data.ready){calendarCache=null;calendarCacheAt=0;calendarFailedAt=Date.now();feedError.calendar=data.calendarError||'Calendar unavailable';renderCalendarHealth();return null;}
+    if(!Array.isArray(data.calendar)||!data.calendar.length||!Number.isFinite(data.calendarAt)||data.calendarAt>Date.now()||Date.now()-data.calendarAt>=30*60e3||!Number.isFinite(data.expiresAt)||Date.now()>=data.expiresAt||data.calendar.some(e=>!Number.isFinite(Date.parse(e.date))||!['High','Medium','Low','Holiday','Non-Economic'].includes(e.impact)||!e.title||!e.country))throw Error('Invalid or stale calendar schedule');
+    calendarCache=data.calendar;calendarCacheAt=data.calendarAt;calendarFailedAt=0;feedError.calendar=data.calendarError||null;
+    updateNewsLog();renderCalendarHealth();return calendarCache;
+  }catch(e){
+    calendarFailedAt=Date.now();feedError.calendar='Calendar check failed: '+e.message;
+    if(!calendarReady()){calendarCache=null;calendarCacheAt=0;}
+    renderCalendarHealth();return null;
+  }
 }
 // Rough "which way would this move the currency if it beats forecast" cheat-sheet, keyed
 // by keywords in the event title. This is a general historical tendency for the event's
@@ -6177,6 +6178,6 @@ initAuth();
 
 <button id="riyanSyncBtn" type="button" onclick="riyanConnect()" style="position:fixed;bottom:8px;right:8px;z-index:9999;padding:7px 11px;border-radius:15px;background:#284f72;color:white;border:1px solid #8ac8e7;font-size:11px">☁ DB Sync</button>
 <script src="orbital-ui.js?v=20261018-5" defer></script>
-<script src="/background-client.js?v=20261019-2"></script>
+<script src="/background-client.js?v=20261019-calendar"></script>
 </body>
 </html>

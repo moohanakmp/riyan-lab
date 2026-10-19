@@ -27,7 +27,7 @@ class BackgroundScannerIntegrationTest {
   records.saveForEngine(identity,"auto-signals","991",r,browser);
   jdbc.update("UPDATE paper_engine_leases SET expires_at=now()-interval '1 second' WHERE username=?",user);
   var snapshot=json.createObjectNode();snapshot.putObject("BTCUSD").put("price",120).put("quoteAt",System.currentTimeMillis());
-  when(feeds.snapshot()).thenReturn(snapshot);when(feeds.calendar()).thenReturn(Map.of("calendarAt",0));
+  when(feeds.snapshot()).thenReturn(snapshot);when(feeds.calendar()).thenReturn(Map.of("calendarAt",0));when(feeds.calendarStatus()).thenReturn(Map.of("ready",false));
   scanner.scan();
   var closed=json.readTree(jdbc.queryForObject("SELECT payload::text FROM auto_signals WHERE source_id='991'",String.class));
   assertEquals("WIN",closed.path("outcome").asText());assertEquals(3,closed.path("fills").size());

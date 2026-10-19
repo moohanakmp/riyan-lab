@@ -123,6 +123,7 @@ public class BackgroundScanner {
         """,user,state,details.toString());}
     public Map<String,Object> status(String user){
         var out=new LinkedHashMap<String,Object>();out.put("available",enabled);out.put("phase",phase);out.put("busy",busy.get());out.put("cycleStartedAt",cycleStartedAt);out.put("cycleFinishedAt",cycleFinishedAt);out.put("cycleError",cycleError);out.put("hosting","Render free services may sleep without incoming traffic; an always-on host is needed for uninterrupted scans.");out.put("intervalSeconds",20);
+        var health=new LinkedHashMap<>(feeds.calendarStatus());health.remove("calendar");out.put("calendarHealth",health);
         var settings=jdbc.queryForList("SELECT enabled FROM background_scanner_settings WHERE username=?",user);out.put("enabled",settings.isEmpty()||Boolean.TRUE.equals(settings.getFirst().get("enabled")));
         var rows=jdbc.queryForList("SELECT state,checked_at,details::text AS details FROM background_scanner_status WHERE username=?",user);
         if(!rows.isEmpty())out.putAll(rows.getFirst());

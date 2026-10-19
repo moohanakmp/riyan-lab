@@ -19,6 +19,7 @@ public class BackgroundController {
         if(data.get("calendar") instanceof JsonNode calendar)return calendar;
         throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"Calendar unavailable — new entries remain paused");
     }
+    @GetMapping("/calendar-status") public Map<String,Object> calendarStatus(HttpServletRequest req){auth.require(req,false);return feeds.calendar();}
     @GetMapping("/status") public Map<String,Object> status(HttpServletRequest req){var u=auth.require(req,false);auth.mayWrite(u,"low-profit");return scanner.status(u.username());}
     @PostMapping("/settings") public Map<String,Object> settings(HttpServletRequest req,@RequestBody JsonNode input){
         var u=auth.require(req,true);auth.mayWrite(u,"low-profit");

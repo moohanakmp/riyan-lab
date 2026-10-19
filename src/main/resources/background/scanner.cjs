@@ -15,7 +15,7 @@ function extract(name,kind='function'){
   }
   throw Error('Cannot parse shared strategy '+name);
 }
-const names=['ema','rsi','atr','swingLevels','emaSeries','macd','kmrAdx','kmrPivots','kmrStructure','kmrVolumePressure','kmrSweep','kmrTfBias','kmrSmartScan','ev2txt','kmrTradePlan','kmrClosed','kmrIstHour','kmrNewsEvents','kmrScan','getCandles','computeSignal','orderBlocks','calcPos','computeVolSpike','evaluateSignals','recordSignal','checkOutcome','isMetalsMarketOpen','istDayKey','scalpToday','bbAt','aggMinutes','scalpClosed15m','scalpScan','scalpLevels','scalpCtx','scalpEvaluate','scalpOpen','scalpClose','scalpCheckRange','scalpCandleCheck','scalpManageAll','fmtP','freshQuote'];
+const names=['ema','rsi','atr','swingLevels','emaSeries','macd','kmrAdx','kmrPivots','kmrStructure','kmrVolumePressure','kmrSweep','kmrTfBias','kmrSmartScan','ev2txt','kmrTradePlan','kmrClosed','kmrIstHour','kmrNewsEvents','calendarReady','kmrScan','getCandles','computeSignal','orderBlocks','calcPos','computeVolSpike','evaluateSignals','recordSignal','checkOutcome','isMetalsMarketOpen','istDayKey','scalpToday','bbAt','aggMinutes','scalpClosed15m','scalpScan','scalpLevels','scalpCtx','scalpEvaluate','scalpOpen','scalpClose','scalpCheckRange','scalpCandleCheck','scalpManageAll','fmtP','freshQuote'];
 const paper=fs.readFileSync(path.join(root,'paper-engine.js'),'utf8');
 const source=fs.readFileSync(path.join(root,'trading-core.js'),'utf8')+'\n'+
  ['ASSETS','ICONS','SIG_TUNE','SPREAD','SCALP_DEF'].map(n=>extract(n,'const')).join('\n')+'\n'+
@@ -49,7 +49,7 @@ async function scan(job){
  const SYMS=Object.keys(ASSETS),CAPITAL=100,LOT_HIGH=.02,LOT_MED=.01,SIGNAL_COOLDOWN_MS=180000;
  let currentUser={username:job.username,role:job.role},alertsEnabled=false;
  let prices={},quoteAt={},ohlcData={},scalpData={},scalpState={},marketTrend={},volSpike={},mtfTrend={};
- let calendarCache=job.calendar||null,calendarCacheAt=job.calendarAt||0;
+ let calendarCache=job.calendar||null,calendarCacheAt=job.calendarAt||0,calendarHealth={expiresAt:job.expiresAt||calendarCacheAt+30*60e3};
  let signalHistory=job.history.filter(x=>x.type!=='low-profit').map(x=>x.record),scalpHist=job.history.filter(x=>x.type==='low-profit').map(x=>x.record);
  let scalpCfg={...SCALP_DEF,...job.config,assets:{...SCALP_DEF.assets,...job.config?.assets}};
  const basketDemo={enabled:!!job.basketEnabled,active:job.basketActive||null};

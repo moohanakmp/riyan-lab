@@ -37,6 +37,7 @@ class AuthPersistenceIntegrationTest {
     }
     @Test
     void loginAndAuditRequireServerSession() throws Exception {
+        mvc.perform(get("/api/v1/paper/background/calendar-status")).andExpect(status().isUnauthorized());
         mvc.perform(get("/api/v1/records/auto-signals"))
             .andExpect(status().isUnauthorized());
         var login=mvc.perform(post("/api/v1/auth/login")

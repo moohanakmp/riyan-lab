@@ -13,52 +13,18 @@ import java.util.concurrent.*;
 public class BackgroundFeeds {
     private final MarketDataController market;
     private final ObjectMapper json;
-    private final HttpClient client;
     private final MetalHistory metals;
-    private JsonNode calendar;
-    private long calendarAt=0,nextCalendar=0;
-    private String calendarError="Not checked yet";
+    private final EconomicCalendar schedule;
     @org.springframework.beans.factory.annotation.Autowired
-    public BackgroundFeeds(MarketDataController market,ObjectMapper json){this(market,json,HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(4)).build());}
-    BackgroundFeeds(MarketDataController market,ObjectMapper json,HttpClient client){this.market=market;this.json=json;this.client=client;this.metals=new MetalHistory(null,market,json);}
+    public BackgroundFeeds(MarketDataController market,ObjectMapper json,EconomicCalendar schedule){this.market=market;this.json=json;this.schedule=schedule;this.metals=new MetalHistory(null,market,json);}
+    BackgroundFeeds(MarketDataController market,ObjectMapper json){this(market,json,null);}
     private JsonNode get(String url)throws Exception{
         var response=market.publicData(url);
         if(!response.getStatusCode().is2xxSuccessful())throw new IllegalStateException("Provider unavailable: "+response.getBody());
         return json.readTree(response.getBody());
     }
-    public synchronized Map<String,Object> calendar(){
-        long now=System.currentTimeMillis();
-        if(now>=nextCalendar){
-            nextCalendar=now+300000;
-            // Same fixed calendar sources as the app; stop on explicit rate limits.
-            for(String url:List.of("https://nfs.faireconomy.media/ff_calendar_thisweek.json",
-                    "https://cdn-nfs.faireconomy.media/ff_calendar_thisweek.json",
-                    "https://r.jina.ai/https://nfs.faireconomy.media/ff_calendar_thisweek.json")){
-                try{
-                    var request=HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(8))
-                        .header("User-Agent","RiyanLabCalendar/1.0").GET().build();
-                    var response=client.send(request,HttpResponse.BodyHandlers.ofString());
-                    if(response.statusCode()==429){nextCalendar=now+900000;calendarError="Calendar rate limited (HTTP 429)";break;}
-                    if(response.statusCode()!=200){calendarError="Calendar unavailable (HTTP "+response.statusCode()+")";continue;}
-                    String body=response.body();
-                    if(body.length()>1_000_000)throw new IllegalArgumentException("Calendar response too large");
-                    int first=body.indexOf('['),last=body.lastIndexOf(']');
-                    if(first<0||last<first)throw new IllegalArgumentException("Invalid calendar JSON");
-                    JsonNode data=json.readTree(body.substring(first,last+1));
-                    if(!data.isArray()||data.isEmpty())throw new IllegalArgumentException("Empty calendar");
-                    boolean recent=false;
-                    for(var ev:data){
-                        long at=OffsetDateTime.parse(ev.path("date").asText()).toInstant().toEpochMilli();
-                        if(at>=now-86400000L&&at<=now+8*86400000L)recent=true;
-                    }
-                    if(!recent)throw new IllegalArgumentException("Calendar belongs to an older week");
-                    calendar=data;calendarAt=now;calendarError="";break;
-                }catch(Exception e){calendarError="Calendar unavailable: "+e.getClass().getSimpleName();}
-            }
-        }
-        if(calendar==null||now-calendarAt>=1800000)return Map.of("calendarAt",0,"calendarError",calendarError);
-        return Map.of("calendar",calendar,"calendarAt",calendarAt,"calendarError",calendarError);
-    }
+    public Map<String,Object> calendar(){return schedule.view();}
+    public Map<String,Object> calendarStatus(){return schedule.peek();}
     public ObjectNode snapshot(){
         ObjectNode out=json.createObjectNode();
         try(var pool=Executors.newFixedThreadPool(3)){
