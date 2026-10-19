@@ -236,9 +236,9 @@ async function basketDbRestore(){
   if(!currentUser||currentUser.role==='guest')return false;
   const user=currentUser.username;
   try{
-    const [records,positions]=await Promise.all([
-      riyanReadAll('basket-sessions'),
-      riyanReadAll('basket-positions')]);
+    const ledger=typeof paperReadLedger==='function'?await paperReadLedger():null;
+    const [records,positions]=ledger?[ledger['basket-sessions']||[],ledger['basket-positions']||[]]:await Promise.all([
+      riyanReadAll('basket-sessions'),riyanReadAll('basket-positions')]);
     if(currentUser?.username!==user)return false;
     const parse=r=>{try{return typeof r.payload==='string'?JSON.parse(r.payload):r.payload;}catch(e){return null;}};
     const sessions=new Map(records.map(parse).filter(s=>s&&s.owner===user).map(s=>[s.id,s]));

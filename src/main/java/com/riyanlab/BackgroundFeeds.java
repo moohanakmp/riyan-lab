@@ -30,9 +30,9 @@ public class BackgroundFeeds {
         if(now>=nextCalendar){
             nextCalendar=now+300000;
             // Same fixed calendar sources as the app; stop on explicit rate limits.
-            for(String url:List.of("https://r.jina.ai/https://nfs.faireconomy.media/ff_calendar_thisweek.json",
-                    "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
-                    "https://cdn-nfs.faireconomy.media/ff_calendar_thisweek.json")){
+            for(String url:List.of("https://nfs.faireconomy.media/ff_calendar_thisweek.json",
+                    "https://cdn-nfs.faireconomy.media/ff_calendar_thisweek.json",
+                    "https://r.jina.ai/https://nfs.faireconomy.media/ff_calendar_thisweek.json")){
                 try{
                     var request=HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(8))
                         .header("User-Agent","RiyanLabCalendar/1.0").GET().build();

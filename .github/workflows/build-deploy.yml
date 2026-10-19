@@ -54,6 +54,7 @@ jobs:
           node scripts/check-performance.cjs
           node scripts/check-orbital-ui.cjs
           node scripts/check-background.cjs
+          node scripts/check-engine-recovery.cjs
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build

@@ -12,8 +12,13 @@ import java.util.*;
 @RestController
 @RequestMapping("/api/v1/paper/background")
 public class BackgroundController {
-    private final AuthService auth;private final BackgroundScanner scanner;private final JdbcTemplate jdbc;
-    BackgroundController(AuthService auth,BackgroundScanner scanner,JdbcTemplate jdbc){this.auth=auth;this.scanner=scanner;this.jdbc=jdbc;}
+    private final AuthService auth;private final BackgroundScanner scanner;private final JdbcTemplate jdbc;private final BackgroundFeeds feeds;
+    BackgroundController(AuthService auth,BackgroundScanner scanner,JdbcTemplate jdbc,BackgroundFeeds feeds){this.auth=auth;this.scanner=scanner;this.jdbc=jdbc;this.feeds=feeds;}
+    @GetMapping("/calendar") public JsonNode calendar(HttpServletRequest req){
+        auth.require(req,false);var data=feeds.calendar();
+        if(data.get("calendar") instanceof JsonNode calendar)return calendar;
+        throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"Calendar unavailable — new entries remain paused");
+    }
     @GetMapping("/status") public Map<String,Object> status(HttpServletRequest req){var u=auth.require(req,false);auth.mayWrite(u,"low-profit");return scanner.status(u.username());}
     @PostMapping("/settings") public Map<String,Object> settings(HttpServletRequest req,@RequestBody JsonNode input){
         var u=auth.require(req,true);auth.mayWrite(u,"low-profit");

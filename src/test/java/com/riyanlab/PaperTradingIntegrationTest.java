@@ -60,6 +60,10 @@ class PaperTradingIntegrationTest {
         assertEquals(409,write(s,"engine-two-123","risk-1",n));
         assertEquals(200,write(s,"engine-one-123","risk-1",n));
         assertEquals(200,write(s,"engine-one-123","risk-1",n),"retry is idempotent");
+        mvc.perform(get("/api/v1/paper/ledger").cookie(s.cookies))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1))
+            .andExpect(jsonPath("$[0].record_type").value("low-profit"));
+
         assertEquals(409,write(s,"engine-one-123","risk-copy",n),"different random ID cannot duplicate candle");
         assertEquals(409,write(s,"engine-one-123","risk-2",entry("risk-bar-2",97.5)),"combined risk exceeds $4");
         var closed=n.deepCopy().put("status","SL").put("exit",98.5).put("pnl",-1.85).put("closedAt",2000).put("updatedAt",2000);
@@ -68,6 +72,9 @@ class PaperTradingIntegrationTest {
         var other=user("riskreader");assertTrue(lease(other,"engine-other-123"));
         assertEquals(403,write(other,"engine-other-123","risk-1",n));
         mvc.perform(get("/api/v1/records/low-profit").cookie(other.cookies)).andExpect(jsonPath("$.length()").value(0));
+        mvc.perform(get("/api/v1/paper/ledger").cookie(other.cookies)).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+        mvc.perform(get("/api/v1/paper/ledger")).andExpect(status().isUnauthorized());
+
         jdbc.update("UPDATE paper_engine_leases SET expires_at=now()-interval '1 second' WHERE username='riskowner'");
         assertTrue(lease(s,"engine-two-123"));
         assertEquals(409,write(s,"engine-one-123","risk-3",entry("risk-bar-3",99)));

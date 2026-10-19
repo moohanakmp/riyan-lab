@@ -78,6 +78,17 @@ public class PaperTradingService {
             WHERE paper_engine_leases.owner=EXCLUDED.owner OR paper_engine_leases.expires_at<=now()
             """,user,owner)>0;
     }
+    public List<Map<String,Object>> readLedger(String user,int limit,int offset){
+        return jdbc.queryForList("""
+            SELECT * FROM (
+             SELECT 'auto-signals' AS record_type,source_id,payload::text AS payload FROM auto_signals WHERE created_by=?
+             UNION ALL SELECT 'manual-signals',source_id,payload::text FROM manual_signals WHERE created_by=?
+             UNION ALL SELECT 'low-profit',source_id,payload::text FROM low_profit_signals WHERE created_by=?
+             UNION ALL SELECT 'basket-sessions',source_id,payload::text FROM basket_scalp_sessions WHERE created_by=?
+             UNION ALL SELECT 'basket-positions',source_id,payload::text FROM basket_scalp_positions WHERE created_by=?
+            ) ledger ORDER BY record_type,source_id LIMIT ? OFFSET ?
+            """,user,user,user,user,user,limit,offset);
+    }
     public void validate(String user,String type,String id,JsonNode next,String previous){
         if(!isTrade(type))return;
         accounting(next);
@@ -145,6 +156,12 @@ public class PaperTradingService {
 class PaperTradingController {
     private final AuthService auth;private final PaperTradingService paper;
     PaperTradingController(AuthService auth,PaperTradingService paper){this.auth=auth;this.paper=paper;}
+    @GetMapping("/ledger")
+    List<Map<String,Object>> ledger(HttpServletRequest request,
+            @RequestParam(defaultValue="1000") int limit,@RequestParam(defaultValue="0") int offset){
+        var u=auth.require(request,false);auth.mayWrite(u,"low-profit");
+        return paper.readLedger(u.username(),Math.max(1,Math.min(1000,limit)),Math.max(0,offset));
+    }
     @PostMapping("/lease")
     Map<String,Object> lease(HttpServletRequest request){
         var identity=auth.require(request,true);auth.mayWrite(identity,"low-profit");

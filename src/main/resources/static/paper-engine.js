@@ -3,26 +3,60 @@ var quoteAt={};
 var paperEngine={id:crypto.randomUUID(),until:0,leaseUntil:0,busy:false,lastCheck:0,reason:'Connecting to paper engine'};
 function freshQuote(sym){return PaperMath.positive(prices[sym])&&Date.now()-(quoteAt[sym]||0)<30000&&Date.now()>=(quoteAt[sym]||0);}
 function paperReady(){return !!currentUser&&currentUser.role!=='guest'&&Date.now()<paperEngine.until;}
-async function paperHeartbeat(){
-  if(!currentUser||currentUser.role==='guest'||paperEngine.busy||Date.now()-paperEngine.lastCheck<10000)return;
-  paperEngine.busy=true;paperEngine.lastCheck=Date.now();
+// Lease renewal is independent of slow queue/ledger restoration.
+async function paperRenewLease(){
+  const user=currentUser?.username;
+  if(!user||currentUser.role==='guest')return false;
+  if(paperEngine.leaseBusy)return Date.now()<paperEngine.leaseUntil;
+  if(Date.now()-(paperEngine.lastLeaseAttempt||0)<10000&&Date.now()<paperEngine.leaseUntil)return true;
+  paperEngine.leaseBusy=true;paperEngine.lastLeaseAttempt=Date.now();
   try{
-    const user=currentUser.username,wasReady=paperReady();
     const result=await riyanApi('/api/v1/paper/lease',{method:'POST'});
-    if(currentUser?.username!==user)return;
-    if(!result.owned){paperEngine.until=0;paperEngine.leaseUntil=0;paperEngine.reason='Another browser owns the paper engine';return;}
-    paperEngine.leaseUntil=Date.now()+30000;
+    if(currentUser?.username!==user)return false;
+    if(!result.owned){paperEngine.until=0;paperEngine.leaseUntil=0;paperEngine.reason='Another engine owns this account';return false;}
+    paperEngine.leaseUntil=Date.now()+30000;return true;
+  }finally{paperEngine.leaseBusy=false;}
+}
+async function paperHeartbeat(){
+  if(!currentUser||currentUser.role==='guest')return;
+  try{if(!await paperRenewLease())return;}
+  catch(e){if(Date.now()>=paperEngine.leaseUntil){paperEngine.until=0;paperEngine.reason='Paper engine paused: '+e.message;}return;}
+  if(paperEngine.busy||Date.now()-paperEngine.lastCheck<10000)return;
+  paperEngine.busy=true;paperEngine.lastCheck=Date.now();
+  const user=currentUser.username,wasReady=paperReady();
+  try{
     if(!wasReady){
-      // Flush this user's durable updates before authoritative restoration.
-      const sync=await riyanProcessQueue();
-      if(!sync||sync.error||paperPendingTrades(user))throw Error('Pending or rejected records need synchronization');
+      paperEngine.reason='Synchronizing paper ledger';
+      if(paperPendingTrades(user)){
+        const sync=await riyanProcessQueue(true);
+        if(!sync||sync.error||paperPendingTrades(user))throw Error('Pending or rejected trade records need synchronization');
+      }
+      paperLedgerCache=null;
       if(!await riyanRestore())throw Error('Trade history unavailable');
       if(!await basketDbRestore())throw Error('Basket restoration unavailable');
     }
-    paperEngine.until=Date.now()+20000;
-    paperEngine.reason='Paper engine active — keep this browser open';
+    if(currentUser?.username!==user||Date.now()>=paperEngine.leaseUntil)throw Error('Ownership changed while restoring');
+    paperEngine.until=Math.min(Date.now()+20000,paperEngine.leaseUntil);
+    paperEngine.reason='Paper engine active';
   }catch(e){paperEngine.until=0;paperEngine.reason='Paper engine paused: '+e.message;}
   finally{paperEngine.busy=false;}
+}
+var paperLedgerCache=null;
+async function paperReadLedger(){
+  const user=currentUser?.username;
+  if(!user||currentUser.role==='guest')throw Error('Authenticated ledger required');
+  if(paperLedgerCache?.user===user&&Date.now()-paperLedgerCache.at<5000)return paperLedgerCache.promise;
+  const entry={user,at:Date.now(),promise:null};
+  entry.promise=(async()=>{
+    const grouped={};
+    for(let offset=0;;offset+=1000){
+      const rows=await riyanApi('/api/v1/paper/ledger?limit=1000&offset='+offset);
+      if(currentUser?.username!==user||!Array.isArray(rows))throw Error('Ledger owner changed or response invalid');
+      for(const row of rows)(grouped[row.record_type]||(grouped[row.record_type]=[])).push(row);
+      if(rows.length<1000){entry.at=Date.now();return grouped;}
+    }
+  })().catch(e=>{if(paperLedgerCache===entry)paperLedgerCache=null;throw e;});
+  paperLedgerCache=entry;return entry.promise;
 }
 async function paperSaveEntry(type,id,record){
   if(!paperReady())return false;

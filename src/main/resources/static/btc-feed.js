@@ -59,6 +59,6 @@ var BtcFeed = (() => {
     if(!PaperMath.positive(price)||!Number.isFinite(at)||now-at>30000||at>now+5000)throw Error('Coinbase BTC quote is stale or invalid');
     return {price,at};
   }
-  return {candles,normalize,quote,ticker:async()=>quote(await json(base+'/ticker')),stats:()=>json(base+'/stats'),source:'Coinbase BTC/USD'};
+  return {candles,normalize,quote,ticker:async()=>quote(await requestJson(base+'/ticker')),stats:()=>requestJson(base+'/stats'),source:'Coinbase BTC/USD'};
 })();
 if(typeof module!=='undefined')module.exports=BtcFeed;

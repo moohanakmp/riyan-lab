@@ -8,6 +8,15 @@ var PublicMarketFetch=(()=>{
   try{
    const u=new URL(raw);
    if(u.protocol!=='https:'||u.port||u.username||u.password||u.hash)return null;
+   if(u.hostname==='api.gold-api.com'&&['/price/XAU','/price/XAG'].includes(u.pathname)&&!u.search)return u;
+   if(u.hostname==='api.exchange.coinbase.com'){
+    if(['/products/BTC-USD/ticker','/products/BTC-USD/stats'].includes(u.pathname)&&!u.search)return u;
+    if(u.pathname!=='/products/BTC-USD/candles')return null;
+    const keys=[...u.searchParams.keys()];
+    if(keys.length!==3||new Set(keys).size!==3||keys.some(k=>!['granularity','start','end'].includes(k)))return null;
+    const seconds=Number(u.searchParams.get('granularity')),start=Date.parse(u.searchParams.get('start')),end=Date.parse(u.searchParams.get('end'));
+    return [60,300,900,3600,21600,86400].includes(seconds)&&Number.isFinite(start)&&start>=0&&Number.isFinite(end)&&end>=start&&end-start<300*seconds*1000&&end<=Date.now()+60000?u:null;
+   }
    const allowed=u.hostname==='api.binance.com'&&u.pathname==='/api/v3/klines'
      ||u.hostname==='fapi.binance.com'&&u.pathname==='/fapi/v1/klines';
    if(!allowed)return null;
@@ -45,7 +54,7 @@ var PublicMarketFetch=(()=>{
      const retry=Number(r.headers.get('Retry-After'));
      cooldowns.set(u.hostname,{status:r.status,until:Date.now()+Math.max(r.status===429?60000:900000,Number.isFinite(retry)?Math.max(0,retry)*1000:0)});
     }
-    cache.set(key,{until:Date.now()+(r.ok?30000:60000),response:r.clone()});
+    cache.set(key,{until:Date.now()+(r.ok?(/\/price\/|\/ticker$/.test(u.pathname)?3000:30000):60000),response:r.clone()});
     if(cache.size>64)cache.delete(cache.keys().next().value);
     return r;
    })();pending.set(key,task);
