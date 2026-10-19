@@ -14,9 +14,14 @@ class EconomicCalendarTest {
  private final ObjectMapper json=new ObjectMapper();
  private final long start=Instant.parse("2026-10-19T15:00:00Z").toEpochMilli();
  private ArrayNode events(long now){return json.createArrayNode().add(json.createObjectNode().put("title","Test USD release").put("country","USD").put("impact","High").put("date",EconomicCalendar.weekStart(now).plusDays(2).plusHours(8).plusMinutes(30).toOffsetDateTime().toString()));}
- @SuppressWarnings("unchecked") private HttpResponse<String> response(int status,String body,Map<String,List<String>> headers){
-  HttpResponse<String> r=mock(HttpResponse.class);when(r.statusCode()).thenReturn(status);when(r.body()).thenReturn(body);when(r.headers()).thenReturn(HttpHeaders.of(headers,(a,b)->true));return r;
+ private record Reply(int statusCode,String body,HttpHeaders headers) implements HttpResponse<String>{
+  public HttpRequest request(){return null;}
+  public Optional<HttpResponse<String>> previousResponse(){return Optional.empty();}
+  public Optional<javax.net.ssl.SSLSession> sslSession(){return Optional.empty();}
+  public java.net.URI uri(){return java.net.URI.create(EconomicCalendar.URL);}
+  public HttpClient.Version version(){return HttpClient.Version.HTTP_1_1;}
  }
+ private HttpResponse<String> response(int status,String body,Map<String,List<String>> headers){return new Reply(status,body,HttpHeaders.of(headers,(a,b)->true));}
  @Test @SuppressWarnings({"unchecked","rawtypes"}) void sharedCacheRateLimitExpiryAnd304RecoveryKeepTheTrueClock()throws Exception{
   var now=new AtomicLong(start);var client=mock(HttpClient.class);
   when(client.send(any(HttpRequest.class),any(HttpResponse.BodyHandler.class))).thenReturn(response(200,events(start).toString(),Map.of("ETag",List.of("\"v1\""))));

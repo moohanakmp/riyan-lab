@@ -21,7 +21,7 @@ async function backgroundRefresh(){
     if(digest!==backgroundDigest){await riyanApi('/api/v1/paper/background/settings',{method:'POST',body:digest});backgroundDigest=digest;}
     backgroundRender(status);
   }catch(e){backgroundRender({state:'UNAVAILABLE',reason:'Background status unavailable — '+e.message});}
-  finally{backgroundBusy=false;}
+  finally{backgroundBusy=false;renderCalendarHealth();}
 }
 function backgroundRender(status){
   for(const id of ['ts','tsc','tad']){
