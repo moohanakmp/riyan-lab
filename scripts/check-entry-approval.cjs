@@ -6,6 +6,7 @@ const gates=['htf','vol','adx','ext','spike','rsi','news','roll','volm','value',
 const smart={dir:'SELL',tier:'MED',gatesOk:true,score:83,price:4146.6,atrV:2,e20:4147.31,structure:{H:[{p:4149}],L:[{p:4135}]},gates};
 const sig={state:'SELL',confidence:'MED',lot:.01,price:4146.6,atrVal:2,smart,conditions:[],score:5,total:8,candles:[{t:bar}],sr:{H:[],L:[]}};
 (async()=>{
+ const limits=vm.createContext({});vm.runInContext(extract('CAPITAL','const'),limits);assert.equal(vm.runInContext('MAX_RISK_USD',limits),4,'Manual risk caption matches the server account limit');
  const c=vm.createContext({Date,Math,console,SYMS:['XAUUSD'],currentUser:{username:'u',role:'user'},prices:{XAUUSD:4146.6},
   signalHistory:[],scalpHist:[],basketDemo:{enabled:false,active:null},paperEngine:{reason:'Paper engine active'},paperReady:()=>true,freshQuote:()=>true,calendarReady:()=>true,isMetalsMarketOpen:()=>true,
   activeSignals:{},sigCooldown:{},lastSigCandleTs:{},lastGuardToast:{},signalEntryPending:{},signalEntryStatus:{},
