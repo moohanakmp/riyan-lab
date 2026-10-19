@@ -28,6 +28,7 @@ async function paperHeartbeat(){
   try{
     if(!wasReady){
       paperEngine.reason='Synchronizing paper ledger';
+      if(typeof riyanRepairManualPlans==='function')riyanRepairManualPlans(user);
       if(paperPendingTrades(user)){
         const sync=await riyanProcessQueue(true);
         if(!sync||sync.error||paperPendingTrades(user))throw Error(paperSyncReason(user));
@@ -72,7 +73,7 @@ async function paperSaveEntry(type,id,record){
   }catch(e){
     // An uncertain response may already be committed. Reconcile before another entry.
     paperEngine.until=0;
-    paperEngine.reason='Entry paused: '+e.message+' — reconciling server ledger';
+    paperEngine.reason='Entry paused: '+(e.detail||e.message)+' — reconciling server ledger';
     showToast(paperEngine.reason,'var(--acc)');return false;
   }
 }

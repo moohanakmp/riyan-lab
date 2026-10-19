@@ -29,7 +29,7 @@ public class BackgroundScanner {
     private synchronized Path runtime()throws Exception{
         if(runtime!=null)return runtime;
         Path folder=Files.createTempDirectory("riyan-scanner-");Files.createDirectories(folder.resolve("static"));Files.createDirectories(folder.resolve("background"));
-        for(String file:List.of("static/index.html","static/trading-core.js","static/paper-engine.js","background/scanner.cjs"))
+        for(String file:List.of("static/index.html","static/trading-core.js","static/paper-engine.js","static/market-context.js","background/scanner.cjs"))
             try(var input=new ClassPathResource(file).getInputStream()){Files.copy(input,folder.resolve(file));}
         runtime=folder;return folder;
     }

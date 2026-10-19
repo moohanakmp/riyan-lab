@@ -99,7 +99,7 @@ const F=feed(()=>{throw Error('Unexpected network')});
  let opened=0;
  Object.assign(ctx,{scalpHist:[],scalpData:{XAUUSD:sourceBars},scalpCfg:{auto:true,assets:{XAUUSD:true},goal:10,dayStop:8},
   scalpScan:()=>({dir:'BUY',gatesOk:true,A:1,price:101,barT:now-300000}),scalpClosed15m:()=>[],scalpCtx:()=>({}),
-  scalpLevels:()=>({}),scalpToday:()=>({}),paperReady:()=>true,freshQuote:()=>true,basketDemo:{enabled:false},scalpOpen:()=>opened++});
+  paperAccountRisk:()=>({ok:true}),scalpLevels:()=>({}),scalpToday:()=>({}),paperReady:()=>true,freshQuote:()=>true,basketDemo:{enabled:false},scalpOpen:()=>opened++});
  vm.runInContext(extract('function scalpEvaluate(sym){','async function scalpOpen('),ctx);
  vm.runInContext('scalpEvaluate',ctx)('XAUUSD');assert.equal(opened,0);assert.match(ctx.scalpState.XAUUSD.block,/Delayed futures/);
  ctx.scalpData.XAUUSD=sourceBars.map(k=>({...k,analysisOnly:false}));ctx.ohlcData.XAUUSD={};

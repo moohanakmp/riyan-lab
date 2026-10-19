@@ -85,7 +85,7 @@ for(const file of ['trading-core.js','paper-engine.js','basket-demo.js','basket-
   riyanSafeRecordId:async(type,id)=>id,
   riyanApi:async()=>{requests++;started();await gate;},
   showToast:()=>{},paperReconcileConflict:async()=>false});
- vm.runInContext(extract('let riyanSyncing=', 'async function riyanRetryFailed'),sync);
+ vm.runInContext(extract('function riyanRepairManualPlans(user){','let riyanSyncing=')+extract('let riyanSyncing=', 'async function riyanRetryFailed'),sync);
  const first=vm.runInContext('riyanProcessQueue()',sync);
  await start;
  const concurrent=vm.runInContext('riyanProcessQueue()',sync);

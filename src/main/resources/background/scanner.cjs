@@ -15,9 +15,10 @@ function extract(name,kind='function'){
   }
   throw Error('Cannot parse shared strategy '+name);
 }
-const names=['ema','rsi','atr','swingLevels','emaSeries','macd','kmrAdx','kmrPivots','kmrStructure','kmrVolumePressure','kmrSweep','kmrTfBias','kmrSmartScan','ev2txt','kmrTradePlan','kmrClosed','kmrIstHour','kmrNewsEvents','calendarReady','kmrScan','getCandles','computeSignal','orderBlocks','calcPos','computeVolSpike','evaluateSignals','recordSignal','checkOutcome','isMetalsMarketOpen','istDayKey','scalpToday','bbAt','aggMinutes','scalpClosed15m','kmrLevelZones','kmrLevelSetup','kmrLevelPlan','scalpScan','scalpLevels','scalpCtx','scalpEvaluate','scalpOpen','scalpClose','scalpCheckRange','scalpCandleCheck','scalpManageAll','fmtP','freshQuote'];
+const names=['ema','rsi','atr','swingLevels','emaSeries','macd','kmrAdx','kmrPivots','kmrStructure','kmrVolumePressure','kmrSweep','kmrTfBias','kmrSmartScan','ev2txt','kmrTradePlan','kmrClosed','kmrIstHour','kmrNewsEvents','calendarReady','kmrScan','getCandles','computeSignal','orderBlocks','calcPos','computeVolSpike','marketEvidenceSnapshot','paperAccountRisk','autoEntryCheck','evaluateSignals','recordSignal','checkOutcome','isMetalsMarketOpen','istDayKey','scalpToday','bbAt','aggMinutes','scalpClosed15m','kmrLevelZones','kmrLevelSetup','kmrLevelPlan','scalpScan','scalpLevels','scalpCtx','scalpEvaluate','scalpOpen','scalpClose','scalpCheckRange','scalpCandleCheck','scalpManageAll','fmtP','freshQuote'];
 const paper=fs.readFileSync(path.join(root,'paper-engine.js'),'utf8');
 const source=fs.readFileSync(path.join(root,'trading-core.js'),'utf8')+'\n'+
+ fs.readFileSync(path.join(root,'market-context.js'),'utf8')+'\n'+
  ['ASSETS','ICONS','SIG_TUNE','SPREAD','SCALP_DEF'].map(n=>extract(n,'const')).join('\n')+'\n'+
  names.filter(n=>n!=='freshQuote').map(n=>extract(n)).join('\n')+'\n'+paper.match(/function freshQuote\([^\n]+/)[0];
 function normalize(raw,ms,now,coinbase){
@@ -43,7 +44,7 @@ async function scan(job){
   saveSignal:async r=>save(r.manual?'manual-signals':'auto-signals',r.id,r),
   saveScalpHist:()=>{},
   paperSaveEntry:async(type,id,r)=>{r.generator='server-background';save(type,id,r);return true;},
-  __track:p=>pending.push(p),__save:save});
+  __track:p=>{pending.push(p);return p;},__save:save});
  function save(type,id,r){changes.set(type+'|'+id,{type,id:String(id),record:JSON.parse(JSON.stringify(r))});}
  vm.runInContext(source+`\n
  const SYMS=Object.keys(ASSETS),CAPITAL=100,LOT_HIGH=.02,LOT_MED=.01,SIGNAL_COOLDOWN_MS=180000;
@@ -53,7 +54,7 @@ async function scan(job){
  let signalHistory=job.history.filter(x=>x.type!=='low-profit').map(x=>x.record),scalpHist=job.history.filter(x=>x.type==='low-profit').map(x=>x.record);
  let scalpCfg={...SCALP_DEF,...job.config,assets:{...SCALP_DEF.assets,...job.config?.assets}};
  const basketDemo={enabled:!!job.basketEnabled,active:job.basketActive||null};
- let activeSignals={},sigCooldown={},lastSigCandleTs={},lastGuardToast={};
+ let activeSignals={},sigCooldown={},lastSigCandleTs={},lastGuardToast={},signalEntryPending={},signalEntryStatus={};
  for(const r of signalHistory){if(r.outcome==='OPEN')activeSignals[r.sym]=r.id;else sigCooldown[r.sym]=Math.max(sigCooldown[r.sym]||0,(r.closedAt||0)+SIGNAL_COOLDOWN_MS);}
  for(const sym of SYMS){
   const f=job.feeds[sym]||{};prices[sym]=f.price;quoteAt[sym]=f.quoteAt||0;ohlcData[sym]=f.bars||{};scalpData[sym]=f.five||[];

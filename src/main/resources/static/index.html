@@ -655,7 +655,7 @@ body{background:
 .hero-prev{width:100%;height:90px;border-radius:12px;border:1px dashed rgba(255,255,255,.15);background:rgba(255,255,255,.03) center/cover no-repeat;margin:8px 0;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--dim)}
 
 </style>
-<link rel="stylesheet" href="/workspace-ui.css?v=20261019-volume-trap">
+<link rel="stylesheet" href="/workspace-ui.css?v=20261020-context">
 <link rel="preload" as="video" href="happy.mp4" type="video/mp4"><link rel="preload" as="video" href="bull.mp4" type="video/mp4"><link rel="preload" as="video" href="bear.mp4" type="video/mp4">
 </head>
 <body>
@@ -1146,7 +1146,8 @@ body{background:
 <script src="/public-market-fetch.js?v=20261019-recovery"></script>
 <script src="/btc-feed.js?v=20261019-recovery"></script>
 <script src="/reference-feed.js?v=20261017-2"></script>
-<script src="/paper-engine.js?v=20261019-readiness"></script>
+<script src="/market-context.js?v=20261020-context"></script>
+<script src="/paper-engine.js?v=20261020-context"></script>
 <script src="/basket-demo.js?v=20261019-recovery"></script>
 <script src="/basket-replay.js?v=20261017-1"></script>
 <script>
@@ -2118,8 +2119,9 @@ function kmrSmartScan(candles15,h1,h4,ctx){
   const r=rsi(C,14),m=macd(C),dmi=kmrAdx(c,14);
   const st=kmrStructure(c);
   const vp=kmrVolumePressure(c,20);
+  const evidence=typeof MarketContext==='undefined'?null:MarketContext.analyze(c,{step:900000,now:ctx.now});
   const b1=kmrTfBias(h1),b4=kmrTfBias(h4);
-  Object.assign(out,{price,atrV,atrPct,e20,e50,e200,rsi:r,macd:m,adx:dmi,structure:st,vp,bias1h:b1,bias4h:b4});
+  Object.assign(out,{price,atrV,atrPct,e20,e50,e200,rsi:r,macd:m,adx:dmi,structure:st,vp,evidence,bias1h:b1,bias4h:b4});
 
   // ── DIRECTION: decided by the higher timeframes, never by the 15m alone ──
   let dir=null;
@@ -2151,7 +2153,8 @@ function kmrSmartScan(candles15,h1,h4,ctx){
   const rollover=ctx.isMetal&&ctx.istHour>=2&&ctx.istHour<4;
   gate('roll',!rollover,rollover?'Daily rollover hours (02:00–04:00 IST) — spreads widen':'Outside rollover hours','Wait until after 04:00 IST');
   const volAgainst=vp.ok&&dir&&((dir==='BUY'&&vp.buyPct<40)||(dir==='SELL'&&vp.buyPct>60));
-  gate('volm',!volAgainst,volAgainst?`Volume says the opposite: ${vp.buyPct.toFixed(0)}% buying vs ${vp.sellPct.toFixed(0)}% selling`:'Volume not fighting the trade','Wait for volume to turn — the crowd is on the other side');
+  const volumeReady=evidence?evidence.ready&&evidence.volumeReady:vp.ok;
+  gate('volm',volumeReady&&!volAgainst,!volumeReady?'Usable traded volume is unavailable':volAgainst?`Volume says the opposite: ${vp.buyPct.toFixed(0)}% buying vs ${vp.sellPct.toFixed(0)}% selling`:'Volume not fighting the trade','Wait for volume to turn — the crowd is on the other side');
 
   // ── LOCATION + TRIGGER: a trader only enters at value, on a real trigger ──
   // Value = the pullback reached EMA20/EMA50 (within 0.6 ATR, measured on the bar's
@@ -2166,7 +2169,8 @@ function kmrSmartScan(candles15,h1,h4,ctx){
     const touched=lvl=>lvl!=null&&recent.some(k=>k.l<=lvl+atrV*0.6&&k.h>=lvl-atrV*0.6)&&(e50==null||sgn*(price-e50)>-atrV*0.5);
     ob=(ctx.obs||[]).find(o=>(dir==='BUY'?o.type==='BULL':o.type==='BEAR')&&price>=o.bottom-atrV*0.3&&price<=o.top+atrV*0.3)||null;
     swept=kmrSweep(c,dir,st);
-    valueZone=touched(e20)?'EMA20':touched(e50)?'EMA50':ob?'order block':swept?'liquidity sweep':null;
+    const concept=evidence?.ready&&evidence.concepts.find(x=>x.active&&x.dir===dir&&['Fair value gap retest','Inverted FVG retest','Order block retest','Liquidity sweep'].includes(x.name));
+    valueZone=touched(e20)?'EMA20':touched(e50)?'EMA50':ob?'order block':swept?'liquidity sweep':concept?concept.name:null;
     const body=Math.abs(last.c-last.o),rng=Math.max(last.h-last.l,1e-9);
     const lowerWick=Math.min(last.o,last.c)-last.l,upperWick=last.h-Math.max(last.o,last.c);
     rejection=dir==='BUY'?lowerWick>=body*1.5&&lowerWick>=rng*0.4:upperWick>=body*1.5&&upperWick>=rng*0.4;
@@ -2174,7 +2178,8 @@ function kmrSmartScan(candles15,h1,h4,ctx){
   }
   const lostE50=dir&&e50!=null&&sgn*(price-e50)<=-atrV*0.5;
   gate('value',!!valueZone,valueZone?`At value: ${valueZone}`:lostE50?`Closed ${dir==='BUY'?'below':'above'} EMA50 — the pullback broke the trend line`:'Price is not at a value zone (EMA20/50, order block or sweep)',lostE50?`Wait for a close back ${dir==='BUY'?'above':'below'} EMA50 ≈ ${e50.toFixed(ctx.dec)} before entering`:dir&&e20?`Wait for a pullback to EMA20 ≈ ${e20.toFixed(ctx.dec)}${e50?` or EMA50 ≈ ${e50.toFixed(ctx.dec)}`:''}`:'Wait for a pullback');
-  gate('trigger',rejection||closeWith,rejection?'Trigger: rejection wick':closeWith?'Trigger: candle closed in trade direction':'No trigger candle yet','Wait for a rejection wick or a candle that closes in the trade direction');
+  const patternTrigger=!!(dir&&evidence?.ready&&evidence.entryData&&evidence.volumeReady&&(dir==='BUY'?evidence.triggerBuy:evidence.triggerSell));
+  gate('trigger',rejection||closeWith||patternTrigger,patternTrigger&&!rejection&&!closeWith?'Trigger: confirmed '+evidence.patterns.find(p=>p.confirmed&&p.dir===dir)?.name:rejection?'Trigger: rejection wick':closeWith?'Trigger: candle closed in trade direction':'No trigger candle yet','Wait for a rejection wick or a candle that closes in the trade direction');
   gate('struct',st.state!==(dir==='BUY'?'BEAR':'BULL'),`15m structure ${st.state}`,'15m structure is against the higher timeframe — wait for it to turn');
 
   // ── SCORED FACTORS (0–100): how GOOD the setup is, once it's allowed at all ──
@@ -2185,7 +2190,7 @@ function kmrSmartScan(candles15,h1,h4,ctx){
     s+=f(b1===want?15:0,15,`1H trend ${b1||'—'}`);
     s+=f(st.state===want?15:st.state==='MIXED'?5:0,15,`15m structure ${st.state==='BULL'?'higher highs & lows':st.state==='BEAR'?'lower highs & lows':st.state.toLowerCase()}`);
     s+=f(valueZone?15:0,15,valueZone?`Pullback into value (${valueZone})`:'Not at a value zone');
-    s+=f(rejection?10:closeWith?8:0,10,rejection?'Rejection wick trigger':closeWith?'Candle closed in trade direction':'No trigger candle yet');
+    s+=f(rejection?10:closeWith||patternTrigger?8:0,10,rejection?'Rejection wick trigger':closeWith?'Candle closed in trade direction':patternTrigger?'Confirmed contextual candlestick trigger':'No trigger candle yet');
     // Momentum: MACD histogram on our side and not fading, RSI on our side of 50
     const histOk=m&&sgn*m.hist>0,histRising=m&&m.prevHist!=null&&sgn*(m.hist-m.prevHist)>0;
     const rsiSide=r!=null&&sgn*(r-50)>0;
@@ -2226,7 +2231,7 @@ function kmrTradePlan(scan,dec){
   let sl=swing!=null?swing-sgn*atrV*0.3:entry-sgn*atrV*1.5;
   let risk=sgn*(entry-sl);
   if(risk<atrV*1.0){sl=entry-sgn*atrV*1.0;risk=atrV*1.0;}
-  if(risk>atrV*2.5){sl=entry-sgn*atrV*2.5;risk=atrV*2.5;}
+  // Preserve the structural invalidation. Account risk checks may reject a wide stop.
   const opp=dir==='BUY'?structure.H.map(p=>p.p).filter(p=>p>entry+risk*1.3):structure.L.map(p=>p.p).filter(p=>p<entry-risk*1.3);
   const liq=opp.length?(dir==='BUY'?Math.min(...opp):Math.max(...opp)):null;
   const tp1=entry+sgn*risk*1.0;
@@ -2252,8 +2257,8 @@ function kmrBacktest(all,opts){
   if(!all||all.length<260)return{ok:false,reason:`Only ${all?all.length:0} candles loaded — need 260+`};
   let i=200;
   while(i<all.length-2){
-    const win=all.slice(0,i+1),t=win[i].t;
-    const s=kmrSmartScan(win,kmrAgg(win,1),kmrAgg(win,4),{tune,obs:[],events:[],now:t,istHour:((t/3600000+5.5)%24),isMetal,dec});
+    const win=all.slice(0,i+1),t=win[i].t+900000;
+    const s=kmrSmartScan(win,kmrAgg(win,1).filter(k=>k.t+3600000<=t),kmrAgg(win,4).filter(k=>k.t+14400000<=t),{tune,obs:[],events:[],now:t,istHour:((t/3600000+5.5)%24),isMetal,dec});
     if(!s.tier){i++;continue;}
     const pl=kmrTradePlan(s,dec),sgn=pl.dir==='BUY'?1:-1;
     let f=i;
@@ -2354,19 +2359,21 @@ function runManualAnalysis(sym){
   if(candles.some(k=>k.analysisOnly))return{ready:false,referenceOnly:true,reason:'Delayed futures reference loaded. Volume and trend analysis are available; entry/SL/TP plans require fresh spot/broker candles. '+KMR_VOL_SOURCE[sym]};
   if(!candles||candles.length<60||live==null)return{ready:false,reason:'Still gathering candle history for this asset — try again in a moment.'};
   const s=kmrScan(sym,candles);
-  const entryBlock=!freshQuote(sym)?'Fresh quote unavailable — plan only':Date.now()-candles.at(-1).t>30*60e3?'Candle history stale — plan only; new entries paused':!calendarReady()?'Economic calendar unavailable — plan only; new entries paused':null;
-  const tier=entryBlock?null:s.tier;
+  let entryBlock=!freshQuote(sym)?'Fresh quote unavailable — plan only':Date.now()-candles.at(-1).t>30*60e3?'Candle history stale — plan only; new entries paused':!calendarReady()?'Economic calendar unavailable — plan only; new entries paused':!paperReady()?'Engine ownership/synchronization required — plan only':null;
+  let tier=entryBlock?null:s.tier;
   const fdir=s.dir||(s.bias1h==='BULL'?'BUY':s.bias1h==='BEAR'?'SELL':s.structure.state==='BULL'?'BUY':s.structure.state==='BEAR'?'SELL':(s.e50!=null&&s.price<s.e50?'SELL':'BUY'));
   const plan=kmrTradePlan({...s,dir:fdir,price:live},ASSETS[sym].dec);
+  const risk=paperAccountRisk(sym,fdir,plan.entry,plan.sl,.01*ASSETS[sym].contractSz);
+  if(!entryBlock&&!risk.ok){entryBlock=risk.reason;tier=null;}
   const lv=keyLevels(sym);
   const h1=kmrClosed(ohlcData[sym]['1h']).map(k=>k.c);
   const fails=s.gates.filter(g=>!g.ok);
   return{
-    ready:true,tradeable:!entryBlock,quality:tier?'confirmed':'fallback',tier,dir:fdir,scan:s,plan,
+    ready:true,tradeable:!entryBlock&&!!tier,quality:tier?'confirmed':'fallback',tier,dir:fdir,scan:s,plan,
     entry:plan.entry,sl:plan.sl,tp:plan.tp2,tp1:plan.tp1,tp2:plan.tp2,tp3:plan.tp3,rr:plan.rr,atrVal:s.atrV,
     nearestSup:lv.sup[0]||null,nearestRes:lv.res[0]||null,relevantOB:s.ob,
     bias4h:s.bias4h,bias1h:s.bias1h,rsi1h:h1.length>15?rsi(h1,14):null,macd1h:h1.length>40?macd(h1):null,
-    reason:entryBlock||(s.tier?s.reason:(fails.map(g=>g.label).join(' · ')||s.reason)),wait:entryBlock?'Wait for fresh quotes and a validated news schedule':s.wait,
+    reason:entryBlock||(s.tier?s.reason:(fails.map(g=>g.label).join(' · ')||s.reason)),wait:entryBlock?'Resolve the entry blocker above; do not force a tighter stop':s.wait,
   };
 }
 
@@ -3069,7 +3076,7 @@ async function runManualFor(sym){
     // from whenever the app was last idle on a different tab.
     await Promise.all([fetchLiveCrypto(),fetchLiveMetals()]);
     manualResults[sym]=runManualAnalysis(sym);
-    if(currentUser&&currentUser.role!=='guest')riyanQueue('manual-signals',sym+'-'+Date.now(),{...manualResults[sym],symbol:sym,generatedAt:Date.now(),generator:currentUser.username,source:'manual-analysis'});
+    if(currentUser&&currentUser.role!=='guest')riyanQueue('manual-plans',currentUser.username+':'+sym+'-'+Date.now(),{...manualResults[sym],symbol:sym,generatedAt:Date.now(),generator:currentUser.username,source:'manual-analysis'});
   }finally{
     if(btn){btn.disabled=false;btn.textContent='🧭 Analyze';}
     renderManualTab();
@@ -3083,7 +3090,7 @@ function manualResultBodyHtml(sym,res){
   if(!res.ready)return`<div class="kmr-empty"><div class="kmr-spinner"></div>${res.reason}</div>`;
   const sc=res.scan,p=res.plan,conf=res.tradeable!==false&&res.quality==='confirmed',dec=ASSETS[sym].dec;
   const col=res.dir==='BUY'?'var(--grn)':'var(--red)';
-  const u1=0.01*ASSETS[sym].contractSz,risk1=p.risk*u1,risk2=risk1*2;
+  const u1=0.01*ASSETS[sym].contractSz,risk1=(p.risk+(SPREAD[sym]||0))*u1;
   let h=`<div class="plan-top">${kmrRing(sc?sc.score:0,conf?(res.dir==='BUY'?'#22c55e':'#ef4444'):'#e8a33d',86)}
     <div class="plan-hd"><div class="plan-badges"><span class="sig-badge ${res.dir==='BUY'?'sig-buy':'sig-sell'}">${res.dir}</span>${conf?`<span class="badge-high">✓ ${res.tier} · CONFIRMED</span>`:`<span class="badge-med plan-lc">⚠ LOWER CONFIDENCE</span>`}</div>
     <div class="plan-sub">${res.tradeable===false?'PLAN ONLY — new entries paused':p.entryType==='LIMIT'?'⏳ Place a LIMIT order':'⚡ MARKET entry now'} · R:R 1:${res.rr.toFixed(1)}</div>
@@ -3097,7 +3104,7 @@ function manualResultBodyHtml(sym,res){
     ${row('TP2',p.tp2,p.tp2Why+' · bank 30%','tp')}
     ${row('TP3 · runner',p.tp3,'Last 20% — let the trend pay','tp')}
   </div>`;
-  h+=`<div class="plan-risk">Risk per trade: <b>$${risk1.toFixed(2)}</b> at 0.01 lot · <b>$${risk2.toFixed(2)}</b> at 0.02 lot${risk1>MAX_RISK_USD?` <span class="dn">— above your $${MAX_RISK_USD} max; size down or skip</span>`:''}</div>`;
+  h+=`<div class="plan-risk">Risk per trade: <b>$${risk1.toFixed(2)}</b> at 0.01 lot after modeled spread${risk1>MAX_RISK_USD?` <span class="dn">— above your $${MAX_RISK_USD} max; wait for a closer valid entry or skip</span>`:''}</div>`;
   h+=`<div class="plan-inval">❌ The idea is <b>wrong</b> if price trades ${res.dir==='BUY'?'below':'above'} <b>${fmtP(sym,p.invalid)}</b> — exit, don't hope.</div>`;
   if(sc)h+=`<div class="plan-story">🧠 ${kmrTrendStory(sc,sym)}</div>`;
   if(sc&&sc.gates.length){
@@ -3111,7 +3118,7 @@ function manualResultBodyHtml(sym,res){
   if(res.nearestRes!=null)lv.push(`<div class="lvl-row"><span class="lvl-tag res">RESISTANCE</span><span>${fmtP(sym,res.nearestRes)}</span></div>`);
   if(res.relevantOB)lv.push(`<div class="lvl-row"><span class="lvl-tag ${res.relevantOB.type==='BULL'?'ob-bull':'ob-bear'}">${res.relevantOB.type==='BULL'?'BULLISH OB':'BEARISH OB'}</span><span>${fmtP(sym,res.relevantOB.bottom)}–${fmtP(sym,res.relevantOB.top)}</span></div>`);
   if(lv.length)h+=`<div class="plan-sec">KEY LEVELS</div>`+lv.join('');
-  h+=kmrVolumeCardHtml(sym,true);
+  h+=kmrVolumeCardHtml(sym,true)+marketEvidenceHtml(sc?.evidence,sym);
   h+=`<div class="vp-src" style="margin-top:6px">4H ${res.bias4h||'—'} · 1H ${res.bias1h||'—'} · RSI(1H) ${res.rsi1h!=null?res.rsi1h.toFixed(0):'—'} · ATR(14) ${fmtP(sym,res.atrVal)}. Probabilities, not promises — always respect the stop.</div>`;
   return h;
 }
@@ -3969,8 +3976,9 @@ function kmrLevelSetup(c,ctx={}){
   const range=last.h-last.l,upper=last.h-Math.max(last.o,last.c),lower=Math.min(last.o,last.c)-last.l;
   const sell=out.zones.resistance.filter(z=>last.h>=z.low-0.1*A&&last.c<z.level&&prev.c<=z.high+0.2*A&&last.c>=z.level-0.8*A);
   const buy=out.zones.support.filter(z=>last.l<=z.high+0.1*A&&last.c>z.level&&prev.c>=z.low-0.2*A&&last.c<=z.level+0.8*A);
-  const bearish=range>0&&last.c<last.o&&upper/range>=0.35&&(last.c-last.l)/range<=0.35;
-  const bullish=range>0&&last.c>last.o&&lower/range>=0.35&&(last.c-last.l)/range>=0.65;
+  const evidence=typeof MarketContext==='undefined'?null:MarketContext.analyze(closed,{now,step:300000});out.evidence=evidence;
+  const bearish=range>0&&last.c<last.o&&((upper/range>=0.35&&(last.c-last.l)/range<=0.35)||(evidence?.entryData&&evidence.volumeReady&&evidence.triggerSell));
+  const bullish=range>0&&last.c>last.o&&((lower/range>=0.35&&(last.c-last.l)/range>=0.65)||(evidence?.entryData&&evidence.volumeReady&&evidence.triggerBuy));
   const z=bearish?sell.at(-1):bullish?buy[0]:null,dir=z?(bearish?'SELL':'BUY'):null;
   gate(!!z,'Repeated level touched and rejected by a directional closed candle');
   gate(out.relVol!=null&&out.relVol>=1.2,'Trigger volume at least 1.2× its prior 20-bar average');
@@ -4022,7 +4030,8 @@ function scalpScan(sym,c5,c15,h1,ctx){
   const vols=c5.slice(-21,-1).map(k=>k.v||0),vAvg=vols.reduce((a,b)=>a+b,0)/Math.max(1,vols.length);
   const relVol=vAvg?(last.v||0)/vAvg:1;
   const spread=ctx.spread,dec=ctx.dec;
-  Object.assign(out,{A,trend,adx,rsi7:r7[3],e9:e9[n],e21:e21[n],bb,b1,price:last.c,relVol,barT:last.t});
+  const evidence=typeof MarketContext==='undefined'?null:MarketContext.analyze(c5,{step:300000,now:ctx.now});
+  Object.assign(out,{evidence,A,trend,adx,rsi7:r7[3],e9:e9[n],e21:e21[n],bb,b1,price:last.c,relVol,barT:last.t});
   // ── safety gates ──
   g(!ctx.isMetal||ctx.marketOpen,ctx.isMetal&&!ctx.marketOpen?'Metals market closed':'Market open');
   const ist=kmrIstHour(ctx.now);
@@ -4030,6 +4039,7 @@ function scalpScan(sym,c5,c15,h1,ctx){
   const ev=(ctx.events||[]).find(e=>e.ts>=ctx.now-15*60e3&&e.ts<=ctx.now+10*60e3);
   g(!ev,ev?`High-impact news: ${ev.title} ${ev2txt(ev,ctx.now)} — no scalps ±10/15 min`:'No high-impact news in the next 10 min');
   g(A>=2.5*spread,A>=2.5*spread?`5m range ${fmtP(sym,A)} vs spread ${fmtP(sym,spread)} — enough room`:`5m range ${fmtP(sym,A)} too small vs spread ${fmtP(sym,spread)} — dead market`);
+  g(c5.slice(-21).every(k=>Number.isFinite(k.v)&&k.v>0),'Usable traded volume on the last 21 closed 5m candles');
   g(last.h-last.l<=3*A,last.h-last.l>3*A?'Last 5m candle is a spike (>3× ATR) — let it settle':'No spike candle');
   g(ctx.now-last.t>=300e3&&ctx.now-last.t<=12*60e3,ctx.now-last.t>12*60e3?'5m data is stale — waiting for a fresh candle':'5m data fresh');
   if(ctx.newsReady===false)g(false,'Economic calendar unavailable or stale — new entries paused');
@@ -4040,14 +4050,14 @@ function scalpScan(sym,c5,c15,h1,ctx){
   // A — trend pullback
   if(trend==='BULL'&&e9[n]>e21[n]){
     const tagged=[n-2,n-1,n].some(i=>c5[i].l<=e21[i]+0.15*A);
-    const trig=(last.c>last.o&&last.c>e9[n]&&body/rng>=0.4)||(lw>=rng*0.5&&last.c>e21[n]);
+    const trig=(last.c>last.o&&last.c>e9[n]&&body/rng>=0.4)||(lw>=rng*0.5&&last.c>e21[n])||(evidence?.entryData&&evidence.volumeReady&&evidence.triggerBuy&&last.c>e9[n]&&relVol>=1);
     const rsiOk=minR<=50&&r7[3]>r7[2];
     const ext=(last.c-e21[n])/A;
     if(tagged&&trig&&rsiOk&&ext<=1.0){out.dir='BUY';out.setup='Trend pullback';out.why=['15m uptrend (EMA20 > EMA50)',`5m dipped to EMA21 ≈ ${fmtP(sym,e21[n])}`,last.c>last.o?'Bullish trigger candle closed above EMA9':'Hammer rejection off EMA21',`RSI7 turning up (${r7[2].toFixed(0)} → ${r7[3].toFixed(0)})`];}
     else out.look=tagged?'Uptrend + dip at EMA21 — waiting for a bullish trigger candle':`Uptrend — waiting for a dip to EMA21 ≈ ${fmtP(sym,e21[n])}`;
   }else if(trend==='BEAR'&&e9[n]<e21[n]){
     const tagged=[n-2,n-1,n].some(i=>c5[i].h>=e21[i]-0.15*A);
-    const trig=(last.c<last.o&&last.c<e9[n]&&body/rng>=0.4)||(uw>=rng*0.5&&last.c<e21[n]);
+    const trig=(last.c<last.o&&last.c<e9[n]&&body/rng>=0.4)||(uw>=rng*0.5&&last.c<e21[n])||(evidence?.entryData&&evidence.volumeReady&&evidence.triggerSell&&last.c<e9[n]&&relVol>=1);
     const rsiOk=maxR>=50&&r7[3]<r7[2];
     const ext=(e21[n]-last.c)/A;
     if(tagged&&trig&&rsiOk&&ext<=1.0){out.dir='SELL';out.setup='Trend pullback';out.why=['15m downtrend (EMA20 < EMA50)',`5m rallied to EMA21 ≈ ${fmtP(sym,e21[n])}`,last.c<last.o?'Bearish trigger candle closed below EMA9':'Shooting-star rejection off EMA21',`RSI7 turning down (${r7[2].toFixed(0)} → ${r7[3].toFixed(0)})`];}
@@ -4173,14 +4183,17 @@ function scalpEvaluate(sym){
   // Existing baseline positions still receive their normal stop/TP management.
   if(basketDemo.enabled||basketDemo.active)return;
   if(!scan.dir||!scan.gatesOk||st.block||live==null)return;
-  if(st.handledBar===scan.barT||scalpHist.some(t=>t.sym===sym&&t.lastBar===scan.barT))return;
-  st.handledBar=scan.barT;
+  if(st.entryPending||st.handledBar===scan.barT||scalpHist.some(t=>t.sym===sym&&t.lastBar===scan.barT))return;
+  st.note='';
   const sgn=scan.dir==='BUY'?1:-1,ran=sgn*(live-scan.price);
   if(ran>0.4*scan.A){st.note=`Missed a ${scan.dir} — price ran ${(ran/scan.A).toFixed(1)}× ATR before the check`;return;}
   if(ran<-0.5*scan.A){st.note=`Skipped a ${scan.dir} — price turned against it right after the candle closed`;return;}
   const lv=scalpLevels(sym,scan.dir,live,scan,c5,scalpCfg);
   if(lv.reject){st.note=lv.reject;return;}
-  scalpOpen(sym,scan,lv);
+  const account=paperAccountRisk(sym,scan.dir,live,lv.sl,lv.units);
+  if(!account.ok){st.note=account.reason;return;}
+  st.entryPending=true;
+  Promise.resolve(scalpOpen(sym,scan,lv)).then(accepted=>{if(accepted)st.handledBar=scan.barT;}).catch(()=>{st.note='Entry submission failed — ledger reconciliation required';if(typeof paperEngine!=='undefined')paperEngine.until=0;}).finally(()=>{st.entryPending=false;});
 }
 async function scalpOpen(sym,scan,lv){
   const t={id:Date.now()+Math.floor(Math.random()*1000),sym,dir:scan.dir,setup:scan.setup,reason:scan.setup,
@@ -4191,16 +4204,19 @@ async function scalpOpen(sym,scan,lv){
     strategyVersion:scan.strategyVersion||'v28-original',
     conditions:{closed5mBarAt:scan.barT,trend15m:scan.trend,ADX:scan.adx,RSI7:scan.rsi7,
       ATR5m:scan.A,relativeVolume:scan.relVol,gates:scan.gates,levelSetup:scan.levelSetup||null,ema9:scan.e9,
-      ema21:scan.e21,maxLoss:scalpCfg.maxLoss,target:scalpCfg.target}};
+      ema21:scan.e21,marketEvidence:marketEvidenceSnapshot(scan.evidence),maxLoss:scalpCfg.maxLoss,target:scalpCfg.target}};
   t.entryBar=scan.barT;t.owner=currentUser?.username;t.accountingVersion=2;t.updatedAt=t.t;
   t.spreadPerUnit=SPREAD[sym]||0;t.signalKey='scalp:'+sym+':5m:'+scan.barT+':'+scan.dir;
-  if(!await paperSaveEntry('low-profit',t.id,t))return;
+  if(!await paperSaveEntry('low-profit',t.id,t))return false;
+  try{
   scalpHist.unshift(t);saveScalpHist();
   const col=t.dir==='BUY'?'var(--grn)':'var(--red)';
   showToast(`💵 <b style="color:${col}">${t.dir}</b> ${ASSETS[sym].sym} scalp · ${t.lot} lot<br>TP ${fmtP(sym,t.tp)} (+$${t.tpUsd.toFixed(2)}) · SL ${fmtP(sym,t.sl)} (−$${t.slUsd.toFixed(2)})`,col);
   if(alertsEnabled){try{playBeep(t.dir);doVibrate(t.dir);}catch(e){}}
   scalpNotify(`💵 ${t.dir} ${ASSETS[sym].sym} scalp`,`Entry ${fmtP(sym,t.entry)} · TP ${fmtP(sym,t.tp)} (+$${t.tpUsd.toFixed(2)}) · SL ${fmtP(sym,t.sl)} (−$${t.slUsd.toFixed(2)})`);
   claimAlertOnce('kmr_scalp_'+t.id).then(ok=>{if(ok)sendTelegram(`<b>💵 LOW-PROFIT ${t.dir} — ${ASSETS[sym].sym}</b>\n\nEntry: ${fmtP(sym,t.entry)}\nTP: ${fmtP(sym,t.tp)} (+$${t.tpUsd.toFixed(2)})\nSL: ${fmtP(sym,t.sl)} (−$${t.slUsd.toFixed(2)})\nSize: ${t.lot} lot (${+(t.units).toFixed(3)} ${ASSETS[sym].lotUnit})\nSetup: ${t.setup}\n• ${t.why.join('\n• ')}\n\nStop → breakeven at 60% of TP · 45-min time stop`);}).catch(()=>{});
+  }catch(e){console.warn('Scalp accepted; optional display/notification update failed',e);}
+  return true;
 }
 function scalpNotify(title,body){try{if(window.Notification&&Notification.permission==='granted'&&navigator.serviceWorker)navigator.serviceWorker.ready.then(r=>r.showNotification('KMR · '+title,{body,tag:'kmr-scalp',renotify:true,icon:'icon-192.png',badge:'icon-192.png'}));}catch(e){}}
 function scalpClose(t,exit,why,at=Date.now()){
@@ -4403,6 +4419,7 @@ function renderScalpLive(){
       <div class="sc-look">${st.block?st.block:st.feedError?'⛔ '+st.feedError:fails.length?'⛔ '+fails[0].label:sc?(sc.dir?`✅ ${sc.setup}: ${sc.why.slice(0,2).join(' · ')}`:'👀 '+sc.look):'Loading…'}</div>
       ${pv?`<div class="sc-dim">${sc?.dir?'Setup risk preview':'Hypothetical only (no entry)'}: ${pv.lot} lot → TP +$${pv.tpUsd.toFixed(2)} / SL −$${pv.slUsd.toFixed(2)}</div>`:st.preview&&st.preview.reject?`<div class="sc-dim">⚠ ${st.preview.reject}</div>`:''}
       ${sc?.watch?`<div class="sc-dim">⚑ WATCH ONLY — ${sc.watch.dir==='NEUTRAL'?'Range: '+fmtP(s,sc.watch.lower)+'–'+fmtP(s,sc.watch.upper):(sc.watch.dir==='BUY'?'BUY if a closed 5m candle confirms above ':'SELL if a closed 5m candle confirms below ')+fmtP(s,sc.watch.level)} · ${sc.watch.note}</div>`:''}
+      ${sc?.evidence?.ready?`<div class="sc-dim">Volume momentum ${basketTxt(sc.evidence.momentum)} · ${basketTxt(sc.evidence.patterns.filter(p=>p.detected).map(p=>p.name).join(', ')||'No confirmed candle pattern')}</div>`:''}
       ${st.feedSource?`<div class="sc-dim">Source: ${st.feedSource}</div>`:''}
       ${st.note?`<div class="sc-dim">ℹ ${st.note}</div>`:''}
     </div></div>`;
@@ -4414,6 +4431,23 @@ function renderScalpLive(){
   else h+=`<div class="ic"><div class="ib">${recent.map(t=>`<div class="lvl-row"><span class="lvl-tag ${t.dir==='BUY'?'sup':'res'}">${t.dir}</span><span style="flex:1">${ICONS[t.sym]} ${ASSETS[t.sym].sym} <span class="sc-dim">${t.setup} · ${{TP:'TP',SL:'SL',BE:'BE',TIME:'time',MANUAL:'manual'}[t.status]||t.status} · ${new Date(t.closedAt||t.t).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</span></span><b class="${t.pnl>=0?'up':'dn'}">${t.pnl>=0?'+':'−'}$${Math.abs(t.pnl).toFixed(2)}</b></div>`).join('')}</div></div>`;
   el.innerHTML=h;
   renderBasketDemo();
+}
+
+function marketEvidenceHtml(e,sym,expanded=false){
+  if(!e?.ready)return `<div class="sc-dim">Pattern/volume context: ${basketTxt(e?.reason||'Collecting closed candles')}</div>`;
+  const detected=e.patterns.filter(p=>p.detected),active=e.concepts.filter(p=>p.active),num=n=>Number.isFinite(n)?n.toFixed(2):'Unavailable';
+  const summary=detected.length?detected.map(p=>p.name+(p.confirmed?' · confirmed close':' · needs confirmation')).join(' / '):'No contextual candlestick pattern on the latest close';
+  let h=`<div class="market-evidence"><div class="sc-row"><b>Volume momentum · ${basketTxt(e.momentum)}</b><span class="sc-dim">${e.relVol==null?'No usable volume':e.relVol.toFixed(2)+'× relative volume'}</span></div><p>${basketTxt(summary)}</p><div class="sc-ind"><span>Est. Δ <b>${num(e.delta)}</b></span><span>Est. CVD (60 bars) <b>${num(e.cvd)}</b></span><span>CMF 20 <b>${num(e.cmf)}</b></span><span>VWAP 20 <b>${Number.isFinite(e.vwap)?fmtP(sym,e.vwap):'Unavailable'}</b></span></div><p class="sc-dim">${basketTxt(e.divergence?e.divergence+' price/estimated-CVD divergence':'No price/estimated-CVD divergence')}${e.absorptionCandidate?' · High-volume rejection: absorption-like candidate, not proof of absorption':''}.</p><p class="sc-dim">${basketTxt(e.deltaMethod)}. Bid × ask at each price, stacked imbalances and true trade-side delta: unavailable from this candle feed.</p>`;
+  h+=`<details ${expanded?'open':''}><summary>Structure &amp; liquidity evidence · ${active.length} active</summary><div class="evidence-concepts">${e.concepts.map(c=>`<div class="cond ${c.active?'cond-yes':'cond-no'}"><b>${c.active?'✓':'·'} ${basketTxt(c.name)} · ${basketTxt(c.dir)}</b><div class="sc-dim">${basketTxt(c.detail)}${Number.isFinite(c.level)?' · '+fmtP(sym,c.level):''}</div></div>`).join('')}</div></details>`;
+  h+=`<details><summary>Candlestick library · ${e.patterns.length} definitions · ${detected.length} detected</summary><p class="sc-dim">Closed candles only. Reversal labels require prior trend context; single-bar reversals need a later confirming close. Star/piercing variants use non-gap FX adaptations. Indecision never authorizes an entry.</p><div class="evidence-table"><table><thead><tr><th>Pattern</th><th>Direction</th><th>Current evidence</th></tr></thead><tbody>${e.patterns.map(p=>`<tr><td>${basketTxt(p.name)}</td><td>${basketTxt(p.dir)}</td><td>${p.detected?p.confirmed?'Confirmed close':basketTxt(p.confirmation):'Not detected'}</td></tr>`).join('')}</tbody></table></div></details><p class="sc-dim">${basketTxt(e.note)}</p></div>`;
+  return h;
+}
+function volumeDeltaCandlesHtml(e,sym){
+  if(!e?.ready)return'';
+  const rows=e.rows.slice(-18),high=Math.max(...rows.map(k=>k.h)),low=Math.min(...rows.map(k=>k.l)),range=high-low||1,yp=v=>30+(high-v)/range*190;
+  const maxVol=Math.max(...rows.map(k=>k.v||0),1);
+  const candles=rows.map((k,i)=>{const x=65+i*48,color=k.c>=k.o?'#26c9b8':'#f2667d',b=Math.min(yp(k.o),yp(k.c)),height=Math.max(1,Math.abs(yp(k.o)-yp(k.c))),sign=k.delta>=0?'+':'';return `<line x1="${x}" y1="${yp(k.h).toFixed(1)}" x2="${x}" y2="${yp(k.l).toFixed(1)}" stroke="${color}"/><rect x="${x-10}" y="${b.toFixed(1)}" width="20" height="${height.toFixed(1)}" fill="${color}"/><text x="${x}" y="${Math.max(15,yp(k.h)-7).toFixed(1)}" text-anchor="middle" fill="${k.delta>=0?'#26c9b8':'#f2667d'}" font-size="9">${e.volumeReady?sign+k.delta.toFixed(0):'n/a'}</text><rect x="${x-10}" y="${(272-(k.v||0)/maxVol*35).toFixed(1)}" width="20" height="${((k.v||0)/maxVol*35).toFixed(1)}" fill="${color}" opacity=".5"/><text x="${x}" y="290" text-anchor="middle" fill="#a9bad8" font-size="8">${new Date(k.t).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit'})}</text>`;}).join('');
+  return `<div class="ic"><div class="ib"><b>Price + estimated candle delta</b><p class="sc-dim">Numbers above candles are estimated signed volume, not bid × ask footprints. Volume bars below; closed 5m candles only.</p><div class="delta-chart-scroll"><svg viewBox="0 0 960 305" role="img" aria-label="${ASSETS[sym].sym} closed candles with estimated delta and volume"><text x="7" y="35" fill="#a9bad8" font-size="10">${high.toFixed(ASSETS[sym].dec)}</text><text x="7" y="220" fill="#a9bad8" font-size="10">${low.toFixed(ASSETS[sym].dec)}</text>${candles}</svg></div></div></div>`;
 }
 
 // Volume Trap reuses the live scanner's candles; opening this page never creates an order.
@@ -4456,9 +4490,11 @@ function renderVolumeTrap(){
     ${pressure?.ok?`<div class="sc-dim">Estimated pressure: ${pressure.buyPct.toFixed(0)}% buy / ${pressure.sellPct.toFixed(0)}% sell · ${pressure.divergence||'No divergence'}</div>`:''}
     ${hasPlan?`<div class="sc-lvls"><span>Conditional ${model.dir} ${fmt(plan.entry)}</span><span>TP ${fmt(plan.tp)}</span><span>SL ${fmt(plan.sl)}</span></div><p class="sc-dim">0.01 lot · estimated reward +$${plan.tpUsd.toFixed(2)} / risk −$${plan.slUsd.toFixed(2)} · ${plan.rr.toFixed(2)}× net reward/risk. Candidate only; this page does not place entries.</p>`:'<p class="sc-dim">No executable plan until the level, candle, volume and risk checks pass.</p>'}
     <div class="cond-grid">${details}</div><p class="data-src">${basketTxt(st.feedSource||'Source unavailable')} · last closed 5m candle ${new Date(last.t).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit'})} IST</p></div></div>`;
+  const evidence=typeof MarketContext==='undefined'?null:MarketContext.analyze(c,{now,step:300000});
+  h+=marketEvidenceHtml(evidence,sym,true)+volumeDeltaCandlesHtml(evidence,sym);
   const rsiValues=[],adxValues=[],atrValues=[];
   for(let i=Math.max(30,c.length-48);i<c.length;i++){const w=c.slice(Math.max(0,i-80),i+1);rsiValues.push(rsi(w.map(k=>k.c),14));adxValues.push(kmrAdx(w)?.adx);atrValues.push(atr(w));}
-  h+='<div class="volume-trap-charts">'+volumeTrapChart(c.map(k=>k.v),'Traded volume','#38baff',true)+volumeTrapChart(rsiValues,'RSI 14','var(--acc)')+volumeTrapChart(adxValues,'ADX 14 · 5m','var(--grn)')+volumeTrapChart(atrValues,'ATR 14 · 5m','var(--red)')+'</div>';
+  h+='<div class="volume-trap-charts">'+volumeTrapChart(c.map(k=>k.v),'Traded volume','#38baff',true)+volumeTrapChart(rsiValues,'RSI 14','var(--acc)')+volumeTrapChart(adxValues,'ADX 14 · 5m','var(--grn)')+volumeTrapChart(atrValues,'ATR 14 · 5m','var(--red)')+volumeTrapChart(evidence?.volumeReady?evidence.rows.map(k=>k.cvd):[],'Estimated cumulative delta','#a58bff')+volumeTrapChart(evidence?.volumeReady?evidence.rows.map(k=>k.obv):[],'OBV','#38baff')+'</div>';
   el.innerHTML=h;
 }
 
@@ -4606,6 +4642,54 @@ function calcPos(sym,price,dir,candles,lot,atrVal,sr){
 // (Previously signals were only computed when the Signals tab was visible, which is
 // why Telegram/Email alerts often never fired.)
 let lastGuardToast={};
+let signalEntryPending={},signalEntryStatus={};
+function marketEvidenceSnapshot(e){
+  if(!e?.ready)return null;
+  return{version:'context-v1',lastAt:e.lastAt,entryData:e.entryData,momentum:e.momentum,relVol:e.relVol,delta:e.delta,cvd:e.cvd,cmf:e.cmf,vwap:e.vwap,obv:e.obv,pressure:e.pressure,divergence:e.divergence,deltaMethod:e.deltaMethod,footprintAvailable:false,patterns:e.patterns.filter(p=>p.detected).map(p=>({name:p.name,dir:p.dir,confirmed:p.confirmed,confirmation:p.confirmation})),concepts:e.concepts.filter(c=>c.active)};
+}
+
+// Same read-only account preflight for Auto, Manual and Low Profit. Server remains authoritative.
+function paperAccountRisk(sym,dir,entry,sl,units,now=Date.now()){
+  const open=[],today=istDayKey(now);let dayNet=0;
+  const records=[...signalHistory,...scalpHist,...(basketDemo.active?.positions||[])];
+  if(basketDemo.active&&typeof basketDemo.active!=='object')return{ok:false,reason:'Open basket risk must be synchronized before another entry'};
+  for(const r of records){
+    const status=r.outcome||r.status;
+    if(status==='OPEN'){
+      const e=r.entry??r.price,stop=r.slNow??r.sl,u=r.units??r.posUnits,cost=SPREAD[r.sym];
+      const risk=((e-stop)*(r.dir==='BUY'?1:-1)+cost)*u;
+      if(!Number.isFinite(risk))return{ok:false,reason:'Existing open trade risk cannot be verified'};
+      open.push(Math.max(0,risk));
+    }else if(status&&istDayKey(r.closedAt??r.ts??r.t)===today){const net=r.pnlUsd??r.pnl;if(Number.isFinite(net))dayNet+=net;}
+  }
+  const planned=((entry-sl)*(dir==='BUY'?1:-1)+(SPREAD[sym]||0))*units,total=planned+open.reduce((a,b)=>a+b,0);
+  if(!['BUY','SELL'].includes(dir)||!Number.isFinite(entry)||entry<=0||!Number.isFinite(sl)||sl<=0||!Number.isFinite(units)||units<=0||!Number.isFinite(planned)||planned<=0||(entry-sl)*(dir==='BUY'?1:-1)<=0)return{ok:false,reason:'Invalid structural stop or risk inputs'};
+  if(planned>4.000001)return{ok:false,reason:`Structural stop needs $${planned.toFixed(2)} risk at 0.01 lot; account limit is $4.00. Wait for a closer entry; stop is not tightened to force a trade.`};
+  if(open.length>=5)return{ok:false,reason:'Five paper positions already open'};
+  if(dayNet<=-8||total>8+dayNet)return{ok:false,reason:'Account daily loss budget would be exceeded'};
+  if(total>4.000001)return{ok:false,reason:`Combined open risk $${total.toFixed(2)} exceeds $4.00 account limit`};
+  return{ok:true,planned,total,dayNet,positions:open.length};
+}
+function autoEntryCheck(sym,sig,manual=false){
+  if(!sig?.smart?.tier||sig.state==='WAIT')return{ok:false,reason:sig?.reason||'Waiting for technical confirmation'};
+  if(!paperReady())return{ok:false,reason:typeof paperEngine==='undefined'?'Engine ownership required':paperEngine.reason};
+  if(!freshQuote(sym)||!calendarReady())return{ok:false,reason:'Fresh quote and validated news schedule required'};
+  if(sym!=='BTCUSD'&&!isMetalsMarketOpen())return{ok:false,reason:'Metals market closed'};
+  if(activeSignals[sym])return{ok:false,reason:'A paper signal is already open on this asset'};
+  if(Date.now()<(sigCooldown[sym]||0)&&sig.confidence!=='HIGH'&&!manual)return{ok:false,reason:'Cooldown after the last closed signal'};
+  const bar=sig.candles?.at(-1)?.t;
+  if(signalEntryPending[sym]?.owner===currentUser.username)return{ok:false,reason:'Submitting setup — waiting for server acceptance'};
+  if(bar&&(lastSigCandleTs[sym]===bar||signalHistory.some(r=>r.signalKey==='auto:'+sym+':15m:'+bar+':'+sig.state)))return{ok:false,reason:'This confirmed candle already has an accepted entry'};
+  const plan=kmrTradePlan({...sig.smart,price:prices[sym]},ASSETS[sym].dec);
+  if(!plan)return{ok:false,reason:'No valid structural plan'};
+  const ran=(sig.state==='BUY'?1:-1)*(prices[sym]-sig.price);
+  if(ran>plan.risk*.5)return{ok:false,reason:'Price ran beyond the entry zone — no chasing'};
+  if(ran<-(sig.atrVal||sig.smart.atrV)*.6)return{ok:false,reason:'Price moved against the closed-candle setup'};
+  if(plan.entryType==='LIMIT')return{ok:false,reason:`Wait for pullback to ${fmtP(sym,plan.entry)}; no market entry while stretched`};
+  const risk=paperAccountRisk(sym,sig.state,prices[sym],plan.sl,.01*ASSETS[sym].contractSz);
+  return{ok:risk.ok,reason:risk.ok?'Technical setup passed; awaiting server acceptance':risk.reason,plan,risk};
+}
+
 function evaluateSignals(manual){
   if(!currentUser||!paperReady())return;
   const fired=[];
@@ -4628,6 +4712,7 @@ function evaluateSignals(manual){
       delete activeSignals[sym];saveSigMeta();
     }
     const sig=scan;
+    if(signalEntryPending[sym]?.owner===currentUser.username)return;
     // Metals market closed (weekend) — never open a NEW trade on XAU/XAG while closed.
     // Already-open positions keep being tracked/managed as normal (no forced closure);
     // this only blocks fresh entries. BTC is exempt — it trades 24/7.
@@ -4655,6 +4740,8 @@ function evaluateSignals(manual){
       // every 5 s — that is why no signal fired. Now the Engine v3 plan is rebuilt from the
       // live quote: the stop stays at the structural level, targets keep their R multiples.
       // It only skips if price already ran more than half-way to TP1, or broke the stop zone.
+      const approval=autoEntryCheck(sym,sig,!!manual);
+      if(!approval.ok){signalEntryStatus[sym]={bar:sig.candles.at(-1)?.t,reason:approval.reason};return;}
       const liveEntry=prices[sym];
       const atrV=sig.atrVal||atr(sig.candles)||sig.price*0.001;
       const guardMsg=msg=>{if(lastGuardToast[sym]!==candleTs){lastGuardToast[sym]=candleTs;showToast(msg,'#e8a33d');}};
@@ -4675,9 +4762,13 @@ function evaluateSignals(manual){
       if(pos.volLevel==='red'){
         showToast(`🔴 ${sig.state} ${ASSETS[sym].sym} — high volatility (ATR ${pos.atrPct.toFixed(2)}%), standard ${pos.lot} lot`,'var(--red)');
       }
-      if(candleTs)lastSigCandleTs[sym]=candleTs;
-      recordSignal(sym,triggerSig,pos,!!manual); // locks levels + fires all alerts
-      fired.push(sym);
+      const owner=currentUser.username,pendingToken={owner,bar:candleTs};signalEntryPending[sym]=pendingToken;
+      const submission=recordSignal(sym,triggerSig,pos,!!manual);
+      Promise.resolve(submission).then(accepted=>{
+        if(currentUser?.username!==owner)return;
+        if(accepted){if(candleTs)lastSigCandleTs[sym]=candleTs;fired.push(sym);delete signalEntryStatus[sym];}
+        else signalEntryStatus[sym]={bar:candleTs,reason:typeof paperEngine==='undefined'?'Server entry not accepted':paperEngine.reason};
+      }).catch(e=>{if(currentUser?.username===owner)signalEntryStatus[sym]={bar:candleTs,reason:'Entry submission failed; reconciling ledger'};}).finally(()=>{if(signalEntryPending[sym]===pendingToken)delete signalEntryPending[sym];});
     }
   });
   return fired;
@@ -4792,7 +4883,8 @@ function signalQuality(sig,sym){
     const sm=sig.smart,score=sm?sm.score:sig.smartScore;
     const gk=k=>sm?sm.gates.find(g=>g.key===k):null;
     const c=(lbl,g)=>[lbl,g==null?'warn':g.ok?'ok':'bad'];
-    const chips=sm?[[sm.tier?sm.dir:'WAIT',sm.tier?'ok':'warn'],c('HTF',gk('htf')),c('TREND',gk('adx')),c('VALUE',gk('value')),c('TRIGGER',gk('trigger')),c('VOLUME',gk('volm')),c('NEWS',gk('news')),c('NO CHASE',gk('ext'))]:[[sig.state,'ok'],['ENGINE v3','ok']];
+    const names={htf:'HTF',adx:'TREND',vol:'VOLATILITY',ext:'NO CHASE',spike:'NO SPIKE',rsi:'RSI',news:'NEWS',roll:'ROLLOVER',volm:'VOLUME',value:'VALUE',trigger:'TRIGGER',struct:'STRUCTURE'};
+    const chips=sm?[[sm.tier?sm.dir:'WAIT',sm.tier?'ok':'warn'],...sm.gates.map(g=>c(names[g.key]||g.key.toUpperCase(),g))]:[[sig.state,'ok'],['ENGINE v3','ok']];
     const label=score>=84?'A+ CLEAN':score>=70?'A GOOD':score>=55?'B WATCH':score>=40?'C WEAK':'D AVOID';
     return{score,label,trigger:!sm||sm.gatesOk?'READY':'WAIT',gatesOk:sm?sm.gatesOk:true,chips};
   }
@@ -4806,11 +4898,13 @@ function signalQuality(sig,sym){
   return{score,label,trigger,chips:[[sig.state==='WAIT'?'WAIT':sig.state,sig.state==='WAIT'?'warn':'ok'],[`${passed}/6 SETUP`,passed>=5?'ok':passed>=4?'warn':'bad'],['1H',h1?(h1===desired?'ok':'bad'):'bad'],['4H',h4?(h4===desired?'ok':'bad'):'bad'],['VOL',volOk?'ok':'bad'],['TRIGGER',trigger==='READY'?'ok':trigger==='MOVED'?'bad':'warn']]};
 }
 function qualityMeterHtml(sig,sym){
-  const q=signalQuality(sig,sym),state=q.gatesOk===false?'STAND ASIDE':q.score>=70?'TRADE-READY':q.score>=55?'WAIT / WATCH':'AVOID',chips=q.chips.map(x=>`<div class="quality-chip ${x[1]}">${x[0]}</div>`).join('');
+  const q=signalQuality(sig,sym),state=q.gatesOk===false?'STAND ASIDE':q.score>=70?'TECHNICAL SETUP':q.score>=55?'WAIT / WATCH':'AVOID',chips=q.chips.map(x=>`<div class="quality-chip ${x[1]}">${x[0]}</div>`).join('');
   return `<div class="quality-card"><div class="quality-head"><span class="quality-title">KMR SIGNAL QUALITY · ENGINE v3</span><span class="quality-score">${q.score}/100</span></div><div class="quality-track"><div class="quality-fill" style="width:${q.score}%"></div></div><div class="quality-foot"><span class="quality-state">${state}</span><span>${q.label}</span></div><div class="quality-grid">${chips}</div><div style="margin-top:10px;font-size:11px;color:var(--mut)">Setup quality, not win probability. ${q.gatesOk===false?'Entry blocked: required gates have not all passed.':'Entry also requires current data, engine ownership and account risk approval.'}</div></div>`;
 }
 function waitCard(sym,a,sig,isAdmin){
-  const cooling=Date.now()<(sigCooldown[sym]||0);
+  const approval=sig.smart?.tier?autoEntryCheck(sym,sig):null;
+  const entryReason=approval&&!approval.ok?approval.reason:sig.smart?.tier?'All technical gates passed; an entry appears only after server acceptance':null;
+  const cooling=Date.now()<(sigCooldown[sym]||0)&&sig.confidence!=='HIGH';
   const coolTxt=cooling?`⏸ Cooldown — ${Math.ceil(((sigCooldown[sym]||0)-Date.now())/60000)}m until next setup scan`:null;
   const barCol=sig.score>=5?'var(--grn)':sig.score>=3?'var(--acc)':'var(--dim)';
   const rsiTag=sig.rsiVal?`<span style="font-size:10px;color:var(--mut);font-family:'JetBrains Mono',monospace"> · RSI ${sig.rsiVal.toFixed(0)}</span>`:'';
@@ -4826,13 +4920,14 @@ function waitCard(sym,a,sig,isAdmin){
   }else{
     body=qualityMeterHtml(sig,sym)+`<div style="text-align:center;font-size:11px;color:var(--dim);padding:6px 0">${coolTxt||'Waiting for a confirmed setup'}</div>`;
   }
+  body+=marketEvidenceHtml(sig.smart?.evidence,sym);
   if(sig.smart&&!coolTxt){
-    body+=`<div class="wait-why"><b>Standing aside because:</b> ${sig.reason||'—'}${sig.wait?`<br><b>Waiting for:</b> ${sig.wait}`:''}</div><div class="plan-story">🧠 ${kmrTrendStory(sig.smart,sym)}</div>`;
+    body+=`<div class="wait-why"><b>${sig.smart.tier?'Entry status:':'Standing aside because:'}</b> ${basketTxt(entryReason||sig.reason||'—')}${sig.wait?`<br><b>Waiting for:</b> ${sig.wait}`:''}</div><div class="plan-story">🧠 ${kmrTrendStory(sig.smart,sym)}</div>`;
   }
   return `<div class="sig-card">
     <div class="sig-hdr">
       <div class="sig-left"><span style="font-size:16px">${ICONS[sym]}</span><div><div class="sig-sym">${a.sym}</div><div class="sig-price">${prices[sym]?fmtP(sym,prices[sym]):'—'}${isAdmin?rsiTag:''}</div></div></div>
-      <div class="sig-badge sig-wait">WAIT</div>
+      <div class="sig-badge sig-wait">${sig.smart?.tier?sig.state+' SETUP':'WAIT'}</div>
     </div>
     ${body}
   </div>`;
@@ -4995,7 +5090,7 @@ async function claimAlertOnce(key){
   }catch(e){return false;} // No durable claim: do not duplicate outbound alerts.
 }
 async function recordSignal(sym,sig,pos,manual){
-  if(!paperReady()||!freshQuote(sym)||!calendarReady()||activeSignals[sym])return; // server-coordinated paper entries only
+  if(!paperReady()||!freshQuote(sym)||!calendarReady()||activeSignals[sym])return false; // server-coordinated paper entries only
   const id=Date.now()+Math.floor(Math.random()*100);
   const r={id,ts:Date.now(),sym,dir:sig.state,price:sig.price,tp:pos.tp,sl:pos.sl,
     tp1:pos.tp1,tp2:pos.tp2,tp3:pos.tp3,tp1Hit:false,tp2Hit:false,
@@ -5003,16 +5098,17 @@ async function recordSignal(sym,sig,pos,manual){
     posUnits:pos.posUnits,lot:pos.lot,volLevel:pos.volLevel,atrPct:pos.atrPct,slUsd:pos.slUsd,tpUsd:pos.tpUsd,
     riskPct:pos.riskPct,rr:pos.rr,confidence:sig.confidence,
     score:sig.score,total:sig.total,conditions:sig.conditions||[],mtf:sig.mtf||{},
-    smartScore:sig.smart?sig.smart.score:null,why:sig.smart?{zone:sig.smart.valueZone,buyPct:sig.smart.vp&&sig.smart.vp.ok?Math.round(sig.smart.vp.buyPct):null,adx:sig.smart.adx?Math.round(sig.smart.adx.adx):null}:null,
+    smartScore:sig.smart?sig.smart.score:null,marketEvidence:marketEvidenceSnapshot(sig.smart?.evidence),why:sig.smart?{zone:sig.smart.valueZone,buyPct:sig.smart.vp&&sig.smart.vp.ok?Math.round(sig.smart.vp.buyPct):null,adx:sig.smart.adx?Math.round(sig.smart.adx.adx):null}:null,
     outcome:'OPEN',exitPrice:null,exitTimeStr:null,pnlUsd:null,pnlPct:null,
     timeStr:new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'}),
     dateStr:new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'2-digit'})};
   r.owner=currentUser.username;r.accountingVersion=2;r.spreadPerUnit=SPREAD[sym]||0;r.updatedAt=r.ts;
   r.paperOnly=true;r.brokerOrderId=null;r.timeframe='15m';
   r.signalKey='auto:'+sym+':15m:'+sig.candles?.at(-1)?.t+':'+r.dir;
-  if(!await paperSaveEntry(r.manual?'manual-signals':'auto-signals',id,r))return;
+  if(!await paperSaveEntry(r.manual?'manual-signals':'auto-signals',id,r))return false;
   signalHistory.unshift(r);
   activeSignals[sym]=id; // 🔒 lock — TP/SL frozen until TP3 or SL is hit
+  try{
   await saveSignal(r);
   await saveSigMeta();
   fireAlert(sym,sig.state,sig.price,pos.tp,pos.sl,pos.slUsd,sig.confidence);
@@ -5033,6 +5129,8 @@ async function recordSignal(sym,sig,pos,manual){
     sendTelegram(`<b>${headerLine}</b>\n\n`+ladderMsg.split('\n').slice(1).join('\n')+whyLine);
     sendEmailAlert(ladderMsg,`${manual?'[On-Demand] ':''}${sym} ${sig.state} Signal — Kalai Markets`);
   }
+  }catch(e){console.warn('Paper entry accepted; optional display/notification update failed',e);}
+  return true;
 }
 
 // ═══ P&L OUTCOME ══════════════════════════════════════════════════════════
@@ -6062,7 +6160,7 @@ async function riyanApi(path,opts={}){
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
   try{
     const response=await fetch(path,{...opts,credentials:'same-origin',cache:'no-store',headers,signal:controller.signal});
-    if(!response.ok)throw Error('HTTP '+response.status);
+    if(!response.ok){const error=Error('HTTP '+response.status);if(response.status===409){try{const body=await response.json();if(typeof body.reason==='string')error.detail=body.reason.slice(0,240);}catch(e){}}throw error;}
     return response.status===204?null:await response.json();
   }catch(e){if(e.name==='AbortError')throw Error('Database request timed out');throw e;}
   finally{clearTimeout(timer);}
@@ -6079,7 +6177,7 @@ function riyanFingerprint(s){
 // and represented by a deterministic SHA-256 ID in the REST path.
 async function riyanSafeRecordId(type,id){
   const raw=String(id);
-  const userScoped=(type==='user-state'||type.startsWith('basket-'))?
+  const userScoped=(type==='user-state'||type==='manual-plans'||type.startsWith('basket-'))?
     /^([A-Za-z0-9_-]{3,48}):/.exec(raw):null;
   if(!userScoped&&/^[A-Za-z0-9._-]{1,180}$/.test(raw))return raw;
   const bytes=new TextEncoder().encode(type+'\0'+raw);
@@ -6113,6 +6211,27 @@ function riyanQueueMany(items){
     if(changed)localStorage.setItem(key,JSON.stringify(pending));
   }catch(e){console.warn('Failed to queue DB record (storage unavailable):',e);}
 }
+function riyanRepairManualPlans(user){
+  // Repair only this known read-only payload shape. Actual trades are never reclassified.
+  const pendingKey='riyan_pending_'+user,failedKey='riyan_failed_'+user;
+  const pending=JSON.parse(localStorage.getItem(pendingKey)||'{}'),failed=JSON.parse(localStorage.getItem(failedKey)||'{}');
+  let changed=false;
+  for(const [queue,isFailed] of [[pending,false],[failed,true]])for(const [key,item] of Object.entries(queue)){
+    if(item.type!=='manual-signals')continue;
+    let data;try{data=JSON.parse(item.value);}catch(e){continue;}
+    if(data?.source!=='manual-analysis'||['accountingVersion','outcome','status'].some(k=>Object.prototype.hasOwnProperty.call(data,k)))continue;
+    const id=user+':recovered-manual-plan:'+item.id,token='manual-plans|'+encodeURIComponent(id);
+    const repaired={type:'manual-plans',id,value:item.value,originalType:item.type,originalId:item.id};
+    if(pending[token]&&pending[token].value!==item.value)continue;
+    pending[token]=repaired;
+    // Persist the complete replacement before removing the old queue entry.
+    localStorage.setItem(pendingKey,JSON.stringify(pending));
+    delete queue[key];changed=true;
+    if(isFailed)localStorage.setItem(failedKey,JSON.stringify(failed));
+  }
+  if(changed)localStorage.setItem(pendingKey,JSON.stringify(pending));
+}
+
 let riyanSyncing=null;
 function riyanProcessQueue(paperOnly=false){
   if(!currentUser||currentUser.role==='guest')return Promise.resolve();
@@ -6124,6 +6243,7 @@ async function riyanDrainQueue(paperOnly=false){
   const user=currentUser.username,key='riyan_pending_'+user;
   const failedKey='riyan_failed_'+user;
   try{
+    riyanRepairManualPlans(user);
     const pending=JSON.parse(localStorage.getItem(key)||'{}');
     const failed=JSON.parse(localStorage.getItem(failedKey)||'{}');
     // Repair only the known historical 403 caused by hash-stripped user ownership.
@@ -6328,7 +6448,7 @@ initAuth();
 </script>
 
 <button id="riyanSyncBtn" type="button" onclick="riyanConnect()" style="position:fixed;bottom:8px;right:8px;z-index:9999;padding:7px 11px;border-radius:15px;background:#284f72;color:white;border:1px solid #8ac8e7;font-size:11px">☁ DB Sync</button>
-<script src="orbital-ui.js?v=20261019-levels" defer></script>
+<script src="orbital-ui.js?v=20261020-context" defer></script>
 <script src="/background-client.js?v=20261019-calendar"></script>
 </body>
 </html>

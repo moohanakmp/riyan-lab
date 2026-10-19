@@ -19,6 +19,7 @@ public class RecordController {
     private static final Map<String,String> TABLES=Map.ofEntries(
         Map.entry("auto-signals","auto_signals"),
         Map.entry("manual-signals","manual_signals"),
+        Map.entry("manual-plans","manual_analysis_plans"),
         Map.entry("low-profit","low_profit_signals"),
         Map.entry("analysis","analysis_reports"),
         Map.entry("seven-day","seven_day_predictions"),
@@ -48,8 +49,8 @@ public class RecordController {
         return Set.of("basket-sessions","basket-positions","basket-events","basket-replays").contains(type);
     }
     private void scope(AuthService.Identity identity,String type,String sourceId) {
-        if(basketType(type) && !sourceId.startsWith(identity.username()+"--"))
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Basket paper ledger is user-owned");
+        if((basketType(type)||"manual-plans".equals(type)) && !sourceId.startsWith(identity.username()+"--"))
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Owner-scoped record key required");
         if("user-state".equals(type) && !"admin".equals(identity.role()) &&
             !sourceId.startsWith(identity.username()+":") &&
             !sourceId.matches(java.util.regex.Pattern.quote(identity.username())+"--id-[a-f0-9]{64}"))
@@ -65,7 +66,7 @@ public class RecordController {
         auth.mayRead(identity,type);
         String sql="SELECT source_id,payload::text AS payload,created_by,updated_by,created_at,updated_at FROM "
             +table(type);
-        if (PaperTradingService.isTrade(type) || (("user-state".equals(type) || basketType(type)) && !"admin".equals(identity.role())))
+        if (PaperTradingService.isTrade(type) || "manual-plans".equals(type) || (("user-state".equals(type) || basketType(type)) && !"admin".equals(identity.role())))
             return jdbc.queryForList(sql+" WHERE created_by=? ORDER BY updated_at DESC,source_id DESC LIMIT ? OFFSET ?",
                 identity.username(),Math.max(1,Math.min(limit,1000)),Math.max(0,offset));
         return jdbc.queryForList(sql+" ORDER BY updated_at DESC,source_id DESC LIMIT ? OFFSET ?",Math.max(1,Math.min(limit,1000)),Math.max(0,offset));
@@ -116,6 +117,9 @@ public class RecordController {
         scope(identity,type,sourceId);
         if(sourceId.isBlank()||sourceId.length()>200 || !payload.isObject() ||
            payload.toString().length()>1_000_000) return ResponseEntity.badRequest().build();
+        if("manual-plans".equals(type) && (!"manual-analysis".equals(payload.path("source").asText()) ||
+            payload.has("accountingVersion") || payload.has("outcome") || payload.has("status")))
+            return ResponseEntity.badRequest().build();
         if(basketType(type)) {
             // Basket endpoints are an isolated simulation ledger, not an order API.
             if(!payload.path("paperOnly").asBoolean(false) ||

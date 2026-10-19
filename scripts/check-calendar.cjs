@@ -21,7 +21,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('nod
  const candles=Array.from({length:100},(_,i)=>({t:now-(100-i)*900000,ms:900000,o:100,h:102,l:99,c:101,v:10}));
  Object.assign(context,{kmrClosed:x=>x,getCandles:()=>candles,ema:()=>100,marketTrend:{},freshQuote:()=>true,prices:{BTCUSD:101},
   kmrScan:()=>({tier:'HIGH',dir:'BUY',bias1h:'BULL',bias4h:'BULL',structure:{state:'BULL'},e50:100,price:101,gates:[],factors:[]}),
-  kmrTradePlan:()=>({entry:101,sl:99,tp1:103,tp2:105,tp3:107,rr:2}),ASSETS:{BTCUSD:{dec:2}},keyLevels:()=>({sup:[],res:[]}),ohlcData:{BTCUSD:{'1h':[]}}});
+  paperAccountRisk:()=>({ok:true}),paperReady:()=>true,kmrTradePlan:()=>({entry:101,sl:99,tp1:103,tp2:105,tp3:107,rr:2}),ASSETS:{BTCUSD:{dec:2}},keyLevels:()=>({sup:[],res:[]}),ohlcData:{BTCUSD:{'1h':[]}}});
  vm.runInContext(html.slice(html.indexOf('function computeSignal('),html.indexOf('// ── Manual / Analytics')),context);
  const blocked=context.computeSignal('BTCUSD');assert.equal(blocked.newsUnavailable,true);assert.equal(context.marketTrend.BTCUSD,'BULL','trend remains available during news outage');
  vm.runInContext(html.slice(html.indexOf('function runManualAnalysis('),html.indexOf('// ── Trader')),context);

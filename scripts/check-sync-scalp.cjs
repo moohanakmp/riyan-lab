@@ -60,7 +60,7 @@ function extract(start,end){
  const evaluateCode=extract('function scalpEvaluate(sym){','async function scalpOpen(sym,scan,lv){');
  let opened=0, gatesOk=true,barT=now-300000;
  const evalContext=vm.createContext({
-   Date,Math,console,paperReady:()=>true,freshQuote:()=>true,
+   Date,Math,console,paperReady:()=>true,freshQuote:()=>true,paperAccountRisk:()=>({ok:true}),
    basketDemo:{enabled:false,active:null},
    scalpState:{XAUUSD:{feedError:'',cooldown:0}},
    scalpData:{XAUUSD:bars},

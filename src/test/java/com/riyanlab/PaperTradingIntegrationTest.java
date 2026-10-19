@@ -91,4 +91,31 @@ class PaperTradingIntegrationTest {
             Collections.sort(statuses);assertEquals(List.of(200,409),statuses);
         }finally{pool.shutdownNow();}
     }
+    @Test void readOnlyManualPlansAreOwnerScopedAndDoNotNeedTradeLease()throws Exception{
+        var owner=user("planowner");var other=user("planreader");
+        String id="planowner--id-"+"d".repeat(64);
+        String path="/api/v1/records/manual-plans/"+id;
+        var plan=json.createObjectNode().put("source","manual-analysis").put("ready",true).put("symbol","XAUUSD");
+        mvc.perform(put(path).cookie(owner.cookies).header("X-CSRF-Token",owner.csrf)
+            .contentType(MediaType.APPLICATION_JSON).content(plan.toString())).andExpect(status().isOk());
+        mvc.perform(get("/api/v1/records/manual-plans").cookie(owner.cookies))
+            .andExpect(status().isOk()).andExpect(jsonPath("$[0].source_id").value(id));
+        mvc.perform(get("/api/v1/records/manual-plans").cookie(other.cookies))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+        mvc.perform(put(path).cookie(other.cookies).header("X-CSRF-Token",other.csrf)
+            .contentType(MediaType.APPLICATION_JSON).content(plan.toString())).andExpect(status().isForbidden());
+        mvc.perform(put(path).cookie(owner.cookies).header("X-CSRF-Token",owner.csrf)
+            .contentType(MediaType.APPLICATION_JSON).content(entry("not-a-plan",99).put("source","manual-analysis").toString()))
+            .andExpect(status().isBadRequest());
+        assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM manual_signals WHERE created_by='planowner'",Integer.class));
+        assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM audit_events WHERE record_type='manual-plans' AND source_id=?",Integer.class,id));
+    }
+    @Test void paperRiskRejectionReturnsControlledReason()throws Exception{
+        var s=user("reasonowner");assertTrue(lease(s,"reason-engine-123"));
+        mvc.perform(put("/api/v1/records/low-profit/reason-wide").cookie(s.cookies)
+            .header("X-CSRF-Token",s.csrf).header("X-Paper-Engine","reason-engine-123")
+            .contentType(MediaType.APPLICATION_JSON).content(entry("reason-wide-bar",90).toString()))
+            .andExpect(status().isConflict()).andExpect(jsonPath("$.reason").value("Invalid size or stop risk exceeds $4"));
+    }
+
 }
