@@ -64,7 +64,7 @@ public class BackgroundFeeds {
         try{
             var q=get(btc?"https://api.exchange.coinbase.com/products/BTC-USD/ticker":"https://api.gold-api.com/price/"+(sym.equals("XAUUSD")?"XAU":"XAG"));
             double price=q.path("price").asDouble(Double.NaN);long now=System.currentTimeMillis();
-            long at=btc?Instant.parse(q.path("time").asText()).toEpochMilli():now;
+            long at=btc?Instant.parse(q.path("time").asText()).toEpochMilli():metalQuoteTime(q,sym,now);
             if(!Double.isFinite(price)||price<=0||now-at>=30000||at>now+5000)throw new IllegalStateException("Quote stale or invalid");
             out.put("price",price).put("quoteAt",at);
             if(!btc){
@@ -79,6 +79,13 @@ public class BackgroundFeeds {
         return out;
     }
     private String safeError(Exception e){return e.getMessage()==null?"Market data unavailable":e.getMessage().substring(0,Math.min(240,e.getMessage().length()));}
+    static long metalQuoteTime(JsonNode quote,String symbol,long now){
+        String code=symbol.equals("XAUUSD")?"XAU":"XAG";
+        long at=Instant.parse(quote.path("updatedAt").asText()).toEpochMilli();
+        if(!code.equals(quote.path("symbol").asText())||(quote.has("currency")&&!quote.path("currency").asText().equals("USD"))||at>now||now-at>=30000)
+            throw new IllegalArgumentException("Metal quote stale or invalid");
+        return at;
+    }
     static ArrayNode normalize(JsonNode raw,long ms,long now,boolean coinbase,ObjectMapper json){
         var sorted=new TreeMap<Long,ObjectNode>();
         if(!raw.isArray())throw new IllegalArgumentException("Invalid candle response");

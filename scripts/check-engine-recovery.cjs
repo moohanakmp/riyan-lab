@@ -31,5 +31,15 @@ const P=require('../src/main/resources/static/trading-core.js');
  const code=html.slice(html.indexOf('let appLoopsStarted=false;'),html.indexOf('// ── FOREGROUND CATCH-UP'));
  let timers=0,bootstraps=0;const boot=vm.createContext({evwBackgroundFeeds(){},evwBackgroundNews(){},scalpLoop(){},pick:()=>{},bootstrapAll:()=>{bootstraps++;return new Promise(()=>{});},setInterval:()=>timers++,setTimeout:()=>timers++,console});
  vm.runInContext(code,boot);await boot.bootApp();assert(timers>=8);await boot.bootApp();assert.equal(bootstraps,1,'only one set of loops');
- console.log('PASS lease renewal during blocked restore, full owner snapshot coalescing, guest isolation, ticker bypasses history queue and non-blocking single boot');
+ // One failed metal request cannot suppress the other asset, or re-date old prices.
+ let goldFails=true,goldAge=0,quoteCalls=[];
+ const quotes=vm.createContext({PaperMath:P,Date,prices:{},prev:{},quoteAt:{},dayOpen:{},metalTicks:{XAUUSD:[],XAGUSD:[]},
+  appendLiveTick(){},updateCard(){},checkOutcome(sym){quoteCalls.push(sym);},
+  liveFetch:async url=>{const code=url.endsWith('XAU')?'XAU':'XAG';return{ok:code==='XAU'?!goldFails:true,status:503,json:async()=>({symbol:code,price:code==='XAU'?4100:57,updatedAt:new Date(Date.now()-(code==='XAU'?goldAge:1000)).toISOString()})};}});
+ vm.runInContext('function freshQuote(sym){return Date.now()-(quoteAt[sym]||0)<30000;}'+html.slice(html.indexOf('async function performMetalQuotes(){'),html.indexOf('async function bootstrapAll(){')),quotes);
+ await quotes.performMetalQuotes();assert.equal(quotes.quoteAt.XAUUSD,0);assert(quotes.quoteAt.XAGUSD>0);assert.deepEqual(quoteCalls,['XAGUSD']);
+ goldFails=false;goldAge=60000;await quotes.performMetalQuotes();assert.equal(quotes.quoteAt.XAUUSD,0,'old provider quote cannot become fresh on receipt');
+ goldAge=2000;await quotes.performMetalQuotes();assert(quotes.quoteAt.XAUUSD<=Date.now()-2000);assert.equal(quotes.prices.XAUUSD,4100);
+ goldAge=-60000;await quotes.performMetalQuotes();assert.equal(quotes.quoteAt.XAUUSD,0,'future provider timestamp rejected');
+ console.log('PASS lease renewal during blocked restore, full owner snapshot coalescing, guest isolation, ticker bypasses history queue, non-blocking single boot and independent provider-timed metal quotes');
 })().catch(e=>{console.error(e);process.exitCode=1;});

@@ -19,4 +19,12 @@ class BackgroundFeedsTest {
   for(int i=0;i<4;i++)bars.addObject().put("t",start+i*3600000).put("o",100).put("h",102).put("l",99).put("c",101).put("v",10);
   assertEquals(1,feed.aggregate(bars,4).size());bars.remove(1);assertEquals(0,feed.aggregate(bars,4).size());
  }
+ @Test void metalQuotesUseProviderTimeAndRejectWrongOrStaleData(){
+  long now=java.time.Instant.parse("2026-10-19T15:00:00Z").toEpochMilli();
+  var q=json.createObjectNode().put("symbol","XAU").put("updatedAt",java.time.Instant.ofEpochMilli(now-5000).toString());
+  assertEquals(now-5000,BackgroundFeeds.metalQuoteTime(q,"XAUUSD",now));
+  assertThrows(RuntimeException.class,()->BackgroundFeeds.metalQuoteTime(q,"XAGUSD",now));
+  q.put("updatedAt",java.time.Instant.ofEpochMilli(now-30000).toString());assertThrows(RuntimeException.class,()->BackgroundFeeds.metalQuoteTime(q,"XAUUSD",now));
+  q.put("updatedAt",java.time.Instant.ofEpochMilli(now+1000).toString());assertThrows(RuntimeException.class,()->BackgroundFeeds.metalQuoteTime(q,"XAUUSD",now));
+ }
 }

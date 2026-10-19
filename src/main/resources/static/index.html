@@ -1913,13 +1913,19 @@ function fetchLiveMetals(){
   return metalQuotePromise;
 }
 async function performMetalQuotes(){
-  try{
-    const[gR,sR]=await Promise.all([liveFetch('https://api.gold-api.com/price/XAU'),liveFetch('https://api.gold-api.com/price/XAG')]);
-    const g=await gR.json(),s=await sR.json();const now=Date.now();
-    if(PaperMath.positive(g?.price)){const p=g.price;if(dayOpen.XAUUSD===undefined)dayOpen.XAUUSD=p;prev.XAUUSD=prices.XAUUSD;prices.XAUUSD=p;quoteAt.XAUUSD=now;metalTicks.XAUUSD.push({t:now,p});if(metalTicks.XAUUSD.length>3000)metalTicks.XAUUSD.splice(0,500);appendLiveTick('XAUUSD',p);updateCard('XAUUSD',p,(p-dayOpen.XAUUSD)/dayOpen.XAUUSD*100);checkOutcome('XAUUSD',p);}
-    if(PaperMath.positive(s?.price)){const p=s.price;if(dayOpen.XAGUSD===undefined)dayOpen.XAGUSD=p;prev.XAGUSD=prices.XAGUSD;prices.XAGUSD=p;quoteAt.XAGUSD=now;metalTicks.XAGUSD.push({t:now,p});if(metalTicks.XAGUSD.length>3000)metalTicks.XAGUSD.splice(0,500);appendLiveTick('XAGUSD',p);updateCard('XAGUSD',p,(p-dayOpen.XAGUSD)/dayOpen.XAGUSD*100);checkOutcome('XAGUSD',p);}
-    metalsOk=freshQuote('XAUUSD')&&freshQuote('XAGUSD');
-  }catch(e){metalsOk=false;}
+  await Promise.allSettled(['XAUUSD','XAGUSD'].map(async sym=>{
+    try{
+      const code=sym==='XAUUSD'?'XAU':'XAG',response=await liveFetch('https://api.gold-api.com/price/'+code);
+      if(!response.ok)throw Error('Metal quote HTTP '+response.status);
+      const q=await response.json(),now=Date.now(),at=Date.parse(q?.updatedAt),p=q?.price;
+      if(q?.symbol!==code||(q.currency&&q.currency!=='USD')||!PaperMath.positive(p)||!Number.isFinite(at)||at>now||now-at>=30000)throw Error('Metal quote stale or invalid');
+      if(dayOpen[sym]===undefined)dayOpen[sym]=p;
+      prev[sym]=prices[sym];prices[sym]=p;quoteAt[sym]=at;
+      const ticks=metalTicks[sym];if(ticks.at(-1)?.t!==at)ticks.push({t:at,p});if(ticks.length>3000)ticks.splice(0,500);
+      appendLiveTick(sym,p);updateCard(sym,p,(p-dayOpen[sym])/dayOpen[sym]*100);checkOutcome(sym,p);
+    }catch(e){quoteAt[sym]=0;}
+  }));
+  metalsOk=freshQuote('XAUUSD')&&freshQuote('XAGUSD');
 }
 async function bootstrapAll(){
   setSbar('⏳ Loading OHLC candles...');
