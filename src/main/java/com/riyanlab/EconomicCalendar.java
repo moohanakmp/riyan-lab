@@ -94,7 +94,7 @@ public class EconomicCalendar {
         String reason=ready?error:error.isBlank()?"Calendar stale or weekly coverage ended — new entries paused":error;
         var out=new LinkedHashMap<String,Object>();
         out.put("calendarAt",ready?fetchedAt:0);out.put("calendarError",reason);out.put("calendarState",ready?(error.isBlank()?"READY":"DEGRADED"):"PAUSED");
-        out.put("ready",ready);out.put("fetchedAt",fetchedAt);out.put("expiresAt",Math.min(fetchedAt+TTL,end-45*60000));out.put("retryAt",nextAttempt);
+        out.put("ready",ready);out.put("fetchedAt",fetchedAt);out.put("expiresAt",calendar==null?0:Math.min(fetchedAt+TTL,end-45*60000));out.put("retryAt",nextAttempt);
         out.put("source","Forex Factory / Fair Economy");out.put("sourceUrl","https://www.forexfactory.com/calendar");out.put("eventCount",calendar==null?0:calendar.size());out.put("httpStatus",httpStatus);
         if(ready)out.put("calendar",calendar.deepCopy());
         return out;
