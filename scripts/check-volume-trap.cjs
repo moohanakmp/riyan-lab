@@ -63,5 +63,11 @@ function sample(){
  ctx.volumeTrapTimeframe('1m');assert.equal(vm.runInContext('volumeTrapTf',ctx),'1m');ctx.volumeTrapTimeframe('15m');assert.equal(vm.runInContext('volumeTrapTf',ctx),'1m');
  const pending=ctx.volumeTrapLoadMinute('XAUUSD');await ctx.volumeTrapLoadMinute('XAUUSD');assert.equal(calls,1);resolveMinute();await pending;await ctx.volumeTrapLoadMinute('XAUUSD');assert.equal(calls,1);assert.equal(vm.runInContext("volumeTrapMinuteCache.get('XAUUSD').bars.length",ctx),60);
  assert(extract('volumeTrapDetailHtml').includes("step=tf==='1m'?60000:300000"));
+ Object.assign(ctx,{basketTxt:s=>String(s),MarketContext:require('../src/main/resources/static/market-context.js')});
+ vm.runInContext(extract('tradeVolumeDetailsHtml'),ctx);
+ const evidence=ctx.MarketContext.analyze(bars,{now,step:300000});
+ const detail=ctx.tradeVolumeDetailsHtml(evidence,'XAUUSD','OKX XAU/USDT perp');
+ assert(detail.includes('Start (IST)'));assert(detail.includes('End (IST)'));assert(detail.includes('0.01 lot = 1 oz'));assert(detail.includes('Individual trade lot sizes and trade counts are unavailable'));assert(detail.includes('XAU base units'));assert(!detail.includes('<details'));
+ const token=ctx.tradeVolumeDetailsHtml(evidence,'XAUUSD','Binance PAXG proxy');assert(token.includes('PAXG tokens'));
  console.log('PASS symmetric level/volume rejection plans, real-volume requirement, failed breaks, forming/stale/reference/gap rejection, strong-trend guard, net reward/risk, fixed risk/lot, original priority, shared background and Volume Trap navigation');
 })().catch(e=>{console.error(e);process.exitCode=1});

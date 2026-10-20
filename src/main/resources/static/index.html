@@ -655,7 +655,7 @@ body{background:
 .hero-prev{width:100%;height:90px;border-radius:12px;border:1px dashed rgba(255,255,255,.15);background:rgba(255,255,255,.03) center/cover no-repeat;margin:8px 0;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--dim)}
 
 </style>
-<link rel="stylesheet" href="/workspace-ui.css?v=20261020-timeframes">
+<link rel="stylesheet" href="/workspace-ui.css?v=20261020-volume-details">
 <link rel="preload" as="video" href="happy.mp4" type="video/mp4"><link rel="preload" as="video" href="bull.mp4" type="video/mp4"><link rel="preload" as="video" href="bear.mp4" type="video/mp4">
 </head>
 <body>
@@ -4489,7 +4489,17 @@ function volumeTrapDetailHtml(sym,now){
   h+=marketEvidenceHtml(e,sym,true)+volumeDeltaCandlesHtml(e,sym,source);
   const rsiValues=[],adxValues=[],atrValues=[];
   for(let i=Math.max(30,c.length-48);i<c.length;i++){const w=c.slice(Math.max(0,i-80),i+1);rsiValues.push(rsi(w.map(k=>k.c),14));adxValues.push(kmrAdx(w)?.adx);atrValues.push(atr(w));}
-  return h+'<div class="volume-trap-charts">'+volumeTrapChart(c.map(k=>k.v),'Traded volume · '+tf,'#38baff',true)+volumeTrapChart(rsiValues,'RSI 14 · '+tf,'var(--acc)')+volumeTrapChart(adxValues,'ADX 14 · '+tf,'var(--grn)')+volumeTrapChart(atrValues,'ATR 14 · '+tf,'var(--red)')+volumeTrapChart(e.volumeReady?e.rows.map(k=>k.cvd):[],'Estimated cumulative delta · '+tf,'#a58bff')+volumeTrapChart(e.volumeReady?e.rows.map(k=>k.obv):[],'OBV · '+tf,'#38baff')+'</div>';
+  return h+'<div class="volume-trap-charts">'+volumeTrapChart(c.map(k=>k.v),'Traded volume · '+tf,'#38baff',true)+tradeVolumeDetailsHtml(e,sym,source)+volumeTrapChart(rsiValues,'RSI 14 · '+tf,'var(--acc)')+volumeTrapChart(adxValues,'ADX 14 · '+tf,'var(--grn)')+volumeTrapChart(atrValues,'ATR 14 · '+tf,'var(--red)')+volumeTrapChart(e.volumeReady?e.rows.map(k=>k.cvd):[],'Estimated cumulative delta · '+tf,'#a58bff')+volumeTrapChart(e.volumeReady?e.rows.map(k=>k.obv):[],'OBV · '+tf,'#38baff')+'</div>';
+}
+
+function tradeVolumeDetailsHtml(e,sym,source){
+  if(!e?.ready)return '';
+  const rows=e.rows.slice(-48),last=rows.at(-1),step=e.step||300000,a=ASSETS[sym];
+  const stamp=t=>new Date(t).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' IST';
+  const unit=sym==='BTCUSD'?'BTC':/PAXG/i.test(source||'')?'PAXG tokens':/OKX/i.test(source||'')?sym.slice(0,3)+' base units':'source units';
+  const total=rows.reduce((n,k)=>n+(Number.isFinite(k.v)?k.v:0),0),prior=e.rows.slice(-21,-1),avg=prior.length===20?prior.reduce((n,k)=>n+k.v,0)/20:null;
+  const n=v=>Number.isFinite(v)?v.toLocaleString('en-IN',{maximumFractionDigits:4}):'Unavailable';
+  return `<div class="ic"><div class="ib"><h3>Trade volume details · ${step/60000}m</h3><p>${basketTxt(source||'Source unavailable')} · ${basketTxt(unit)} · ${e.entryData?'Recent closed history':'Stale/reference history'}</p><div class="sc-ind"><span>Latest volume <b>${n(last.v)} ${basketTxt(unit)}</b></span><span>Prior 20-bar average <b>${n(avg)}</b></span><span>Relative volume <b>${n(e.relVol)}×</b></span><span>Last ${rows.length} candles total <b>${n(total)}</b></span></div><p><b>Latest interval:</b> ${stamp(last.t)} → ${stamp(last.t+step)}</p><p><b>Paper order reference: 0.01 lot = ${n(.01*a.contractSz)} ${basketTxt(a.lotUnit)}</b> under this app's ${n(a.contractSz)} ${basketTxt(a.lotUnit)}/lot model. This is your paper order size, not the market's executed lot volume. Individual trade lot sizes and trade counts are unavailable from this candle feed.</p><p class="sc-dim">Each row aggregates the named venue's executions during that interval. Buy, sell and delta columns are candle-location estimates. Source units and broker lots are not interchangeable.</p><div class="evidence-table"><table><thead><tr><th>Start (IST)</th><th>End (IST)</th><th>Open</th><th>High</th><th>Low</th><th>Close</th><th>Volume (${basketTxt(unit)})</th><th>Relative volume</th><th>Est. buy</th><th>Est. sell</th><th>Est. delta</th></tr></thead><tbody>${[...rows].reverse().map(k=>{const i=e.rows.indexOf(k),prev=e.rows.slice(Math.max(0,i-20),i),mean=prev.length===20?prev.reduce((v,r)=>v+r.v,0)/20:null;return `<tr><td>${stamp(k.t)}</td><td>${stamp(k.t+step)}</td><td>${fmtP(sym,k.o)}</td><td>${fmtP(sym,k.h)}</td><td>${fmtP(sym,k.l)}</td><td>${fmtP(sym,k.c)}</td><td>${n(k.v)}</td><td>${mean>0?n(k.v/mean)+'×':'Unavailable'}</td><td>${e.volumeReady?n(k.buy):'Unavailable'}</td><td>${e.volumeReady?n(k.sell):'Unavailable'}</td><td>${e.volumeReady?n(k.delta):'Unavailable'}</td></tr>`;}).join('')}</tbody></table></div></div></div>`;
 }
 
 function volumeTrapPick(sym){if(!SYMS.includes(sym))return;volumeTrapSym=sym;renderVolumeTrap();}
@@ -6484,7 +6494,7 @@ initAuth();
 </script>
 
 <button id="riyanSyncBtn" type="button" onclick="riyanConnect()" style="position:fixed;bottom:8px;right:8px;z-index:9999;padding:7px 11px;border-radius:15px;background:#284f72;color:white;border:1px solid #8ac8e7;font-size:11px">☁ DB Sync</button>
-<script src="orbital-ui.js?v=20261020-timeframes" defer></script>
+<script src="orbital-ui.js?v=20261020-volume-details" defer></script>
 <script src="/background-client.js?v=20261019-calendar"></script>
 </body>
 </html>
