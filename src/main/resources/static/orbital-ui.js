@@ -37,7 +37,7 @@
   if(typeof document==='undefined')return;
   const $=id=>document.getElementById(id);
   const symbols=['XAUUSD','XAGUSD','BTCUSD'];
-  let frame=0,lastScan=0,scanSym='',lastCandle=null,cached=null,lastWorkspaceKey='',pendingRoute=true;
+  let frame=0,lastScan=0,scanSym='',lastCandle=null,lastNewsReady=null,cached=null,lastWorkspaceKey='',pendingRoute=true;
   function navigate(tab){const b=document.querySelector('#tabsRow [data-tab="'+tab+'"]');if(b&&b.style.display!=='none')b.click();}
   function allowedTabs(){return Object.keys(workspaces).filter(tab=>{const b=document.querySelector('#tabsRow [data-tab="'+tab+'"]');return b&&b.style.display!=='none';});}
   function makeLink(tab,current){
@@ -130,9 +130,10 @@
     if(tab!=='chart')return;
     const sym=selAsset;
     const fs=feedStatus(sym);
-    if(scanSym!==sym||lastCandle!==fs.last?.t||Date.now()-lastScan>=30000){
+    const newsReady=calendarReady();
+    if(scanSym!==sym||lastCandle!==fs.last?.t||lastNewsReady!==newsReady||Date.now()-lastScan>=30000){
       let scan=null;try{if(fs.last&&!fs.stale&&!fs.reference)scan=kmrScan(sym);}catch(e){/* unavailable state below */}
-      cached=scan;scanSym=sym;lastCandle=fs.last?.t;lastScan=Date.now();
+      cached=scan;lastNewsReady=newsReady;scanSym=sym;lastCandle=fs.last?.t;lastScan=Date.now();
     }
     const model=qualityModel(fs,cached,freshQuote(sym));
     $('orbit-quality-symbol').textContent=ASSETS[sym].sym;

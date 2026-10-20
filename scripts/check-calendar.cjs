@@ -20,14 +20,14 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('nod
  // A news outage must not masquerade as missing price history or confirm a manual plan.
  const candles=Array.from({length:100},(_,i)=>({t:now-(100-i)*900000,ms:900000,o:100,h:102,l:99,c:101,v:10}));
  Object.assign(context,{kmrClosed:x=>x,getCandles:()=>candles,ema:()=>100,marketTrend:{},freshQuote:()=>true,prices:{BTCUSD:101},
-  kmrScan:()=>({tier:'HIGH',dir:'BUY',bias1h:'BULL',bias4h:'BULL',structure:{state:'BULL'},e50:100,price:101,gates:[],factors:[]}),
+  computeMTFTrend:()=>({}),swingLevels:()=>({}),kmrScan:()=>({score:83,tier:'HIGH',dir:'BUY',bias1h:'BULL',bias4h:'BULL',structure:{state:'BULL'},e50:100,price:101,gates:[],factors:[]}),
   paperAccountRisk:()=>({ok:true}),paperReady:()=>true,kmrTradePlan:()=>({entry:101,sl:99,tp1:103,tp2:105,tp3:107,rr:2}),ASSETS:{BTCUSD:{dec:2}},keyLevels:()=>({sup:[],res:[]}),ohlcData:{BTCUSD:{'1h':[]}}});
  vm.runInContext(html.slice(html.indexOf('function computeSignal('),html.indexOf('// ── Manual / Analytics')),context);
- const blocked=context.computeSignal('BTCUSD');assert.equal(blocked.newsUnavailable,true);assert.equal(context.marketTrend.BTCUSD,'BULL','trend remains available during news outage');
+ const blocked=context.computeSignal('BTCUSD');assert.equal(blocked.newsUnavailable,true);assert.equal(blocked.state,'WAIT');assert.equal(blocked.smart.score,83,'technical score survives calendar outage without allowing entry');assert.equal(context.marketTrend.BTCUSD,'BULL','trend remains available during news outage');
  vm.runInContext(html.slice(html.indexOf('function runManualAnalysis('),html.indexOf('// ── Trader')),context);
  const manual=context.runManualAnalysis('BTCUSD');assert.equal(manual.ready,true);assert.equal(manual.tradeable,false);assert.equal(manual.tier,null);assert.equal(manual.quality,'fallback');assert(manual.plan,'technical plan is preserved');
  vm.runInContext(html.slice(html.indexOf('function signalQuality('),html.indexOf('function qualityMeterHtml(')),context);
- assert.equal(context.signalQuality(blocked,'BTCUSD').label,'NEWS UNAVAILABLE');
+ assert.equal(context.signalQuality(blocked,'BTCUSD').label,'NEWS UNAVAILABLE');assert.equal(context.signalQuality(blocked,'BTCUSD').score,83);
  now+=31*60000;const stalePlan=context.runManualAnalysis('BTCUSD');assert.equal(stalePlan.tradeable,false);assert.match(stalePlan.reason,/history stale/);
  console.log('PASS shared calendar fetch, true source age, bounded stale cache, outage/recovery, future-clock and coverage expiry gates');
 })().catch(e=>{console.error(e);process.exitCode=1;});

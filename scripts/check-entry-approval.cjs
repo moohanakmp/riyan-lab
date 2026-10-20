@@ -44,8 +44,10 @@ const sig={state:'SELL',confidence:'MED',lot:.01,price:4146.6,atrVal:2,smart,con
  // Periodic refresh must preserve expanded pattern/structure panels and keyboard focus.
  const detail=(sym,key,open)=>({dataset:{evidenceSymbol:sym,evidenceSection:key},open,querySelector:()=>({focus:()=>{focused=true;}})});
  let focused=false,live=[detail('XAUUSD','patterns',true),detail('BTCUSD','patterns',false)];
- const previous=live[0],el={querySelectorAll:()=>live,set innerHTML(v){live=[detail('XAUUSD','patterns',false),detail('BTCUSD','patterns',true)];}};
+ let chart={scrollLeft:0,scrollWidth:960,clientWidth:300};
+ const previous=live[0],el={querySelectorAll:q=>q==='.delta-chart-scroll'?[chart]:live,set innerHTML(v){chart={scrollLeft:0,scrollWidth:980,clientWidth:300};live=[detail('XAUUSD','patterns',false),detail('BTCUSD','patterns',true)];}};
  c.document={activeElement:{closest:()=>previous}};vm.runInContext(extract('setEvidenceHtml'),c);c.setEvidenceHtml(el,'fresh quotes');
+ assert.equal(chart.scrollLeft,0,'manual history scroll survives refresh');chart.scrollLeft=680;c.setEvidenceHtml(el,'next');assert.equal(chart.scrollLeft,980,'latest view remains pinned right');
  assert.equal(live[0].open,true);assert.equal(live[1].open,false);assert.equal(focused,true);
  console.log('PASS 83/100 technical setup, all 12 gates, exact risk blockers, preserved structural stops, account limits, in-flight dedup, rejected-candle retry, accepted-only consumption, manual-plan queue preservation and post-acceptance alert failure');
 })().catch(e=>{console.error(e);process.exitCode=1;});
