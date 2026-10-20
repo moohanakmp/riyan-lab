@@ -60,7 +60,7 @@ public class EconomicCalendar {
             var response=client.send(request.GET().build(),HttpResponse.BodyHandlers.ofString());httpStatus=response.statusCode();
             long now=clock.getAsLong();
             if(httpStatus==429){
-                failures++;nextAttempt=now+Math.max(backoff(),MarketDataController.retryDelay(response.headers()));
+                failures++;nextAttempt=now+Math.max(300000,Math.max(backoff(),MarketDataController.retryDelay(response.headers())));
                 error="Calendar provider rate limited (HTTP 429)";
             }else if(httpStatus==304){
                 if(calendar==null||etag.isBlank())throw new IllegalArgumentException("Unverifiable not-modified response");

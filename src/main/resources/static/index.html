@@ -655,7 +655,7 @@ body{background:
 .hero-prev{width:100%;height:90px;border-radius:12px;border:1px dashed rgba(255,255,255,.15);background:rgba(255,255,255,.03) center/cover no-repeat;margin:8px 0;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--dim)}
 
 </style>
-<link rel="stylesheet" href="/workspace-ui.css?v=20261020-evidence2">
+<link rel="stylesheet" href="/workspace-ui.css?v=20261020-timeframes">
 <link rel="preload" as="video" href="happy.mp4" type="video/mp4"><link rel="preload" as="video" href="bull.mp4" type="video/mp4"><link rel="preload" as="video" href="bear.mp4" type="video/mp4">
 </head>
 <body>
@@ -4456,16 +4456,42 @@ function marketEvidenceHtml(e,sym,expanded=false){
   h+=`<details data-evidence-section="patterns" data-evidence-symbol="${sym}"><summary>Candlestick library · ${e.patterns.length} definitions · ${detected.length} detected</summary><p class="sc-dim">Closed candles only. Reversal labels require prior trend context; single-bar reversals need a later confirming close. Star/piercing variants use non-gap FX adaptations. Indecision never authorizes an entry.</p><div class="evidence-table"><table><thead><tr><th>Pattern</th><th>Direction</th><th>Current evidence</th></tr></thead><tbody>${e.patterns.map(p=>`<tr class="${p.detected?'evidence-'+(p.dir==='BUY'?'buy':p.dir==='SELL'?'sell':'neutral'):'evidence-inactive'}"><td>${basketTxt(p.name)}</td><td>${basketTxt(p.dir)}</td><td>${p.detected?p.confirmed?'Confirmed close':basketTxt(p.confirmation):'Not detected'}</td></tr>`).join('')}</tbody></table></div></details><p class="sc-dim">${basketTxt(e.note)}</p></div>`;
   return h;
 }
-function volumeDeltaCandlesHtml(e,sym){
+function volumeDeltaCandlesHtml(e,sym,source){
   if(!e?.ready)return'';
   const rows=e.rows.slice(-18),high=Math.max(...rows.map(k=>k.h)),low=Math.min(...rows.map(k=>k.l)),range=high-low||1,yp=v=>30+(high-v)/range*190;
   const maxVol=Math.max(...rows.map(k=>k.v||0),1);
   const candles=rows.map((k,i)=>{const x=65+i*48,color=k.c>=k.o?'#26c9b8':'#f2667d',b=Math.min(yp(k.o),yp(k.c)),height=Math.max(1,Math.abs(yp(k.o)-yp(k.c))),sign=k.delta>=0?'+':'';return `<line x1="${x}" y1="${yp(k.h).toFixed(1)}" x2="${x}" y2="${yp(k.l).toFixed(1)}" stroke="${color}"/><rect x="${x-10}" y="${b.toFixed(1)}" width="20" height="${height.toFixed(1)}" fill="${color}"/><text x="${x}" y="${Math.max(15,yp(k.h)-7).toFixed(1)}" text-anchor="middle" fill="${k.delta>=0?'#26c9b8':'#f2667d'}" font-size="9">${e.volumeReady?sign+k.delta.toFixed(0):'n/a'}</text><rect x="${x-10}" y="${(272-(k.v||0)/maxVol*35).toFixed(1)}" width="20" height="${((k.v||0)/maxVol*35).toFixed(1)}" fill="${color}" opacity=".5"/><text x="${x}" y="290" text-anchor="middle" fill="#a9bad8" font-size="8">${new Date(k.t).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit'})}</text>`;}).join('');
-  return `<div class="ic"><div class="ib"><b>Price + estimated candle delta</b><p class="sc-dim">Numbers above candles are estimated signed volume, not bid × ask footprints. Volume bars below; closed 5m candles only. Latest candles are on the right; scrolling to older candles is preserved during refresh. Each bar aggregates reported source volume; individual executions and actual aggressor-side volume are not supplied by this candle feed.</p><div class="delta-chart-scroll"><svg viewBox="0 0 960 305" role="img" aria-label="${ASSETS[sym].sym} closed candles with estimated delta and volume"><text x="7" y="35" fill="#a9bad8" font-size="10">${high.toFixed(ASSETS[sym].dec)}</text><text x="7" y="220" fill="#a9bad8" font-size="10">${low.toFixed(ASSETS[sym].dec)}</text>${candles}</svg></div><details data-evidence-section="candle-volumes" data-evidence-symbol="${sym}"><summary>Per-candle volume details · newest first</summary><p class="sc-dim">${basketTxt(KMR_VOL_SOURCE[sym]||'Source unavailable')}. Source volume is aggregated per candle. Buy/sell split and delta are estimates from candle geometry, not individual trades or exchange aggressor classifications.</p><div class="evidence-table"><table><thead><tr><th>Closed candle (IST)</th><th>Close</th><th>Reported volume</th><th>Estimated buy</th><th>Estimated sell</th><th>Estimated delta</th></tr></thead><tbody>${[...rows].reverse().map(k=>`<tr><td>${new Date(k.t).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit'})}</td><td>${fmtP(sym,k.c)}</td><td>${Number.isFinite(k.v)?k.v.toFixed(2):'Unavailable'}</td><td>${e.volumeReady?((k.v+k.delta)/2).toFixed(2):'Unavailable'}</td><td>${e.volumeReady?((k.v-k.delta)/2).toFixed(2):'Unavailable'}</td><td>${e.volumeReady?k.delta.toFixed(2):'Unavailable'}</td></tr>`).join('')}</tbody></table></div></details></div></div>`;
+  return `<div class="ic"><div class="ib"><b>Price + estimated candle delta</b><p class="sc-dim">Numbers above candles are estimated signed volume, not bid × ask footprints. Volume bars below; closed ${(e.step||300000)/60000}m candles only. Latest candles are on the right; scrolling to older candles is preserved during refresh. Each bar aggregates reported source volume; individual executions and actual aggressor-side volume are not supplied by this candle feed.</p><div class="delta-chart-scroll"><svg viewBox="0 0 960 305" role="img" aria-label="${ASSETS[sym].sym} ${(e.step||300000)/60000}m closed candles with estimated delta and volume"><text x="7" y="35" fill="#a9bad8" font-size="10">${high.toFixed(ASSETS[sym].dec)}</text><text x="7" y="220" fill="#a9bad8" font-size="10">${low.toFixed(ASSETS[sym].dec)}</text>${candles}</svg></div><details data-evidence-section="candle-volumes" data-evidence-symbol="${sym}"><summary>Per-candle volume details · newest first</summary><p class="sc-dim">${basketTxt(source||KMR_VOL_SOURCE[sym]||'Source unavailable')}. Source volume is aggregated per candle. Buy/sell split and delta are estimates from candle geometry, not individual trades or exchange aggressor classifications.</p><div class="evidence-table"><table><thead><tr><th>Closed candle (IST)</th><th>Close</th><th>Reported volume</th><th>Relative volume</th><th>Range</th><th>Estimated buy</th><th>Estimated sell</th><th>Estimated delta</th></tr></thead><tbody>${[...rows].reverse().map(k=>`<tr><td>${new Date(k.t).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit'})}</td><td>${fmtP(sym,k.c)}</td><td>${Number.isFinite(k.v)?k.v.toFixed(2):'Unavailable'}</td><td>${(()=>{const i=e.rows.indexOf(k),prior=e.rows.slice(Math.max(0,i-20),i);const avg=prior.length===20?prior.reduce((n,r)=>n+r.v,0)/20:0;return avg>0?(k.v/avg).toFixed(2)+'×':'Unavailable';})()}</td><td>${(k.h-k.l).toFixed(ASSETS[sym].dec)}</td><td>${e.volumeReady?((k.v+k.delta)/2).toFixed(2):'Unavailable'}</td><td>${e.volumeReady?((k.v-k.delta)/2).toFixed(2):'Unavailable'}</td><td>${e.volumeReady?k.delta.toFixed(2):'Unavailable'}</td></tr>`).join('')}</tbody></table></div></details></div></div>`;
 }
 
 // Volume Trap reuses the live scanner's candles; opening this page never creates an order.
-let volumeTrapSym='XAUUSD';
+let volumeTrapSym='XAUUSD',volumeTrapTf='5m';
+const volumeTrapMinuteCache=new Map();
+function volumeTrapTimeframe(tf){if(!['1m','5m'].includes(tf))return;volumeTrapTf=tf;renderVolumeTrap();}
+async function volumeTrapLoadMinute(sym){
+  const old=volumeTrapMinuteCache.get(sym);
+  if(old?.pending||old&&Date.now()-old.checkedAt<30000)return;
+  const state={...old,pending:true,checkedAt:Date.now()};volumeTrapMinuteCache.set(sym,state);
+  try{
+    const bars=sym==='BTCUSD'?await BtcFeed.candles('1m',180):await fetchOkxMetal(sym,'1m',180);
+    state.bars=PaperMath.closed(bars,60000,Date.now());state.source=sym==='BTCUSD'?'Coinbase BTC/USD spot':'OKX '+sym.slice(0,3)+'/USDT perp';state.error=null;
+  }catch(e){state.error='1m history unavailable: '+String(e.message||e).slice(0,160);}
+  finally{state.pending=false;if(volumeTrapSym===sym&&volumeTrapTf==='1m')renderVolumeTrap();}
+}
+function volumeTrapDetailHtml(sym,now){
+  const tf=volumeTrapTf,step=tf==='1m'?60000:300000;
+  if(tf==='1m')volumeTrapLoadMinute(sym);
+  const state=volumeTrapMinuteCache.get(sym),bars=tf==='1m'?state?.bars||[]:scalpData[sym]||[];
+  const source=tf==='1m'?state?.source:scalpState[sym]?.feedSource;
+  const c=PaperMath.closed(bars,step,now),e=typeof MarketContext==='undefined'?null:MarketContext.analyze(c,{now,step});
+  let h=`<div class="ic"><div class="ib"><label for="volumeTrapTimeframe">Delta &amp; traded-volume timeframe</label> <select id="volumeTrapTimeframe" onchange="volumeTrapTimeframe(this.value)"><option value="1m" ${tf==='1m'?'selected':''}>1 minute</option><option value="5m" ${tf==='5m'?'selected':''}>5 minutes</option></select><p class="sc-dim">Closed ${tf} candles · ${basketTxt(source||'Waiting for source')} · Analysis view only; Low Profit entry strategy remains 5m.</p>${state?.error&&tf==='1m'?`<p>${basketTxt(state.error)}</p>`:''}${e?.ready&&!e.entryData?'<p>History stale or reference only — this view cannot authorize entries.</p>':''}</div></div>`;
+  if(!e?.ready)return h+marketEvidenceHtml(e,sym);
+  h+=marketEvidenceHtml(e,sym,true)+volumeDeltaCandlesHtml(e,sym,source);
+  const rsiValues=[],adxValues=[],atrValues=[];
+  for(let i=Math.max(30,c.length-48);i<c.length;i++){const w=c.slice(Math.max(0,i-80),i+1);rsiValues.push(rsi(w.map(k=>k.c),14));adxValues.push(kmrAdx(w)?.adx);atrValues.push(atr(w));}
+  return h+'<div class="volume-trap-charts">'+volumeTrapChart(c.map(k=>k.v),'Traded volume · '+tf,'#38baff',true)+volumeTrapChart(rsiValues,'RSI 14 · '+tf,'var(--acc)')+volumeTrapChart(adxValues,'ADX 14 · '+tf,'var(--grn)')+volumeTrapChart(atrValues,'ATR 14 · '+tf,'var(--red)')+volumeTrapChart(e.volumeReady?e.rows.map(k=>k.cvd):[],'Estimated cumulative delta · '+tf,'#a58bff')+volumeTrapChart(e.volumeReady?e.rows.map(k=>k.obv):[],'OBV · '+tf,'#38baff')+'</div>';
+}
+
 function volumeTrapPick(sym){if(!SYMS.includes(sym))return;volumeTrapSym=sym;renderVolumeTrap();}
 function volumeTrapChart(values,label,color,volume=false){
   const series=values.slice(-48).filter(Number.isFinite);
@@ -4483,7 +4509,7 @@ function renderVolumeTrap(){
   const el=document.getElementById('volumeTrapContainer');if(!el)return;
   const sym=volumeTrapSym,now=Date.now(),c=PaperMath.closed(scalpData[sym]||[],300000,now),st=scalpState[sym]||{};
   document.querySelectorAll('[data-trap-symbol]').forEach(b=>{b.classList.toggle('active',b.dataset.trapSymbol===sym);b.setAttribute('aria-pressed',String(b.dataset.trapSymbol===sym));});
-  if(c.length<60){el.innerHTML='<div class="ic"><div class="ib">Waiting for 60 valid closed 5-minute candles. Shared scanner will refresh automatically.</div></div>';return;}
+  if(c.length<60){setEvidenceHtml(el,'<div class="ic"><div class="ib">Waiting for 60 valid closed 5-minute setup candles. Shared scanner will refresh automatically.</div></div>'+volumeTrapDetailHtml(sym,now));return;}
   const c15=scalpClosed15m(sym,c,now),dmi=kmrAdx(c15),bias=kmrTfBias(c15);
   const model=kmrLevelSetup(c,{now,trend:bias,adx:dmi?.adx});
   const last=c.at(-1),sr={A:model.A,levelSetup:model,strategyVersion:'sr-volume-v1'};
@@ -4504,11 +4530,7 @@ function renderVolumeTrap(){
     ${pressure?.ok?`<div class="sc-dim">Estimated pressure: ${pressure.buyPct.toFixed(0)}% buy / ${pressure.sellPct.toFixed(0)}% sell · ${pressure.divergence||'No divergence'}</div>`:''}
     ${hasPlan?`<div class="sc-lvls"><span>Conditional ${model.dir} ${fmt(plan.entry)}</span><span>TP ${fmt(plan.tp)}</span><span>SL ${fmt(plan.sl)}</span></div><p class="sc-dim">0.01 lot · estimated reward +$${plan.tpUsd.toFixed(2)} / risk −$${plan.slUsd.toFixed(2)} · ${plan.rr.toFixed(2)}× net reward/risk. Candidate only; this page does not place entries.</p>`:'<p class="sc-dim">No executable plan until the level, candle, volume and risk checks pass.</p>'}
     <div class="cond-grid">${details}</div><p class="data-src">${basketTxt(st.feedSource||'Source unavailable')} · last closed 5m candle ${new Date(last.t).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit'})} IST</p></div></div>`;
-  const evidence=typeof MarketContext==='undefined'?null:MarketContext.analyze(c,{now,step:300000});
-  h+=marketEvidenceHtml(evidence,sym,true)+volumeDeltaCandlesHtml(evidence,sym);
-  const rsiValues=[],adxValues=[],atrValues=[];
-  for(let i=Math.max(30,c.length-48);i<c.length;i++){const w=c.slice(Math.max(0,i-80),i+1);rsiValues.push(rsi(w.map(k=>k.c),14));adxValues.push(kmrAdx(w)?.adx);atrValues.push(atr(w));}
-  h+='<div class="volume-trap-charts">'+volumeTrapChart(c.map(k=>k.v),'Traded volume','#38baff',true)+volumeTrapChart(rsiValues,'RSI 14','var(--acc)')+volumeTrapChart(adxValues,'ADX 14 · 5m','var(--grn)')+volumeTrapChart(atrValues,'ATR 14 · 5m','var(--red)')+volumeTrapChart(evidence?.volumeReady?evidence.rows.map(k=>k.cvd):[],'Estimated cumulative delta','#a58bff')+volumeTrapChart(evidence?.volumeReady?evidence.rows.map(k=>k.obv):[],'OBV','#38baff')+'</div>';
+  h+=volumeTrapDetailHtml(sym,now);
   setEvidenceHtml(el,h);
 }
 
@@ -6462,7 +6484,7 @@ initAuth();
 </script>
 
 <button id="riyanSyncBtn" type="button" onclick="riyanConnect()" style="position:fixed;bottom:8px;right:8px;z-index:9999;padding:7px 11px;border-radius:15px;background:#284f72;color:white;border:1px solid #8ac8e7;font-size:11px">☁ DB Sync</button>
-<script src="orbital-ui.js?v=20261020-evidence2" defer></script>
+<script src="orbital-ui.js?v=20261020-timeframes" defer></script>
 <script src="/background-client.js?v=20261019-calendar"></script>
 </body>
 </html>

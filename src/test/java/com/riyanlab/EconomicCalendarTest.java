@@ -37,6 +37,14 @@ class EconomicCalendarTest {
   var requests=org.mockito.ArgumentCaptor.forClass(HttpRequest.class);verify(client,times(3)).send(requests.capture(),any(HttpResponse.BodyHandler.class));
   assertEquals("\"v1\"",requests.getAllValues().get(2).headers().firstValue("If-None-Match").orElseThrow());
  }
+ @Test @SuppressWarnings({"unchecked","rawtypes"}) void rateLimitWithoutRetryHeaderWaitsAtLeastFiveMinutes()throws Exception{
+  var now=new AtomicLong(start);var client=mock(HttpClient.class);
+  when(client.send(any(HttpRequest.class),any(HttpResponse.BodyHandler.class))).thenReturn(response(429,"",Map.of()));
+  var feed=new EconomicCalendar(null,json,client,now::get);
+  assertEquals(start+300000,feed.view().get("retryAt"));
+  now.addAndGet(299999);assertEquals(false,feed.view().get("ready"));
+  verify(client,times(1)).send(any(HttpRequest.class),any(HttpResponse.BodyHandler.class));
+ }
  @Test void malformedPartialAndPreviousWeekCalendarsAreRejected(){
   assertThrows(RuntimeException.class,()->EconomicCalendar.validate(json.createArrayNode(),start,json));
   var bad=events(start);((ObjectNode)bad.get(0)).put("impact","unknown");assertThrows(RuntimeException.class,()->EconomicCalendar.validate(bad,start,json));

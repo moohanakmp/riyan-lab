@@ -56,5 +56,12 @@ function sample(){
  assert(html.includes('data-tab="volumeTrap"'));assert(html.includes('id="tvt"'));assert(html.includes('id="tfl"'),'Flow remains intact');
  // Rendering uses escaped source text and draws actual series, without placing orders.
  const render=extract('renderVolumeTrap');assert(render.includes('basketTxt(st.feedSource'));assert(!render.includes('scalpOpen('));
+ // Display timeframe selection must not mutate or submit entries, and minute requests coalesce.
+ let resolveMinute,calls=0,renders=0;
+ Object.assign(ctx,{SYMS:['XAUUSD','XAGUSD','BTCUSD'],fetchOkxMetal:async(sym,tf,n)=>{calls++;assert.equal(tf,'1m');assert.equal(n,180);await new Promise(r=>resolveMinute=r);return Array.from({length:60},(_,i)=>({t:Math.floor(Date.now()/60000)*60000-(60-i)*60000,ms:60000,o:100,h:102,l:99,c:101,v:100}));},renderVolumeTrap:()=>renders++});
+ vm.runInContext("let volumeTrapSym='XAUUSD',volumeTrapTf='5m';const volumeTrapMinuteCache=new Map();"+extract('volumeTrapTimeframe')+extract('volumeTrapLoadMinute'),ctx);
+ ctx.volumeTrapTimeframe('1m');assert.equal(vm.runInContext('volumeTrapTf',ctx),'1m');ctx.volumeTrapTimeframe('15m');assert.equal(vm.runInContext('volumeTrapTf',ctx),'1m');
+ const pending=ctx.volumeTrapLoadMinute('XAUUSD');await ctx.volumeTrapLoadMinute('XAUUSD');assert.equal(calls,1);resolveMinute();await pending;await ctx.volumeTrapLoadMinute('XAUUSD');assert.equal(calls,1);assert.equal(vm.runInContext("volumeTrapMinuteCache.get('XAUUSD').bars.length",ctx),60);
+ assert(extract('volumeTrapDetailHtml').includes("step=tf==='1m'?60000:300000"));
  console.log('PASS symmetric level/volume rejection plans, real-volume requirement, failed breaks, forming/stale/reference/gap rejection, strong-trend guard, net reward/risk, fixed risk/lot, original priority, shared background and Volume Trap navigation');
 })().catch(e=>{console.error(e);process.exitCode=1});
