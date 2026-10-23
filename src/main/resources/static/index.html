@@ -615,6 +615,7 @@ body{background:
 @media(max-width:420px){.gate-grid{grid-template-columns:1fr}}
 .gate{font-size:9.5px;padding:5px 7px;border-radius:7px;line-height:1.35;border:1px solid transparent}
 .gate.ok{background:rgba(34,197,94,.07);color:#86efac;border-color:rgba(34,197,94,.18)}
+.gate.warn{background:rgba(245,158,11,.08);color:#fcd34d;border-color:rgba(245,158,11,.22)}
 .gate.bad{background:rgba(239,68,68,.08);color:#fca5a5;border-color:rgba(239,68,68,.22)}
 .fac{display:grid;grid-template-columns:1fr 70px 34px;gap:8px;align-items:center;font-size:10px;padding:3px 0}
 .fac span{color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -2149,7 +2150,9 @@ function kmrSmartScan(candles15,h1,h4,ctx){
   gate('rsi',rsiOk,`RSI ${r!=null?r.toFixed(0):'—'} ${rsiOk?'not at an extreme':'at an exhaustion extreme'}`,'Exhaustion zone — wait for RSI to cool back toward 50');
   const newsHit=(ctx.events||[]).find(ev=>ev.ts>=ctx.now-15*60000&&ev.ts<=ctx.now+30*60000);
   const newsReady=ctx.newsReady!==false;
-  gate('news',newsReady&&!newsHit,!newsReady?'Economic calendar unavailable or stale — new entries paused':newsHit?`High-impact news: ${newsHit.title} ${ev2txt(newsHit,ctx.now)}`:'No high-impact USD news in the next 30 min',!newsReady?'Wait for a validated news schedule':newsHit?'Stand aside until 15 min after the release — spreads and spikes are unpredictable':'');
+  // Calendar outages are advisory; known releases still block entries. Never describe missing coverage as news-clear.
+  gate('news',!newsHit,newsHit?`High-impact news: ${newsHit.title} ${ev2txt(newsHit,ctx.now)}`:!newsReady?'News schedule unavailable — technical signals enabled; news risk unchecked':'No high-impact USD news in the next 30 min',newsHit?'Stand aside until 15 min after the release — spreads and spikes are unpredictable':'');
+  out.gates.at(-1).advisory=!newsReady&&!newsHit;
   const rollover=ctx.isMetal&&ctx.istHour>=2&&ctx.istHour<4;
   gate('roll',!rollover,rollover?'Daily rollover hours (02:00–04:00 IST) — spreads widen':'Outside rollover hours','Wait until after 04:00 IST');
   const volAgainst=vp.ok&&dir&&((dir==='BUY'&&vp.buyPct<40)||(dir==='SELL'&&vp.buyPct>60));
@@ -2345,7 +2348,7 @@ function computeSignal(sym){
   const conds=s.factors.length?s.factors.map(f=>({label:f.label,pass:f.pass})):s.gates.map(g=>({label:g.label,pass:g.ok}));
   const base={score:conds.filter(c=>c.pass).length,total:conds.length||8,conditions:conds,price:s.price,rsiVal:s.rsi,
     atrVal:s.atrV,sr:swingLevels(candles.slice(-80)),mtf,smart:s,reason:s.reason,wait:s.wait};
-  if(!freshQuote(sym)||!calendarReady())return{...base,state:'WAIT',quoteUnavailable:!freshQuote(sym),newsUnavailable:!calendarReady(),reason:!freshQuote(sym)?'Fresh quote unavailable':'Economic calendar unavailable — entries paused',lot:0,confidence:null};
+  if(!freshQuote(sym))return{...base,state:'WAIT',quoteUnavailable:true,reason:'Fresh quote unavailable',lot:0,confidence:null};
   if(s.tier)return{...base,state:s.dir,lot:s.tier==='HIGH'?LOT_HIGH:LOT_MED,confidence:s.tier,candles};
   return{...base,state:'WAIT',lot:0,confidence:null};
 }
@@ -2359,7 +2362,7 @@ function runManualAnalysis(sym){
   if(candles.some(k=>k.analysisOnly))return{ready:false,referenceOnly:true,reason:'Delayed futures reference loaded. Volume and trend analysis are available; entry/SL/TP plans require fresh spot/broker candles. '+KMR_VOL_SOURCE[sym]};
   if(!candles||candles.length<60||live==null)return{ready:false,reason:'Still gathering candle history for this asset — try again in a moment.'};
   const s=kmrScan(sym,candles);
-  let entryBlock=!freshQuote(sym)?'Fresh quote unavailable — plan only':Date.now()-candles.at(-1).t>30*60e3?'Candle history stale — plan only; new entries paused':!calendarReady()?'Economic calendar unavailable — plan only; new entries paused':!paperReady()?'Engine ownership/synchronization required — plan only':null;
+  let entryBlock=!freshQuote(sym)?'Fresh quote unavailable — plan only':Date.now()-candles.at(-1).t>30*60e3?'Candle history stale — plan only; new entries paused':!paperReady()?'Engine ownership/synchronization required — plan only':null;
   let tier=entryBlock?null:s.tier;
   const fdir=s.dir||(s.bias1h==='BULL'?'BUY':s.bias1h==='BEAR'?'SELL':s.structure.state==='BULL'?'BUY':s.structure.state==='BEAR'?'SELL':(s.e50!=null&&s.price<s.e50?'SELL':'BUY'));
   const plan=kmrTradePlan({...s,dir:fdir,price:live},ASSETS[sym].dec);
@@ -3108,7 +3111,7 @@ function manualResultBodyHtml(sym,res){
   h+=`<div class="plan-inval">❌ The idea is <b>wrong</b> if price trades ${res.dir==='BUY'?'below':'above'} <b>${fmtP(sym,p.invalid)}</b> — exit, don't hope.</div>`;
   if(sc)h+=`<div class="plan-story">🧠 ${kmrTrendStory(sc,sym)}</div>`;
   if(sc&&sc.gates.length){
-    h+=`<div class="plan-sec">SAFETY GATES</div><div class="gate-grid">`+sc.gates.map(g=>`<div class="gate ${g.ok?'ok':'bad'}" title="${g.label.replace(/"/g,'')}">${g.ok?'✓':'✕'} ${g.label}</div>`).join('')+`</div>`;
+    h+=`<div class="plan-sec">SAFETY GATES</div><div class="gate-grid">`+sc.gates.map(g=>`<div class="gate ${g.advisory?'warn':g.ok?'ok':'bad'}" title="${g.label.replace(/"/g,'')}">${g.advisory?'!':g.ok?'✓':'✕'} ${g.label}</div>`).join('')+`</div>`;
   }
   if(sc&&sc.factors.length){
     h+=`<div class="plan-sec">SETUP QUALITY</div>`+sc.factors.map(f=>`<div class="fac"><span>${f.label}</span><div class="fac-bar"><i style="width:${(f.pts/f.max*100).toFixed(0)}%"></i></div><b>${f.pts}/${f.max}</b></div>`).join('');
@@ -4042,7 +4045,7 @@ function scalpScan(sym,c5,c15,h1,ctx){
   g(c5.slice(-21).every(k=>Number.isFinite(k.v)&&k.v>0),'Usable traded volume on the last 21 closed 5m candles');
   g(last.h-last.l<=3*A,last.h-last.l>3*A?'Last 5m candle is a spike (>3× ATR) — let it settle':'No spike candle');
   g(ctx.now-last.t>=300e3&&ctx.now-last.t<=12*60e3,ctx.now-last.t>12*60e3?'5m data is stale — waiting for a fresh candle':'5m data fresh');
-  if(ctx.newsReady===false)g(false,'Economic calendar unavailable or stale — new entries paused');
+  if(ctx.newsReady===false){g(true,'News schedule unavailable — technical signals enabled; news risk unchecked');out.gates.at(-1).advisory=true;}
   // ── setups ──
   const body=Math.abs(last.c-last.o),rng=Math.max(last.h-last.l,1e-9);
   const lw=Math.min(last.o,last.c)-last.l,uw=last.h-Math.max(last.o,last.c);
@@ -4197,7 +4200,7 @@ function scalpEvaluate(sym){
   Promise.resolve(scalpOpen(sym,scan,lv)).then(accepted=>{if(accepted)st.handledBar=scan.barT;}).catch(()=>{st.note='Entry submission failed — ledger reconciliation required';if(typeof paperEngine!=='undefined')paperEngine.until=0;}).finally(()=>{st.entryPending=false;});
 }
 async function scalpOpen(sym,scan,lv){
-  const t={id:Date.now()+Math.floor(Math.random()*1000),sym,dir:scan.dir,setup:scan.setup,reason:scan.setup,
+  const t={id:Date.now()+Math.floor(Math.random()*1000),newsProtection:calendarReady()?'CHECKED':'UNAVAILABLE',sym,dir:scan.dir,setup:scan.setup,reason:scan.setup,
     why:scan.why,entry:lv.entry,tp:lv.tp,sl:lv.sl,slNow:lv.sl,beAt:lv.beAt,beMoved:false,
     lot:lv.lot,units:lv.units,tpUsd:lv.tpUsd,slUsd:lv.slUsd,t:Date.now(),status:'OPEN',lastBar:scan.barT,
     timeframe:'5m',signalType:'low-profit',paperOnly:true,brokerOrderId:null,
@@ -4719,7 +4722,7 @@ function paperAccountRisk(sym,dir,entry,sl,units,now=Date.now()){
 function autoEntryCheck(sym,sig,manual=false){
   if(!sig?.smart?.tier||sig.state==='WAIT')return{ok:false,reason:sig?.reason||'Waiting for technical confirmation'};
   if(!paperReady())return{ok:false,reason:typeof paperEngine==='undefined'?'Engine ownership required':paperEngine.reason};
-  if(!freshQuote(sym)||!calendarReady())return{ok:false,reason:'Fresh quote and validated news schedule required'};
+  if(!freshQuote(sym))return{ok:false,reason:'Fresh quote required'};
   if(sym!=='BTCUSD'&&!isMetalsMarketOpen())return{ok:false,reason:'Metals market closed'};
   if(activeSignals[sym])return{ok:false,reason:'A paper signal is already open on this asset'};
   if(Date.now()<(sigCooldown[sym]||0)&&sig.confidence!=='HIGH'&&!manual)return{ok:false,reason:'Cooldown after the last closed signal'};
@@ -4791,7 +4794,7 @@ function evaluateSignals(manual){
       const liveEntry=prices[sym];
       const atrV=sig.atrVal||atr(sig.candles)||sig.price*0.001;
       const guardMsg=msg=>{if(lastGuardToast[sym]!==candleTs){lastGuardToast[sym]=candleTs;showToast(msg,'#e8a33d');}};
-      if(!freshQuote(sym)||!calendarReady())return;
+      if(!freshQuote(sym))return;
       const plan=sig.smart?kmrTradePlan({...sig.smart,price:liveEntry},ASSETS[sym].dec):null;
       if(!plan)return;
       const sgn=sig.state==='BUY'?1:-1;
@@ -4922,13 +4925,12 @@ function closedMarketCard(sym,a){
 }
 function signalQuality(sig,sym){
   if(sig?.quoteUnavailable)return {score:sig.smart?.score||0,label:'QUOTE UNAVAILABLE',gatesOk:false,chips:[['WAIT FOR LIVE PRICE','warn']]};
-  if(sig?.newsUnavailable)return {score:sig.smart?.score||0,label:'NEWS UNAVAILABLE',gatesOk:false,chips:[['NEW ENTRIES PAUSED','warn']]};
   if(sig?.referenceOnly)return {score:0,label:'DELAYED REFERENCE',gatesOk:false,chips:[['WAIT FOR LIVE CANDLES','warn']]};
   if(!sig||sig.dataUnavailable)return {score:0,label:'DATA UNAVAILABLE',gatesOk:false,chips:[['WAIT FOR DATA','warn']]};
   if(sig.smart||sig.smartScore!=null){
     const sm=sig.smart,score=sm?sm.score:sig.smartScore;
     const gk=k=>sm?sm.gates.find(g=>g.key===k):null;
-    const c=(lbl,g)=>[lbl,g==null?'warn':g.ok?'ok':'bad'];
+    const c=(lbl,g)=>[lbl,g==null||g.advisory?'warn':g.ok?'ok':'bad'];
     const names={htf:'HTF',adx:'TREND',vol:'VOLATILITY',ext:'NO CHASE',spike:'NO SPIKE',rsi:'RSI',news:'NEWS',roll:'ROLLOVER',volm:'VOLUME',value:'VALUE',trigger:'TRIGGER',struct:'STRUCTURE'};
     const chips=sm?[[sm.tier?sm.dir:'WAIT',sm.tier?'ok':'warn'],...sm.gates.map(g=>c(names[g.key]||g.key.toUpperCase(),g))]:[[sig.state,'ok'],['ENGINE v3','ok']];
     const label=score>=84?'A+ CLEAN':score>=70?'A GOOD':score>=55?'B WATCH':score>=40?'C WEAK':'D AVOID';
@@ -5136,9 +5138,9 @@ async function claimAlertOnce(key){
   }catch(e){return false;} // No durable claim: do not duplicate outbound alerts.
 }
 async function recordSignal(sym,sig,pos,manual){
-  if(!paperReady()||!freshQuote(sym)||!calendarReady()||activeSignals[sym])return false; // server-coordinated paper entries only
+  if(!paperReady()||!freshQuote(sym)||activeSignals[sym])return false; // server-coordinated paper entries only
   const id=Date.now()+Math.floor(Math.random()*100);
-  const r={id,ts:Date.now(),sym,dir:sig.state,price:sig.price,tp:pos.tp,sl:pos.sl,
+  const r={id,ts:Date.now(),newsProtection:calendarReady()?'CHECKED':'UNAVAILABLE',sym,dir:sig.state,price:sig.price,tp:pos.tp,sl:pos.sl,
     tp1:pos.tp1,tp2:pos.tp2,tp3:pos.tp3,tp1Hit:false,tp2Hit:false,
     remFrac:1,realUsd:0,slNow:pos.sl,beMoved:false,manual:!!manual,
     posUnits:pos.posUnits,lot:pos.lot,volLevel:pos.volLevel,atrPct:pos.atrPct,slUsd:pos.slUsd,tpUsd:pos.tpUsd,
@@ -5616,7 +5618,7 @@ function renderCalendarHealth(){
   const ready=calendarReady(),now=Date.now();
   const age=calendarCacheAt?Math.max(0,Math.floor((now-calendarCacheAt)/60000)):null;
   const text=ready?'News protection ready · schedule checked '+age+' min ago'+(feedError.calendar?' · refresh delayed; using the still-valid schedule':''):
-    'New entries paused · news schedule unavailable or stale. Existing paper positions continue to be managed when prices and engine ownership are available.';
+    'News schedule unavailable · technical signals enabled. News risk is unchecked; price, trigger, spread and risk checks still apply.';
   box.textContent=text;
   if(calendarHealth?.source){const source=document.createElement('span');source.textContent=' · '+calendarHealth.source;box.append(source);}
   if(!ready&&calendarHealth?.retryAt>now){const retry=document.createElement('span');retry.textContent=' · next check '+new Date(calendarHealth.retryAt).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});box.append(retry);}

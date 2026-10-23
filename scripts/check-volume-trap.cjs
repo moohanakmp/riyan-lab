@@ -39,7 +39,7 @@ function sample(){
  const levelScan=ctx.scalpScan('XAUUSD',bars,c15,[],settings);
  if(original.dir)assert.equal(levelScan.setup,original.setup,'original valid candidates retain priority');
  else assert.equal(levelScan.strategyVersion,'sr-volume-v1');
- assert.equal(ctx.scalpScan('XAUUSD',bars,c15,[],{...settings,newsReady:false}).gatesOk,false);
+ const noNews=ctx.scalpScan('XAUUSD',bars,c15,[],{...settings,newsReady:false});assert.equal(noNews.gatesOk,levelScan.gatesOk);assert(noNews.gates.some(g=>g.advisory));
  assert.equal(ctx.scalpScan('XAUUSD',bars,c15,[],{...settings,marketOpen:false}).gatesOk,false);
  // Browser and background use exactly the same new functions and retain server-entry provenance.
  const result=await scan({username:'fixture',role:'user',now,allowEntries:true,config:{levels:true},history:[],calendar:[],calendarAt:now,

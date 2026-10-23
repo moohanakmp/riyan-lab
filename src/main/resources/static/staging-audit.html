@@ -63,8 +63,8 @@ button.onclick=async()=>{
   try{
    const r=await api('/api/v1/paper/background/calendar-status'),c=r.data;
    const valid=r.ok&&c?.ready&&Array.isArray(c.calendar)&&c.calendar.length>0&&c.calendarAt<=Date.now()&&Date.now()-c.calendarAt<1800000&&c.expiresAt>Date.now();
-   add('Shared news-calendar protection',valid?'PASS':'WARN',valid?c.calendar.length+' events; true age '+Math.floor((Date.now()-c.calendarAt)/60000)+' min; '+c.source:(c?.calendarError||'Calendar unavailable')+'; new entries paused');
-  }catch(e){add('Shared news-calendar protection','WARN',e.message+'; new entries paused')}
+   add('Shared news-calendar protection',valid?'PASS':'WARN',valid?c.calendar.length+' events; true age '+Math.floor((Date.now()-c.calendarAt)/60000)+' min; '+c.source:(c?.calendarError||'Calendar unavailable')+'; technical signals enabled; news risk unchecked');
+  }catch(e){add('Shared news-calendar protection','WARN',e.message+'; technical signals enabled; news risk unchecked')}
   const types=['auto-signals','manual-signals','low-profit','analysis','seven-day','pnl','gold-calls','research','tab-state','user-state','news-alerts','basket-sessions','basket-positions','basket-events','basket-replays'];
   for(const type of types){
    try{

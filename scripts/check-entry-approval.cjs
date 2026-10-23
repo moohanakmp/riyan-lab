@@ -13,6 +13,7 @@ const sig={state:'SELL',confidence:'MED',lot:.01,price:4146.6,atrVal:2,smart,con
   computeSignal:()=>sig,getCandles:()=>[],PaperMath:{closed:x=>x},volSpike:{},computeVolSpike:()=>null,recordHourSample(){},saveSigMeta(){},atr:()=>2,
   calcPos:()=>({volLevel:'green',atrPct:.1}),showToast(){},CAPITAL:100});
  vm.runInContext(['ASSETS','SPREAD'].map(n=>extract(n,'const')).join('\n')+'\n'+['fmtP','istDayKey','kmrTradePlan','paperAccountRisk','autoEntryCheck','evaluateSignals','signalQuality','qualityMeterHtml','riyanRepairManualPlans'].map(n=>extract(n)).join('\n'),c);
+ c.calendarReady=()=>false;assert.equal(c.autoEntryCheck('XAUUSD',sig).ok,true,'calendar outage cannot block a valid technical entry');c.calendarReady=()=>true;
  const approval=c.autoEntryCheck('XAUUSD',sig);assert(approval.ok);assert(approval.risk.planned<=4);assert.equal(approval.plan.sl,4149.6);
  const quality=c.signalQuality(sig,'XAUUSD');assert.equal(quality.score,83);assert.equal(quality.gatesOk,true);assert.equal(quality.chips.length,13,'all 12 gates and direction are visible');
  for(const label of ['RSI','STRUCTURE','NO SPIKE','ROLLOVER','VOLATILITY'])assert(quality.chips.some(x=>x[0]===label));

@@ -30,3 +30,7 @@ Signals and Settings show the last server check, current owner and per-instrumen
 ## Optional free-tier wake-up workflow
 
 `ops/background-wake.yml` is a prepared, inactive proposal. Copy it to `.github/workflows/background-wake.yml` on the default branch (`main`) to run a public health request every five minutes. It requires no credentials, checkout, API mutation, or order endpoint. GitHub can delay or drop scheduled jobs, so this is best-effort and not an always-on trading guarantee. It is deliberately not activated because the user requested implementation changes remain on `staging/backend-auth-20261016`; activation needs the explicit default-branch exception. No production application files need to be merged.
+
+## Calendar outage policy
+
+Calendar availability is advisory for Auto, Manual and Low Profit technical signals in both browser and server engines. An unavailable, stale or invalid schedule is displayed as unchecked news risk, never as a clear news window. Eligible technical setups can enter without it; known high-impact USD events still block Auto entries from 30 minutes before until 15 minutes after release, and Low Profit from 10 minutes before until 15 minutes after. Provider caching, validation and rate-limit backoff continue unchanged. Each new Auto or Low Profit record includes `newsProtection` (`CHECKED` or `UNAVAILABLE`) for audit. Fresh prices/candles, technical triggers, structural stops, spread checks, engine ownership, and account limits remain required.

@@ -91,9 +91,9 @@ public class EconomicCalendar {
     private Map<String,Object> snapshot(long now){
         long end=calendar==null?0:weekStart(Instant.parse(calendar.get(0).path("date").asText()).toEpochMilli()).plusWeeks(1).toInstant().toEpochMilli();
         boolean ready=calendar!=null&&fetchedAt>0&&fetchedAt<=now&&now-fetchedAt<TTL&&now+45*60000<end;
-        String reason=ready?error:error.isBlank()?"Calendar stale or weekly coverage ended — new entries paused":error;
+        String reason=ready?error:error.isBlank()?"Calendar stale or weekly coverage ended — news risk unchecked":error;
         var out=new LinkedHashMap<String,Object>();
-        out.put("calendarAt",ready?fetchedAt:0);out.put("calendarError",reason);out.put("calendarState",ready?(error.isBlank()?"READY":"DEGRADED"):"PAUSED");
+        out.put("calendarAt",ready?fetchedAt:0);out.put("calendarError",reason);out.put("calendarState",ready?(error.isBlank()?"READY":"DEGRADED"):"UNAVAILABLE");
         out.put("ready",ready);out.put("fetchedAt",fetchedAt);out.put("expiresAt",calendar==null?0:Math.min(fetchedAt+TTL,end-45*60000));out.put("retryAt",nextAttempt);
         out.put("source","Forex Factory / Fair Economy");out.put("sourceUrl","https://www.forexfactory.com/calendar");out.put("eventCount",calendar==null?0:calendar.size());out.put("httpStatus",httpStatus);
         if(ready)out.put("calendar",calendar.deepCopy());
