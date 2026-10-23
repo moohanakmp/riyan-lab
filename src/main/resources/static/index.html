@@ -815,11 +815,22 @@ body{background:
 <!-- SIGNALS -->
 <!-- LOW-PROFIT SCALPS -->
 <div id="tsc" style="display:none">
-  <div class="sig-wrap"><div id="scalpContainer"></div></div>
+  <div class="sig-wrap"><button class="recheck-btn" onclick="showTriggeredSignals()">View all triggered signals →</button><div id="scalpContainer"></div></div>
 </div>
 
 <div id="ts" style="display:none">
   <div class="sig-wrap">
+    <section id="triggeredSignals" class="ic" aria-label="All triggered signals"><div class="ib">
+      <div class="trend-hdr"><h2 class="sec-ttl" style="margin:0">All Triggered Signals</h2><button class="recheck-btn" onclick="refreshTriggeredSignals()">Refresh saved signals</button></div>
+      <p class="sc-dim">Accepted paper entries across Auto, Manual and Low Profit, including closed and archived records. A live BUY/SELL setup is not an entry until accepted.</p>
+      <div class="filter-row">
+        <select id="triggerSource" aria-label="Signal source" onchange="triggeredPage=0;renderTriggeredSignals()"><option value="ALL">All sources</option><option>Auto</option><option>Manual paper</option><option>Low Profit</option><option>Basket</option></select>
+        <select id="triggerAsset" aria-label="Signal asset" onchange="triggeredPage=0;renderTriggeredSignals()"><option value="ALL">All assets</option><option>XAUUSD</option><option>XAGUSD</option><option>BTCUSD</option></select>
+        <select id="triggerStatus" aria-label="Signal status" onchange="triggeredPage=0;renderTriggeredSignals()"><option value="ALL">All statuses</option><option>OPEN</option><option value="CLOSED">Closed</option><option>WIN</option><option>LOSS</option><option>BE</option></select>
+      </div>
+      <div id="triggeredSync" role="status" class="sc-dim"></div><div id="triggeredList"></div>
+    </div></section>
+
     <div class="trend-hdr"><div class="sec-ttl" style="margin:0">Market Trend</div><button class="recheck-btn" onclick="recheckTrends()">🔄 Re-check Trend</button></div>
     <div class="trend-strip" id="trendStrip"></div>
     <details class="workspace-explainer"><summary>Signal rules & safety gates</summary><div class="notice"><b>🧠 Engine v3 — trades like a disciplined trader:</b> direction comes only from the <b>4H + 1H</b> trend (both must agree), the market must actually be <b>trending</b> (ADX&nbsp;20+), and entries happen only on a <b>pullback into value</b> (EMA20/EMA50, an order block, or right after a liquidity sweep) with a real <b>trigger candle</b>. It refuses to <b>chase</b> stretched moves, stands aside <b>30 min before / 15 min after high-impact USD news</b> and during the 02:00–04:00 IST rollover, and blocks entries when <b>volume pressure</b> is on the other side.<br><b>★ HIGH</b> (quality 84+) → 0.01 paper lot · <b>◆ MED</b> (70–83) → 0.01 paper lot · every WAIT card tells you exactly what it's waiting for.<br><b>🔒 Stable levels:</b> closed candles only, TP/SL locked at entry. <b>👀 Reversal watch</b> still scans open trades across 1m→4h.</div></details>
@@ -1946,7 +1957,7 @@ async function bootstrapAll(){
   calibrateMetal('XAUUSD');calibrateMetal('XAGUSD');lastOhlcSync=Date.now();renderFeedStatus();
   const t=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   const ok=SYMS.filter(freshQuote).length;
-  setSbar(`✓ ${t} IST · ${ok}/3 fresh quotes · ${signalHistory.length} signals cached`);
+  setSbar(`✓ ${t} IST · ${ok}/3 fresh quotes · ${signalHistory.length+scalpHist.length} accepted entries loaded`);
   evaluateSignals();
   if(document.getElementById('ts').style.display!=='none')renderSignals();
 }
@@ -4834,7 +4845,45 @@ function analyzeNow(){showTab('manual',document.querySelector('[data-tab=manual]
 // trade re-rendered every 5-8s (price/float updates) never replays the celebration — only
 // the render immediately after a brand-new signal is recorded gets the animation.
 let flashedSigIds=new Set();
+let triggeredPage=0;
+function triggeredRows(source='ALL',asset='ALL',status='ALL'){
+  const admin=currentUser?.role==='admin';
+  return allPaperRows().filter(r=>{
+    if(r.owner&&r.owner!==currentUser?.username)return false;
+    if(!admin&&r.confidence==='HIGH'&&!hasAccess('historyHigh'))return false;
+    if(!admin&&r.confidence==='MED'&&!hasAccess('historyMed'))return false;
+    return (source==='ALL'||r.strategy===source)&&(asset==='ALL'||r.sym===asset)&&
+      (status==='ALL'||(status==='CLOSED'?r.outcome!=='OPEN':r.outcome===status));
+  }).sort((a,b)=>(b.ts||b.t||Number(b.id)||0)-(a.ts||a.t||Number(a.id)||0));
+}
+function renderTriggeredSignals(){
+  const box=document.getElementById('triggeredList');if(!box)return;
+  const rows=triggeredRows(document.getElementById('triggerSource')?.value||'ALL',document.getElementById('triggerAsset')?.value||'ALL',document.getElementById('triggerStatus')?.value||'ALL');
+  const total=triggeredRows(),open=total.filter(r=>r.outcome==='OPEN').length,size=20;
+  triggeredPage=Math.max(0,Math.min(triggeredPage,Math.ceil(rows.length/size)-1));
+  const stamp=t=>t?new Date(t).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',hour12:false})+' IST':'Unavailable';
+  const num=(sym,v)=>Number.isFinite(v)?fmtP(sym,v):'—';
+  let html=`<p><b>${total.length} triggered · ${open} open · ${total.length-open} closed</b></p>`;
+  if(!rows.length){box.innerHTML=html+'<p class="sc-dim">'+(total.length?'No accepted signals match these filters.':'No accepted entries saved for this account yet. Watch cards and technical setup scores are not triggered trades. Check the entry status below.')+'</p>';return;}
+  html+=rows.slice(triggeredPage*size,(triggeredPage+1)*size).map(r=>{
+    const raw=r.status||r.outcome,entry=r.price,lot=Number.isFinite(r.lot)?r.lot:'—';
+    const targets=[r.tp1,r.tp2,r.tp3].filter(Number.isFinite);if(!targets.length&&Number.isFinite(r.tp))targets.push(r.tp);
+    const result=r.outcome==='OPEN'?'Open · result pending':Number.isFinite(r.pnlUsd)?(r.pnlUsd>=0?'+':'')+'$'+r.pnlUsd.toFixed(2):'Result unavailable';
+    return `<article class="sig-card"><div class="sig-hdr"><b>${basketTxt(ASSETS[r.sym]?.sym||r.sym)} · ${basketTxt(r.dir||'—')}</b><span>${basketTxt(raw)}${raw!==r.outcome?' · '+basketTxt(r.outcome):''}</span></div><p>${basketTxt(r.strategy)} · ${basketTxt(r.timeframe||(r.strategy==='Low Profit'?'5m':'15m'))} · ${lot} lot${r.archived?' · Archived':''}</p><p class="sc-dim">Triggered: ${stamp(r.ts||r.t||Number(r.id))}</p><p>Entry <b>${num(r.sym,entry)}</b> · SL <b>${num(r.sym,r.sl)}</b><br>TP ${targets.map(t=>num(r.sym,t)).join(' / ')||'—'}</p><p>${basketTxt(result)}</p><p class="sc-dim">${basketTxt(r.reason||r.setup||'Accepted strategy entry')} · ${basketTxt(r.generator||'Browser')}${r.legacy?' · Legacy record':''}</p>${r.outcome!=='OPEN'?'<p class="sc-dim">Closed: '+stamp(r.closedAt||r.exitAt)+'</p>':''}<small class="sc-dim">Signal ID: ${basketTxt(String(r.id||r.signalKey||'—'))}</small></article>`;
+  }).join('');
+  html+=`<div class="trend-hdr"><button class="recheck-btn" ${triggeredPage===0?'disabled':''} onclick="triggeredPage--;renderTriggeredSignals()">Previous</button><span>${triggeredPage*size+1}–${Math.min(rows.length,(triggeredPage+1)*size)} of ${rows.length}</span><button class="recheck-btn" ${(triggeredPage+1)*size>=rows.length?'disabled':''} onclick="triggeredPage++;renderTriggeredSignals()">Next</button></div>`;
+  box.innerHTML=html;
+}
+async function refreshTriggeredSignals(){
+  const user=currentUser?.username,box=document.getElementById('triggeredSync');
+  if(box)box.textContent='Loading saved signals…';
+  const ok=await riyanRestore();if(currentUser?.username!==user)return;
+  renderTriggeredSignals();
+  if(box)box.textContent=ok?'Saved signals refreshed from server.':'Server refresh unavailable — showing the records already loaded; retry to load the full history.';
+}
+function showTriggeredSignals(){showTab('signals',document.querySelector('[data-tab=signals]'));document.getElementById('triggeredSignals')?.scrollIntoView({behavior:'smooth',block:'start'});}
 function renderSignals(){
+  renderTriggeredSignals();
   const isAdmin=currentUser&&currentUser.role==='admin';
   const canSeeHigh=isAdmin||hasAccess('historyHigh');
   const canSeeMed=isAdmin||hasAccess('historyMed');
@@ -4961,12 +5010,12 @@ function waitCard(sym,a,sig,isAdmin){
     const ch=(!sig.conditions||sig.conditions.length===0)
       ?`<div class="cond cond-no" style="grid-column:1/-1"><div class="cond-lbl">${sig.reason||'Loading...'}</div></div>`
       :sig.conditions.map(c=>`<div class="cond ${c.pass?'cond-yes':'cond-no'}"><div class="cond-icon">${c.pass?'✓':'·'}</div><div class="cond-lbl">${c.label}</div></div>`).join('');
-    body=qualityMeterHtml(sig,sym)+`<div class="conf-row"><div class="conf-bar-wrap"><div class="conf-bar" style="width:${sig.total?sig.score/sig.total*100:0}%;background:${barCol}"></div></div><div class="conf-lbl">${sig.score}/${sig.total} supporting factors</div></div>
+    body=(entryReason?`<div class="notice"><b>Entry status:</b> ${basketTxt(entryReason)}</div>`:'')+qualityMeterHtml(sig,sym)+`<div class="conf-row"><div class="conf-bar-wrap"><div class="conf-bar" style="width:${sig.total?sig.score/sig.total*100:0}%;background:${barCol}"></div></div><div class="conf-lbl">${sig.score}/${sig.total} supporting factors</div></div>
       <div class="cond-grid">${ch}</div>
       <div style="text-align:center;font-size:9.5px;color:var(--dim);padding:2px 0">${coolTxt||sig.reason||'Waiting for confluence'}</div>
       <div class="data-src">${metalSrcNote(sym)} · closed candles only</div>`;
   }else{
-    body=qualityMeterHtml(sig,sym)+`<div style="text-align:center;font-size:11px;color:var(--dim);padding:6px 0">${coolTxt||'Waiting for a confirmed setup'}</div>`;
+    body=(entryReason?`<div class="notice"><b>Entry status:</b> ${basketTxt(entryReason)}</div>`:'')+qualityMeterHtml(sig,sym)+`<div style="text-align:center;font-size:11px;color:var(--dim);padding:6px 0">${coolTxt||'Waiting for a confirmed setup'}</div>`;
   }
   body+=marketEvidenceHtml(sig.smart?.evidence,sym);
   if(sig.smart&&!coolTxt){
@@ -6148,7 +6197,7 @@ async function bootApp(){
     if(document.getElementById('tpn').style.display!=='none')renderPnl();
     const t=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
     const ok=SYMS.filter(freshQuote).length;
-    setSbar(`✓ ${t} IST · ${ok}/3 fresh quotes · ${signalHistory.length} signals`);
+    setSbar(`✓ ${t} IST · ${ok}/3 fresh quotes · ${signalHistory.length+scalpHist.length} accepted entries`);
     if(document.getElementById('ts').style.display!=='none')renderSignals();
     if(document.getElementById('th').style.display!=='none')renderHistory();
     if(document.getElementById('tan').style.display!=='none')renderAnalysis();

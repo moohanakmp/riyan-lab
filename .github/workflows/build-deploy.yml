@@ -59,6 +59,7 @@ jobs:
           node scripts/check-volume-trap.cjs
           node scripts/check-market-context.cjs
           node scripts/check-entry-approval.cjs
+          node scripts/check-triggered-signals.cjs
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build

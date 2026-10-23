@@ -48,7 +48,7 @@ function fixture(){
  const events=[],pending=[];
  const boot=vm.createContext({Promise,fetchLiveCrypto:()=>{events.push('crypto');return Promise.resolve();},fetchLiveMetals:()=>{events.push('metals');return Promise.resolve();},
   loadCandles:()=>{events.push('history');return new Promise(r=>pending.push(r));},fetchMetalOHLC:()=>{events.push('history');return new Promise(r=>pending.push(r));},
-  setSbar(){},calibrateMetal(){},Date,renderFeedStatus(){},SYMS:[],freshQuote:()=>false,signalHistory:[],evaluateSignals(){},document:{getElementById:()=>({style:{display:'none'}})}});
+  setSbar(){},calibrateMetal(){},Date,renderFeedStatus(){},SYMS:[],freshQuote:()=>false,signalHistory:[],scalpHist:[],evaluateSignals(){},document:{getElementById:()=>({style:{display:'none'}})}});
  vm.runInContext(extract('async function bootstrapAll(){','async function manualRefresh(){'),boot);
  const startup=boot.bootstrapAll();assert.deepEqual(events.slice(0,2),['crypto','metals'],'prices start before history completes');pending.forEach(r=>r());await startup;
  let widgets=0,hasFrame=false;
