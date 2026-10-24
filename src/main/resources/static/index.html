@@ -1048,9 +1048,9 @@ body{background:
     </div>
     <div class="ic">
       <div class="it">📲 Signal Alert Delivery</div>
-      <div class="ib" style="margin-bottom:12px">Send every confirmed signal to Telegram and/or Email automatically, formatted as a TP ladder.</div>
+      <div class="ib" style="margin-bottom:12px">Telegram entry alerts are delivered by the server for browser and background signals. Email alerts are sent from this device.</div>
       <div class="perm-row" style="border-bottom:1px solid var(--bdr)">
-        <div><div class="perm-label">Send alerts from this device</div><div class="perm-sub">Keep ON on one device only (yours) to avoid duplicate messages</div></div>
+        <div><div class="perm-label">Send local alerts and email from this device</div><div class="perm-sub">Applies to browser alerts and email. Telegram entry delivery runs on the server.</div></div>
         <label class="toggle-sw"><input type="checkbox" id="sendHereChk" checked onchange="saveNotifSettings()"><span class="toggle-slider"></span></label>
       </div>
 
@@ -1066,13 +1066,13 @@ body{background:
       <div class="ib" style="font-size:10px;margin-top:2px">⚠ This only controls the sound while the app is open and active in the browser — a phone-locked or backgrounded tab can't reliably play sound or run at all; that's an OS/browser limitation, not something a website can override.</div>
 
       <div class="perm-row" style="border-bottom:1px solid var(--bdr);margin-top:6px">
-        <div><div class="perm-label">Telegram Alerts</div><div class="perm-sub">Send via your Telegram bot</div></div>
+        <div><div class="perm-label">Telegram Alerts</div><div class="perm-sub">Server delivery via your Telegram bot · includes background entries</div></div>
         <label class="toggle-sw"><input type="checkbox" id="tgEnabled" onchange="saveNotifSettings()"><span class="toggle-slider"></span></label>
       </div>
       <div id="tgFields" style="display:none;padding:10px 0">
-        <div class="login-field"><label class="login-label">Bot Token</label><input type="text" class="login-input" id="tgToken" placeholder="123456:ABC-DEF1234..." onchange="saveNotifSettings()"></div>
+        <div class="login-field"><label class="login-label">Bot Token</label><input type="password" autocomplete="off" class="login-input" id="tgToken" placeholder="123456:ABC-DEF1234..." onchange="saveNotifSettings()"></div>
         <div class="login-field" style="margin-bottom:0"><label class="login-label">Chat ID</label><input type="text" class="login-input" id="tgChatId" placeholder="e.g. 123456789" onchange="saveNotifSettings()"></div>
-        <button class="login-btn" style="margin-top:10px;background:var(--sur);color:var(--txt);border:1px solid var(--bdr)" onclick="testTelegram()">Send Test Message</button>
+        <button class="login-btn" style="margin-top:10px;background:var(--sur);color:var(--txt);border:1px solid var(--bdr)" onclick="testTelegram()">Send Test Message</button><button class="recheck-btn" onclick="refreshTelegramStatus()">Refresh delivery status</button><button class="recheck-btn" onclick="retryTelegramAlerts()">Retry failed alerts</button><div id="telegramDeliveryStatus" class="notice" role="status" aria-live="polite">Save settings to enable server delivery.</div>
       </div>
 
       <div class="perm-row" style="border-bottom:1px solid var(--bdr);margin-top:6px">
@@ -4229,7 +4229,6 @@ async function scalpOpen(sym,scan,lv){
   showToast(`💵 <b style="color:${col}">${t.dir}</b> ${ASSETS[sym].sym} scalp · ${t.lot} lot<br>TP ${fmtP(sym,t.tp)} (+$${t.tpUsd.toFixed(2)}) · SL ${fmtP(sym,t.sl)} (−$${t.slUsd.toFixed(2)})`,col);
   if(alertsEnabled){try{playBeep(t.dir);doVibrate(t.dir);}catch(e){}}
   scalpNotify(`💵 ${t.dir} ${ASSETS[sym].sym} scalp`,`Entry ${fmtP(sym,t.entry)} · TP ${fmtP(sym,t.tp)} (+$${t.tpUsd.toFixed(2)}) · SL ${fmtP(sym,t.sl)} (−$${t.slUsd.toFixed(2)})`);
-  claimAlertOnce('kmr_scalp_'+t.id).then(ok=>{if(ok)sendTelegram(`<b>💵 LOW-PROFIT ${t.dir} — ${ASSETS[sym].sym}</b>\n\nEntry: ${fmtP(sym,t.entry)}\nTP: ${fmtP(sym,t.tp)} (+$${t.tpUsd.toFixed(2)})\nSL: ${fmtP(sym,t.sl)} (−$${t.slUsd.toFixed(2)})\nSize: ${t.lot} lot (${+(t.units).toFixed(3)} ${ASSETS[sym].lotUnit})\nSetup: ${t.setup}\n• ${t.why.join('\n• ')}\n\nStop → breakeven at 60% of TP · 45-min time stop`);}).catch(()=>{});
   }catch(e){console.warn('Scalp accepted; optional display/notification update failed',e);}
   return true;
 }
@@ -5045,6 +5044,11 @@ let notifSettings={
 async function loadNotifData(){
   try{const s=await dbGet('state','notifSettings');if(s&&s.value)notifSettings={...notifSettings,...s.value};}catch(e){}
   initEmailJsIfNeeded();
+  if(currentUser?.role!=='guest'){
+    if(notifSettings.tgEnabled&&notifSettings.tgToken&&notifSettings.tgChatId&&notifSettings.sendHere!==false)await syncTelegramSettings().catch(()=>{});
+    const server=await refreshTelegramStatus();
+    if(server?.configured&&!notifSettings.tgToken){notifSettings.tgEnabled=server.enabled;notifSettings.tgChatId=server.chatId||notifSettings.tgChatId;}
+  }
 }
 
 async function loadNotifSettings(){
@@ -5080,7 +5084,9 @@ async function saveNotifSettings(){
   document.getElementById('emFields').style.display=notifSettings.emEnabled?'block':'none';
   try{await dbPut('state',{key:'notifSettings',value:notifSettings});}catch(e){}
   initEmailJsIfNeeded();
-  showToast('⚙ Notification settings saved','var(--grn)');
+  try{await syncTelegramSettings();await refreshTelegramStatus();}
+  catch(e){telegramStatusText('Telegram settings were not saved on the server: '+e.message);showToast('Telegram setup failed — see delivery status','var(--red)');return false;}
+  showToast('⚙ Notification settings saved','var(--grn)');return true;
 }
 function initEmailJsIfNeeded(){
   if(!emailJsInited && notifSettings.emPublicKey && window.emailjs){
@@ -5106,17 +5112,35 @@ function buildLadderMessage(sym,dir,entryPrice,tp1,tp2,tp3,sl,decimals){
   return lines.join('\n');
 }
 
-async function sendTelegram(message){
-  if(notifSettings.sendHere===false)return; // this device is not the designated sender
-  if(!notifSettings.tgEnabled||!notifSettings.tgToken||!notifSettings.tgChatId)return;
+function telegramStatusText(text){const box=document.getElementById('telegramDeliveryStatus');if(box)box.textContent=text;}
+async function syncTelegramSettings(){
+  if(!currentUser||currentUser.role==='guest')return;
+  return riyanApi('/api/v1/telegram/settings',{method:'POST',body:JSON.stringify({enabled:!!notifSettings.tgEnabled,token:notifSettings.tgToken||'',chatId:notifSettings.tgChatId||''})});
+}
+async function retryTelegramAlerts(){
+  if(!confirm('Retry failed Telegram entry alerts from the last 24 hours? If a previous request timed out after delivery, a duplicate is possible.'))return;
+  try{const result=await riyanApi('/api/v1/telegram/retry',{method:'POST',body:'{}'});telegramStatusText(result.queued+' failed alerts queued for retry.');}
+  catch(e){telegramStatusText('Retry failed: '+e.message);}
+}
+async function refreshTelegramStatus(){
+  if(!currentUser||currentUser.role==='guest')return;
   try{
-    const url=`https://api.telegram.org/bot${notifSettings.tgToken}/sendMessage`;
-    await fetch(url,{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({chat_id:notifSettings.tgChatId,text:message,parse_mode:'HTML'})
-    });
-  }catch(e){console.warn('Telegram send failed',e);}
+    const data=await riyanApi('/api/v1/telegram/status');
+    const counts=Object.fromEntries((data.counts||[]).map(r=>[r.state,Number(r.count)||0]));
+    const recent=(data.latest||[]).find(r=>r.last_error);
+    telegramStatusText(!data.configured?'Telegram server delivery is not configured. Enter your bot token and chat ID, enable Telegram and save.':
+      (data.enabled?'Server Telegram delivery enabled':'Server Telegram delivery paused')+' · '+(counts.SENT||0)+' sent · '+((counts.PENDING||0)+(counts.RETRY||0)+(counts.SENDING||0))+' pending · '+(counts.FAILED||0)+' failed'+(recent?' · Last issue: '+recent.last_error:''));
+    return data;
+  }catch(e){telegramStatusText('Unable to check Telegram server delivery: '+e.message);}
+}
+async function sendTelegram(message){
+  if(notifSettings.sendHere===false||!notifSettings.tgEnabled||!notifSettings.tgToken||!notifSettings.tgChatId)return {ok:false,error:'Telegram is not configured on this device'};
+  try{
+    const response=await fetch(`https://api.telegram.org/bot${notifSettings.tgToken}/sendMessage`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:notifSettings.tgChatId,text:message,parse_mode:'HTML'})});
+    const data=await response.json();
+    if(!response.ok||data.ok!==true)throw Error(data.description||'Telegram rejected the message');
+    return {ok:true};
+  }catch(e){telegramStatusText('Telegram message failed: '+e.message);return {ok:false,error:e.message};}
 }
 async function sendEmailAlert(message,subject){
   if(notifSettings.sendHere===false)return;
@@ -5131,11 +5155,13 @@ async function sendEmailAlert(message,subject){
   }catch(e){console.warn('Email send failed',e);}
 }
 async function testTelegram(){
-  await saveNotifSettings();
-  const keep=notifSettings.sendHere;notifSettings.sendHere=true;
-  await sendTelegram('🔔 Kalai Markets — Telegram alerts connected successfully!');
-  notifSettings.sendHere=keep;
-  showToast('📨 Test message sent to Telegram','var(--grn)');
+  if(!await saveNotifSettings())return;
+  try{
+    const result=await riyanApi('/api/v1/telegram/test',{method:'POST',body:'{}'});
+    if(!result.ok)throw Error(result.error||'Telegram rejected the test');
+    telegramStatusText('Telegram confirmed the server test message. New accepted entries are queued automatically.');
+    showToast('Telegram confirmed delivery','var(--grn)');
+  }catch(e){telegramStatusText('Telegram test failed: '+e.message);showToast('Telegram test failed — see delivery status','var(--red)');}
 }
 function buildPnlReport(){
   const{label}=pnlRange(),rows=pnlRows(),tot=pnlStats(rows);
@@ -5223,7 +5249,6 @@ async function recordSignal(sym,sig,pos,manual){
     const ladderMsg=buildLadderMessage(sym,sig.state,sig.price,pos.tp1,pos.tp2,pos.tp3,pos.sl,ASSETS[sym].dec);
     const headerLine=(manual?'🔍 ON-DEMAND — ':'')+ladderMsg.split('\n')[0];
     const sm=sig.smart,whyLine=sm?`\n\n🧠 Engine v3 · ${sm.score}/100 · ${sm.tier}\n• 4H ${sm.bias4h} · 1H ${sm.bias1h}${sm.adx?` · ADX ${sm.adx.adx.toFixed(0)}`:''}\n• Entry at value: ${sm.valueZone||'—'}${sm.swept?' (after liquidity sweep)':''}${sm.vp&&sm.vp.ok?`\n• Volume ${sm.vp.buyPct.toFixed(0)}% buy / ${sm.vp.sellPct.toFixed(0)}% sell`:''}`:'';
-    sendTelegram(`<b>${headerLine}</b>\n\n`+ladderMsg.split('\n').slice(1).join('\n')+whyLine);
     sendEmailAlert(ladderMsg,`${manual?'[On-Demand] ':''}${sym} ${sig.state} Signal — Kalai Markets`);
   }
   }catch(e){console.warn('Paper entry accepted; optional display/notification update failed',e);}

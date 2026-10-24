@@ -60,6 +60,7 @@ jobs:
           node scripts/check-market-context.cjs
           node scripts/check-entry-approval.cjs
           node scripts/check-triggered-signals.cjs
+          node scripts/check-telegram.cjs
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build

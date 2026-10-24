@@ -1,4 +1,4 @@
-const CACHE='riyan-lab-v23';
+const CACHE='riyan-lab-v24';
 const ASSETS=['/','/index.html','/manifest.json'];
 self.addEventListener('install',event=>{
   event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting()));

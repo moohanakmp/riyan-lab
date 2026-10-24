@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const {extract,scan}=require('../src/main/resources/background/scanner.cjs');
 const PaperMath=require('../src/main/resources/static/trading-core.js');
-const now=Math.floor(Date.now()/300000)*300000+1000;
+const now=Date.UTC(2026,9,22,10,0,1); // Stable open metals session; test must also run on weekends.
 const names=['kmrIstHour','ema','rsi','atr','emaSeries','bbAt','fmtP','kmrAdx','kmrPivots','kmrTfBias','kmrVolumePressure','kmrLevelZones','kmrLevelSetup','kmrLevelPlan','scalpScan','scalpLevels'];
 const ctx=vm.createContext({Date,Math,PaperMath});
 vm.runInContext(['ASSETS','SPREAD'].map(n=>extract(n,'const')).join('\n')+'\n'+names.map(n=>extract(n)).join('\n'),ctx);
