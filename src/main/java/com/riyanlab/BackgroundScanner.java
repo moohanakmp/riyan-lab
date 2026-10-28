@@ -63,7 +63,7 @@ public class BackgroundScanner {
         ObjectNode config=settings.isEmpty()?legacyConfig(identity.username()):(ObjectNode)json.readTree(settings.getFirst());
         job.set("config",config.path("scalp").isObject()?config.path("scalp"):config);
         job.put("allowEntries",!settings.isEmpty());
-        job.put("basketEnabled",false);
+        job.put("basketEnabled",config.path("basketModeVersion").asInt()==2&&config.path("basketEnabled").asBoolean());
         Boolean openBasket=jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM basket_scalp_positions WHERE created_by=? AND status='OPEN')",Boolean.class,identity.username());
         if(Boolean.TRUE.equals(openBasket))job.put("basketActive",true);
         job.set("feeds",snapshot);calendar.forEach((k,v)->job.set(k,json.valueToTree(v)));
@@ -102,7 +102,7 @@ public class BackgroundScanner {
             detail.set("reasons",reasons);detail.set("instruments",result.path("diagnostics"));
             detail.put("calendarAt",((Number)calendar.getOrDefault("calendarAt",0)).longValue());
             detail.put("calendarError",Objects.toString(calendar.getOrDefault("calendarError","")));
-            detail.put("basket",Boolean.TRUE.equals(openBasket)?"Legacy positions remain browser managed; new basket entries retired":"Basket entries retired; Low Profit uses structure only");
+            detail.put("basket",Boolean.TRUE.equals(openBasket)?"Basket positions remain browser managed":"Low Profit uses structure; optional Basket mode requires a browser");
             status(identity.username(),"SCANNING",detail);
         }finally{if(process!=null&&process.isAlive())process.destroyForcibly();Files.deleteIfExists(output);Files.deleteIfExists(error);}
     }

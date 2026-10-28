@@ -29,7 +29,10 @@ public class BackgroundController {
             double n=scalp.path(field).asDouble(Double.NaN);
             if(!Double.isFinite(n)||n<=0||(field.equals("maxLoss")&&n>4)||(field.equals("dayStop")&&n>8))throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Invalid paper risk settings");
         }
-        for(String key:List.of("auto","stopAtGoal","continuation"))if(!scalp.path(key).isBoolean())throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Invalid strategy switch");
+        for(String key:List.of("auto","stopAtGoal"))if(!scalp.path(key).isBoolean())throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Invalid strategy switch");
+        if(scalp.has("continuation")&&!scalp.path("continuation").isBoolean())throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Invalid legacy continuation switch");
+        if(config.has("basketEnabled")&&!config.path("basketEnabled").isBoolean())throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Invalid basket switch");
+        if(config.path("basketEnabled").asBoolean()&&config.path("basketModeVersion").asInt()!=2)throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Explicit basket opt-in required");
         if(scalp.has("levels")&&!scalp.path("levels").isBoolean())throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Invalid level strategy switch");
         for(String sym:List.of("XAUUSD","XAGUSD","BTCUSD"))if(!scalp.path("assets").path(sym).isBoolean())throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Invalid asset switch");
         jdbc.update("""

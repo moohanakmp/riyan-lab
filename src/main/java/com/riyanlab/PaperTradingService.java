@@ -112,7 +112,10 @@ public class PaperTradingService {
             }
             return;
         }
-        if(type.equals("basket-positions"))reject("Basket entries retired; use Low Profit paper trading");
+        if(type.equals("basket-positions")){
+            Boolean enabled=jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM background_scanner_settings WHERE username=? AND config->>'basketEnabled'='true' AND config->>'basketModeVersion'='2')",Boolean.class,user);
+            if(!Boolean.TRUE.equals(enabled))reject("Basket mode is OFF; enable it explicitly before a new paper basket entry");
+        }
         if(next.path("accountingVersion").asInt()!=2 || !next.path("paperOnly").asBoolean() ||
            !next.path("brokerOrderId").isNull() || !"OPEN".equals(status(next)))reject("New entries require paper accounting v2");
         String sym=next.path("sym").asText(),dir=next.path("dir").asText(),key=next.path("signalKey").asText();

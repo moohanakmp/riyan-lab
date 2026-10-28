@@ -33,6 +33,7 @@ const {scan,normalize}=require('../src/main/resources/background/scanner.cjs');
  }
  assert(entry,'unchanged real indicator strategy must generate eligible background paper entry');assert.equal(entry.record.generator,'server-background');assert.equal(entry.record.accountingVersion,2);assert.equal(entry.record.lot,.01);assert(entry.record.conditions.gates.every(g=>g.ok));
  assert.equal((await scan({...eligibleJob,allowEntries:false})).changes.length,0,'unsynchronized personal settings cannot create new entries');
+ assert(!(await scan({...eligibleJob,basketEnabled:true})).changes.some(x=>x.type==='low-profit'),'enabled basket mode cannot also create regular Low Profit trades');
  const outage=await scan({...eligibleJob,calendar:null,calendarAt:0});
  const outageEntry=outage.changes.find(x=>x.type==='low-profit'&&x.record.status==='OPEN');
  assert(outageEntry,'calendar outage must not block eligible technical setups');assert.equal(outageEntry.record.newsProtection,'NOT_APPLICABLE');

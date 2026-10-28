@@ -7,7 +7,7 @@ const replay=fs.readFileSync('src/main/resources/static/basket-replay.js','utf8'
 const html=fs.readFileSync('src/main/resources/static/index.html','utf8');
 assert.match(html, /<script src="\/basket-demo\.js(?:\?v=[^"]+)?"><\/script>/);
 assert(!html.includes('<script src="/basket-replay.js'));
-assert(!html.includes('basketEvaluate(sym)'));
+assert(html.includes('basketEvaluate(sym)'));
 assert(html.includes('basketCandleCheck()'));
 const now=Date.now();
 let queued=[],calls=[];
@@ -60,13 +60,12 @@ const recent=[{t:now-1200000,l:99.9,h:101,c:100,o:100},
  {t:now-900000,l:99.8,h:100.8,c:100,o:100},
  {t:now-600000,l:99.7,h:100.6,c:100,o:100}];
 context.demoScan=candidate;context.demoCandles=recent;
-assert.equal(typeof context.basketPlan,'undefined','basket creation logic is retired');
-assert.equal(typeof context.basketCanAdd,'undefined');
+assert.equal(typeof context.basketPlan,'function');
+assert.equal(typeof context.basketCanAdd,'function');
 storage.set('kmr_basket_paper_v1_basketowner',JSON.stringify({enabled:true,active:null,history:[],events:[],lastBars:{}}));
 run('basketLoad()');assert.equal(context.basketDemo.enabled,false,'legacy enabled flag is migrated off');
-run('basketToggle()');assert.equal(context.basketDemo.enabled,false,'retired mode cannot be re-enabled');
-context.basketDemo.enabled=true;
-run("basketEvaluate('XAUUSD')");assert.equal(queued.length,0,'no new basket orders even from stale enabled state');
+assert(html.includes('id="basketModeToggle"'),'explicit accessible opt-in control');
+run("basketEvaluate('XAUUSD')");assert.equal(queued.length,0,'off mode cannot create entries');
 const s={id:'paper-case',sym:'XAUUSD',dir:'BUY',status:'OPEN',
  createdAt:now-20*60000,lastCheckedBar:0,positions:[{
  id:'p1',dir:'BUY',entry:100,sl:99,lot:.01,units:1,
@@ -112,7 +111,7 @@ assert(queued.filter(x=>x.type==='basket-positions').length>=3,
  'all position state transitions must queue for PostgreSQL');
 console.log('PASS: +$2 NET closes entire basket, corrupt risk fails closed, audit events persist');
 
-console.log('PASS: basket creation retired; legacy settings disabled and existing positions remain managed');
+console.log('PASS: basket defaults off; legacy settings migrate off and existing positions remain managed');
 console.log('PASS: conservative stop before profit, owner-scoped audit ledger, next-bar replay summary');
 
 (async()=>{
@@ -128,5 +127,12 @@ console.log('PASS: conservative stop before profit, owner-scoped audit ledger, n
  assert.equal(await run('basketDbRestore()'),true);
  assert.equal(context.basketDemo.active,null);
  assert.equal(context.basketDemo.history[0].netPnl,1.65);
+ // Toggle is confirmed durably before local mode changes. Turning off never closes existing trades.
+ let writes=[];context.riyanApi=async(path,opts)=>{if(opts?.method==='POST')writes.push(JSON.parse(opts.body));return{enabled:false};};
+ context.scalpHist=[];context.basketDemo.enabled=false;
+ await run('basketToggle()');assert.equal(context.basketDemo.enabled,true);assert.equal(writes[0].basketModeVersion,2);assert.equal(writes[0].enabled,false,'do not reactivate a paused background scanner');
+ await run('basketToggle()');assert.equal(context.basketDemo.enabled,false);
+ context.riyanApi=async()=>{throw Error('network unavailable');};await run('basketToggle()');assert.equal(context.basketDemo.enabled,false,'failed mode save cannot enable entry creation');
+ context.riyanApi=async()=>({enabled:true});context.scalpHist=[{status:'OPEN'}];await run('basketToggle()');assert.equal(context.basketDemo.enabled,false,'open Low Profit trade prevents switching entry engines');
  console.log('PASS: empty basket restore, lost-response reconstruction and authoritative closed history');
 })().catch(error=>{console.error(error);process.exitCode=1;});

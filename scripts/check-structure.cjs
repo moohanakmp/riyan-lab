@@ -37,6 +37,8 @@ function fixture(){
   const result=await scan({...job,...news}),entry=result.changes.find(x=>x.type==='low-profit');
   assert(entry,JSON.stringify(result));assert.equal(entry.record.strategyVersion,'ob-volume-v1');assert.equal(entry.record.newsProtection,'NOT_APPLICABLE');assert.equal(entry.record.sl,ob.stop);assert(Math.abs(entry.record.tpUsd-4)<1e-8);
  }
+ const sellResult=await scan({...job,feeds:{XAUUSD:{...job.feeds.XAUUSD,price:mirror.at(-1).c,five:mirror,bars:{'15m':PaperMath.aggregate(mirror,15)}}}});
+ const sellEntry=sellResult.changes.find(x=>x.type==='low-profit');assert(sellEntry,JSON.stringify(sellResult));assert.equal(sellEntry.record.dir,'SELL');assert(sellEntry.record.tp<sellEntry.record.entry);assert(sellEntry.record.sl>sellEntry.record.entry);
  const result=await scan({...job,feeds:{XAUUSD:{...job.feeds.XAUUSD,quoteAt:now-31000}}});assert(!result.changes.some(x=>x.type==='low-profit'),'stale quote still blocks structure entry');
  console.log('PASS mirrored order-block displacement/BOS/retest, no lookahead, invalidation, volume, gap, reference, trend, configurable net targets, structural risk and news-independent background entries');
 })().catch(e=>{console.error(e);process.exitCode=1;});

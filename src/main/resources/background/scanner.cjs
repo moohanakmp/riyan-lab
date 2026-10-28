@@ -53,7 +53,7 @@ async function scan(job){
  let calendarCache=job.calendar||null,calendarCacheAt=job.calendarAt||0,calendarHealth={expiresAt:job.expiresAt||calendarCacheAt+30*60e3};
  let signalHistory=job.history.filter(x=>x.type!=='low-profit').map(x=>x.record),scalpHist=job.history.filter(x=>x.type==='low-profit').map(x=>x.record);
  let scalpCfg={...SCALP_DEF,...job.config,assets:{...SCALP_DEF.assets,...job.config?.assets}};
- const basketDemo={enabled:false,active:job.basketActive||null};
+ const basketDemo={enabled:!!job.basketEnabled,active:job.basketActive||null};
  let activeSignals={},sigCooldown={},lastSigCandleTs={},lastGuardToast={},signalEntryPending={},signalEntryStatus={};
  for(const r of signalHistory){if(r.outcome==='OPEN')activeSignals[r.sym]=r.id;else sigCooldown[r.sym]=Math.max(sigCooldown[r.sym]||0,(r.closedAt||0)+SIGNAL_COOLDOWN_MS);}
  for(const sym of SYMS){
@@ -69,7 +69,7 @@ async function scan(job){
  await vm.runInContext(`(async()=>{
   for(const sym of SYMS)await checkOutcome(sym,prices[sym]);
   scalpCandleCheck();scalpManageAll();if(job.allowEntries!==false)evaluateSignals();
-  for(const sym of SYMS){if(job.allowEntries!==false)scalpEvaluate(sym);else scalpState[sym].block="Open the app once to synchronize your strategy and risk settings";const st=scalpState[sym],s=computeSignal(sym);diagnostics[sym]={auto:s.reason||s.wait||s.state,lowProfit:st.block||st.note||st.scan?.gates?.find(g=>!g.ok)?.label||st.scan?.look||'Waiting for confirmed setup',source:st.feedSource,quoteAt:quoteAt[sym]||0,last15m:ohlcData[sym]['15m']?.at(-1)?.t||0,last5m:scalpData[sym]?.at(-1)?.t||0};}
+  for(const sym of SYMS){if(job.allowEntries!==false)scalpEvaluate(sym);else scalpState[sym].block="Open the app once to synchronize your strategy and risk settings";const st=scalpState[sym],s=computeSignal(sym);diagnostics[sym]={auto:s.reason||s.wait||s.state,lowProfit:st.block||st.modeBlocked||st.note||st.scan?.gates?.find(g=>!g.ok)?.label||st.scan?.look||'Waiting for confirmed setup',source:st.feedSource,quoteAt:quoteAt[sym]||0,last15m:ohlcData[sym]['15m']?.at(-1)?.t||0,last5m:scalpData[sym]?.at(-1)?.t||0};}
  })()`,context,{timeout:5000});
  await Promise.all(pending);
  vm.runInContext(`for(const r of scalpHist)__save('low-profit',r.id||r.t,r);`,context,{timeout:2000});
