@@ -11,7 +11,7 @@ function basketLoad(){
     basketDemo=saved&&typeof saved==='object'?
       Object.assign({enabled:false,active:null,history:[],events:[],lastBars:{},replays:{}},saved):
       {enabled:false,active:null,history:[],events:[],lastBars:{},replays:{}};
-    basketDemo.replays={};
+    basketDemo.replays={};basketDemo.enabled=false;
     if(currentUser&&currentUser.role==='guest')basketDemo.enabled=false;
   }catch(e){console.warn('Basket paper history unavailable',e);}
 }
@@ -41,45 +41,8 @@ function basketRiskAtStops(positions,sym){
   },0);
 }
 // Always start at 0.01 lot; adding positions is not a way to evade max risk.
-function basketPlan(sym,scan,entry,c5,cfg){
-  if(!scan||!['BUY','SELL'].includes(scan.dir)||!scan.gatesOk||
-    !Number.isFinite(entry)||entry<=0||!Array.isArray(c5)||c5.length<3||
-    !Number.isFinite(scan.A)||scan.A<=0||!cfg||
-    !Number.isFinite(cfg.maxLoss)||cfg.maxLoss<=0)return{reject:'Unverified setup'};
-  var units=0.01*ASSETS[sym].contractSz,sgn=scan.dir==='BUY'?1:-1;
-  var A=scan.A,spread=SPREAD[sym]||0;
-  var last3=c5.slice(-3),ext=sgn>0?
-    Math.min(...last3.map(k=>k.l)):Math.max(...last3.map(k=>k.h));
-  var swingDistance=Math.abs(entry-ext)+0.15*A;
-  var experimental=scan.strategyVersion==='continuation-v1-opt-in';
-  if(experimental&&swingDistance>1.3*A)return{reject:'EMA9 swing stop too wide'};
-  var dist=experimental?Math.max(0.45*A,swingDistance):
-    Math.max(swingDistance,A);
-  if(!Number.isFinite(dist)||!Number.isFinite(units)||!Number.isFinite(ext)||
-     !(dist>0&&units>0))return{reject:'Invalid stop distance'};
-  var sl=entry-sgn*dist,riskUsd=(dist+spread)*units;
-  if(riskUsd>cfg.maxLoss+1e-6)return{reject:
-    '0.01 lot stop risk $'+riskUsd.toFixed(2)+' exceeds the $'+cfg.maxLoss+' basket cap'};
-  return{entry,sl,dir:scan.dir,lot:0.01,units,riskUsd,sym};
-}
-function basketCanAdd(session,plan,price,cfg){
-  if(!plan||plan.reject)return{ok:false,reason:plan?.reject||'No valid entry plan'};
-  if(!cfg||!Number.isFinite(cfg.maxLoss)||cfg.maxLoss<=0||
-     !Number.isFinite(price)||price<=0)
-    return{ok:false,reason:'Invalid quote or basket risk limit'};
-  if(session&&(!Array.isArray(session.positions)||session.status&&session.status!=='OPEN'))
-    return{ok:false,reason:'Invalid or closed basket session'};
-  if(session&&session.positions.length>=5)return{ok:false,reason:'Five positions reached'};
-  if(session&&(session.sym!==plan.sym||session.dir!==plan.dir))
-    return{ok:false,reason:'Only one symbol/direction in a basket'};
-  if(session&&basketPnlAt(session.positions,price,session.sym)<-1e-8)
-    return{ok:false,reason:'No averaging down: existing basket must be non-losing'};
-  var total=basketRiskAtStops([...(session?session.positions:[]),plan],plan.sym);
-  if(!Number.isFinite(total))return{ok:false,reason:'Invalid position data: risk cannot be verified'};
-  if(total>cfg.maxLoss+1e-6)return{ok:false,
-    reason:'Combined stop risk $'+total.toFixed(2)+' exceeds $'+cfg.maxLoss};
-  return{ok:true,totalRiskUsd:total};
-}
+
+
 function basketRecordId(id){return (currentUser?currentUser.username:'unknown')+':'+id;}
 function basketPersistSession(session){
   if(!currentUser||currentUser.role==='guest'||!session)return;
@@ -179,59 +142,7 @@ function basketManage(){
     basketClose(quote,'TIME_STOP');return;
   }
 }
-async function basketEvaluate(sym){
-  if(!paperReady()||!freshQuote(sym)||Date.now()<(basketDemo.cooldown||0)||basketDemo.entryBusy||!currentUser||currentUser.role==='guest'||!basketDemo.enabled||
-     !scalpCfg.auto||!scalpCfg.assets[sym])return;
-  if(scalpHist.some(t=>t.status==='OPEN'))return;
-  var s=basketDemo.active,st=scalpState[sym]||{},scan=st.scan,
-    quote=prices[sym],c5=kmrClosed(scalpData[sym]||[]);
-  if(c5.some(k=>k.analysisOnly)||!scan||!scan.dir||!scan.gatesOk||st.block||st.feedError||
-     !Number.isFinite(quote)||quote<=0||c5.length<60)return;
-  var latest=c5[c5.length-1];
-  if(!latest||Date.now()-latest.t>12*60000)return;
-  if(s&&(s.sym!==sym||s.dir!==scan.dir))return;
-  if(basketDemo.lastBars[sym]===scan.barT)return;
-  var ran=(scan.dir==='BUY'?1:-1)*(quote-scan.price);
-  if(ran>0.4*scan.A||ran<-0.5*scan.A)return;
-  var plan=basketPlan(sym,scan,quote,c5,scalpCfg),
-    decision=basketCanAdd(s,plan,quote,scalpCfg);
-  if(!decision.ok){basketDemo.blockReason=decision.reason;return;}
-  var day=scalpToday(),basketDay=basketToday();
-  if(day.stopHit||(day.goalHit&&scalpCfg.stopAtGoal)||
-     (scalpCfg.stopAtGoal&&day.pnl+basketDay.pnl>=scalpCfg.goal)||
-     day.pnl+basketDay.pnl<=-scalpCfg.dayStop)return;
-  var session=s;
-  if(!session){
-    session={id:'basket-'+Date.now()+'-'+Math.floor(Math.random()*10000),
-      sym,dir:scan.dir,status:'OPEN',createdAt:Date.now(),
-      positions:[],lastCheckedBar:scan.barT,paperOnly:true,netPnl:0};
-
-  }
-  var pos={id:'paper-'+Date.now()+'-'+Math.floor(Math.random()*100000),
-    sym,dir:scan.dir,status:'OPEN',entry:quote,sl:plan.sl,
-    units:plan.units,lot:0.01,estimatedStopLossUsd:plan.riskUsd,
-    openedAt:Date.now(),confirmed5mBar:scan.barT,setup:scan.setup,
-    reason:scan.setup,why:scan.why,
-    conditions:{trend:scan.trend,adx:scan.adx,rsi7:scan.rsi7,relVolume:scan.relVol,
-      atr5m:scan.A,gates:scan.gates,strategyVersion:scan.strategyVersion||'v28-original'},
-    feedSource:st.feedSource||'unknown',paperOnly:true,brokerOrderId:null};
-  pos.accountingVersion=2;pos.updatedAt=pos.openedAt;pos.spreadPerUnit=SPREAD[sym]||0;
-  pos.owner=currentUser.username;pos.signalKey='basket:'+sym+':5m:'+scan.barT+':'+scan.dir;
-  pos.basketId=session.id;
-  basketDemo.entryBusy=true;
-  try{if(!await paperSaveEntry('basket-positions',basketRecordId(pos.id),pos))return;}
-  finally{basketDemo.entryBusy=false;}
-  // The position is durable before the browser creates the session or alerts.
-  basketDemo.active=session;
-  session.positions.push(pos);session.updatedAt=Date.now();basketDemo.lastBars[sym]=scan.barT;
-  basketDemo.blockReason='';
-  basketEvent(session,'OPEN_POSITION',{positionId:pos.id,entry:quote,sl:pos.sl,
-    risk:plan.riskUsd,combinedRisk:decision.totalRiskUsd,conditions:pos.conditions});
-  basketPersistPosition(session,pos);basketPersistSession(session);basketSave();
-  showToast('🧺 PAPER '+scan.dir+' '+sym+' 0.01 lot ('+
-    session.positions.length+'/5) · basket risk $'+decision.totalRiskUsd.toFixed(2),
-    'var(--acc)');
-}
+async function basketEvaluate(){return;}
 async function basketDbRestore(){
   if(!currentUser||currentUser.role==='guest')return false;
   const user=currentUser.username;
@@ -265,16 +176,7 @@ async function basketDbRestore(){
     basketSave();return true;
   }catch(e){console.warn('Paper basket restoration unavailable',e);return false;}
 }
-function basketToggle(){
-  if(!currentUser||currentUser.role==='guest'){
-    showToast('User/admin login required for paper baskets','var(--red)');return;
-  }
-  if(!basketDemo.enabled&&scalpHist.some(t=>t.status==='OPEN')){
-    showToast('Close existing Low Profit positions before starting Basket Demo','var(--red)');return;
-  }
-  if(!basketDemo.enabled&&!confirm('Enable simulated basket trades? New original scalps pause while this mode is selected. Existing positions remain protected. No MT5 orders. P&L is hypothetical.'))return;
-  basketDemo.enabled=!basketDemo.enabled;basketSave();renderScalpTab();
-}
+function basketToggle(){basketDemo.enabled=false;basketSave();}
 function basketCloseNow(){
   var s=basketDemo.active;if(!s||!paperReady())return;
   var price=prices[s.sym];
@@ -290,15 +192,8 @@ function renderBasketDemo(){
   var b=basketDemo,s=b.active,quote=s?prices[s.sym]:null;
   var pnl=s&&Number.isFinite(quote)?basketPnlAt(s.positions,quote,s.sym):null;
   var risk=s?basketRiskAtStops(s.positions,s.sym):0;
-  var html='<div class="ic"><div class="it">🧺 Basket Scalping — DEMO only</div><div class="ib">';
-  html+='<div class="sc-row"><span class="sc-dim">Confirmed 5m signals · paper orders only</span>'+
-    '<button class="sc-switch '+(b.enabled?'on':'')+'" onclick="basketToggle()">'+
-    (b.enabled?'PAPER ON':'PAPER OFF')+'</button></div>';
-  html+='<div class="sc-note">Target <b>+$'+scalpCfg.target.toFixed(2)+'</b> net, '+
-    'combined estimated risk <b>$'+scalpCfg.maxLoss.toFixed(2)+'</b>, '+
-    'maximum <b>5 × 0.01 lot</b>. Only new confirmed setups can add. '+
-    'No averaging down, no martingale, no MT5 orders. While PAPER ON, new regular scalps pause; existing scalps keep their stops. '+
-    'Browser must remain active. Gaps/slippage may exceed simulated risk.</div>';
+  if(!s&&!b.history.length&&!b.conflict){root.innerHTML='';return;}
+  var html='<div class="ic"><div class="it">Legacy paper positions and history</div><div class="ib"><p class="sc-note">New basket entries are retired. Existing positions keep their stop/exit management.</p>';
   if(s){
     html+='<div class="sc-row"><b>'+basketTxt(s.sym)+' '+basketTxt(s.dir)+
       ' · '+s.positions.length+'/5 OPEN</b><b class="'+
@@ -325,6 +220,6 @@ function renderBasketDemo(){
         basketMoney(item.netPnl)+'</b></div>';
     }
   }
-  if(typeof basketReplayHtml==='function')html+=basketReplayHtml();
+
   root.innerHTML=html+'</div></div>';
 }

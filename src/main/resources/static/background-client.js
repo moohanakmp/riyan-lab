@@ -16,7 +16,7 @@ async function backgroundRefresh(){
       else if(health.fetchedAt>calendarCacheAt)fetchEconCalendar(true).catch(()=>{});
       renderCalendarHealth();
     }
-    const settings={enabled:backgroundEnabled,scalp:scalpCfg,basketEnabled:!!basketDemo.enabled};
+    const settings={enabled:backgroundEnabled,scalp:scalpCfg,basketEnabled:false};
     const digest=JSON.stringify(settings);
     if(digest!==backgroundDigest){await riyanApi('/api/v1/paper/background/settings',{method:'POST',body:digest});backgroundDigest=digest;}
     backgroundRender(status);
@@ -32,7 +32,7 @@ function backgroundRender(status){
     const recent=age!==null&&age<120;
     const state=!backgroundEnabled?'Background scanner paused':status.owner==='BROWSER'?'Browser active · server takes over after it closes':status.owner==='SERVER'&&recent&&status.state==='SCANNING'&&status.phase!=='ERROR'?'Server scanning · app can be closed':status.state==='ERROR'||status.phase==='ERROR'?'Server scanner needs attention':status.state==='UNAVAILABLE'?'Background status unavailable':recent?'Server checked recently':'Waiting for server background check';
     box.replaceChildren();const summary=document.createElement('summary');summary.textContent=state+(age!==null?' · last server check '+age+'s ago':'');box.append(summary);
-    const text=document.createElement('p');text.style.marginTop='10px';text.textContent='Auto Signals and enabled Low Profit strategies use the same paper rules in the server worker. Fresh candles, a fresh quote, news checks and account risk limits still apply. Existing basket simulation remains browser managed.';box.append(text);
+    const text=document.createElement('p');text.style.marginTop='10px';text.textContent='Auto Signals and enabled Low Profit strategies use the same paper rules in the server worker. Low Profit uses news-independent order blocks and support/resistance. Fresh candles, quotes and account risk limits still apply. Legacy positions keep browser exit management; new basket entries are retired.';box.append(text);
     const hosting=document.createElement('p');hosting.textContent='Hosting: Render free can sleep after 15 minutes without incoming traffic. Uninterrupted background scanning requires an always-on service. Background scanning does not deliver device push, Telegram or email while the browser is closed.';box.append(hosting);
     let detail;try{detail=typeof status.details==='string'?JSON.parse(status.details):status.details;}catch(e){}
     if(detail){const lines=document.createElement('p');lines.textContent=detail.reason||Object.entries(detail.instruments||{}).map(([sym,s])=>sym+': '+s.auto+' / '+s.lowProfit).join(' · ');box.append(lines);}

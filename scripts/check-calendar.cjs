@@ -17,6 +17,12 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('nod
  await context.fetchEconCalendar(true);assert.equal(context.calendarReady(),false,'future validation timestamps fail closed');
  now+=31000;payload.calendarAt=now;payload.expiresAt=now+1000;await context.fetchEconCalendar(true);assert.equal(context.calendarReady(),true);now+=1001;assert.equal(context.calendarReady(),false,'weekly coverage horizon also expires');
  assert(!code.includes('corsproxy')&&!code.includes('allorigins')&&!code.includes('r.jina.ai'),'no client-side proxy chain can override server news readiness');
+ // Stale display survives an outage without becoming an approved news schedule.
+ fail=false;now+=31000;payload={ready:false,fetchedAt:now-3600000,displayStale:true,displayCalendar:[{title:'Saved CPI',country:'USD',impact:'High',date:new Date(now+3600000).toISOString()}],calendarError:'HTTP 429'};
+ await context.fetchEconCalendar(true);assert.equal(context.calendarReady(),false);
+ vm.runInContext(require('../src/main/resources/background/scanner.cjs').extract('upcomingImpactEvents'),context);
+ assert.equal(context.upcomingImpactEvents()[0].title,'Saved CPI');assert.equal(value('calendarCache'),null,'display never approves news protection');
+ payload={ready:false,calendarError:'No current week snapshot'};now+=31000;await context.fetchEconCalendar(true);assert.equal(context.upcomingImpactEvents(),null);
  // A news outage must not masquerade as missing price history or block a valid technical plan.
  const candles=Array.from({length:100},(_,i)=>({t:now-(100-i)*900000,ms:900000,o:100,h:102,l:99,c:101,v:10}));
  Object.assign(context,{kmrClosed:x=>x,getCandles:()=>candles,ema:()=>100,marketTrend:{},freshQuote:()=>true,prices:{BTCUSD:101},

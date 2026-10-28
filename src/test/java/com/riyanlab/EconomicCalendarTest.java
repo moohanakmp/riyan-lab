@@ -77,4 +77,34 @@ class EconomicCalendarTest {
   when(client.send(any(HttpRequest.class),any(HttpResponse.BodyHandler.class))).thenReturn(response(200,"[{\"title\":\"missing fields\"}]",Map.of()));
   assertEquals(false,new EconomicCalendar(null,json,client,()->start).view().get("ready"));
  }
+ @Test @SuppressWarnings({"unchecked","rawtypes"}) void staleScheduleRemainsDisplayableWithoutApprovingNewsChecks()throws Exception{
+  var now=new AtomicLong(start);var client=mock(HttpClient.class);
+  when(client.send(any(HttpRequest.class),any(HttpResponse.BodyHandler.class))).thenReturn(response(200,events(start).toString(),Map.of()));
+  var feed=new EconomicCalendar(null,json,client,now::get);feed.view();now.addAndGet(EconomicCalendar.TTL+1);
+  var cached=feed.peek();assertEquals(false,cached.get("ready"));assertEquals(true,cached.get("displayStale"));assertTrue(cached.containsKey("displayCalendar"));assertFalse(cached.containsKey("calendar"));assertEquals(start,cached.get("fetchedAt"));
+  now.set(EconomicCalendar.weekStart(start).plusWeeks(1).toInstant().toEpochMilli());assertFalse(feed.peek().containsKey("displayCalendar"));
+ }
+ @Test @SuppressWarnings({"unchecked","rawtypes"}) void independentFallbackRefreshesWhilePrimaryHonorsItsCooldown()throws Exception{
+  var now=new AtomicLong(start);var client=mock(HttpClient.class);
+  when(client.send(any(HttpRequest.class),any(HttpResponse.BodyHandler.class))).thenReturn(
+   response(429,"",Map.of("Retry-After",List.of("3600"))),response(200,events(start).toString(),Map.of()),response(200,events(start).toString(),Map.of()));
+  var feed=new EconomicCalendar(null,json,client,now::get);
+  org.springframework.test.util.ReflectionTestUtils.setField(feed,"fallbackUrl","https://calendar.example.test/week.json");
+  var loaded=feed.view();assertEquals(true,loaded.get("ready"));assertEquals("Configured independent calendar feed",loaded.get("source"));
+  now.addAndGet(EconomicCalendar.REFRESH);assertEquals(now.get(),feed.view().get("calendarAt"));
+  var calls=org.mockito.ArgumentCaptor.forClass(HttpRequest.class);verify(client,times(3)).send(calls.capture(),any(HttpResponse.BodyHandler.class));
+  assertEquals(java.net.URI.create(EconomicCalendar.URL),calls.getAllValues().get(0).uri());
+  assertEquals("calendar.example.test",calls.getAllValues().get(1).uri().getHost());assertEquals("calendar.example.test",calls.getAllValues().get(2).uri().getHost());
+ }
+ @Test @SuppressWarnings({"unchecked","rawtypes"}) void fallbackMustValidateCoverageAndCannotRotateTheThrottledHost()throws Exception{
+  var client=mock(HttpClient.class);when(client.send(any(HttpRequest.class),any(HttpResponse.BodyHandler.class))).thenReturn(response(429,"",Map.of()),response(200,"[]",Map.of()));
+  var feed=new EconomicCalendar(null,json,client,()->start);
+  org.springframework.test.util.ReflectionTestUtils.setField(feed,"fallbackUrl","https://calendar.example.test/week.json");
+  assertEquals(false,feed.view().get("ready"));assertFalse(feed.peek().containsKey("displayCalendar"));
+  reset(client);when(client.send(any(HttpRequest.class),any(HttpResponse.BodyHandler.class))).thenReturn(response(429,"",Map.of()));
+  var sameHost=new EconomicCalendar(null,json,client,()->start);
+  org.springframework.test.util.ReflectionTestUtils.setField(sameHost,"fallbackUrl",EconomicCalendar.URL+"?rotate=1");
+  assertEquals(false,sameHost.view().get("ready"));verify(client,times(1)).send(any(HttpRequest.class),any(HttpResponse.BodyHandler.class));
+ }
+
 }

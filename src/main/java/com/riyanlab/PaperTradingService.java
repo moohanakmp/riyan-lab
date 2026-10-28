@@ -112,6 +112,7 @@ public class PaperTradingService {
             }
             return;
         }
+        if(type.equals("basket-positions"))reject("Basket entries retired; use Low Profit paper trading");
         if(next.path("accountingVersion").asInt()!=2 || !next.path("paperOnly").asBoolean() ||
            !next.path("brokerOrderId").isNull() || !"OPEN".equals(status(next)))reject("New entries require paper accounting v2");
         String sym=next.path("sym").asText(),dir=next.path("dir").asText(),key=next.path("signalKey").asText();

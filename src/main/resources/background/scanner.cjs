@@ -15,7 +15,7 @@ function extract(name,kind='function'){
   }
   throw Error('Cannot parse shared strategy '+name);
 }
-const names=['ema','rsi','atr','swingLevels','emaSeries','macd','kmrAdx','kmrPivots','kmrStructure','kmrVolumePressure','kmrSweep','kmrTfBias','kmrSmartScan','ev2txt','kmrTradePlan','kmrClosed','kmrIstHour','kmrNewsEvents','calendarReady','kmrScan','getCandles','computeSignal','orderBlocks','calcPos','computeVolSpike','marketEvidenceSnapshot','paperAccountRisk','autoEntryCheck','evaluateSignals','recordSignal','checkOutcome','isMetalsMarketOpen','istDayKey','scalpToday','bbAt','aggMinutes','scalpClosed15m','kmrLevelZones','kmrLevelSetup','kmrLevelPlan','scalpScan','scalpLevels','scalpCtx','scalpEvaluate','scalpOpen','scalpClose','scalpCheckRange','scalpCandleCheck','scalpManageAll','fmtP','freshQuote'];
+const names=['ema','rsi','atr','swingLevels','emaSeries','macd','kmrAdx','kmrPivots','kmrStructure','kmrVolumePressure','kmrSweep','kmrTfBias','kmrSmartScan','ev2txt','kmrTradePlan','kmrClosed','kmrIstHour','kmrNewsEvents','calendarReady','kmrScan','getCandles','computeSignal','orderBlocks','calcPos','computeVolSpike','marketEvidenceSnapshot','paperAccountRisk','autoEntryCheck','evaluateSignals','recordSignal','checkOutcome','isMetalsMarketOpen','istDayKey','scalpToday','bbAt','aggMinutes','scalpClosed15m','kmrLevelZones','kmrLevelSetup','kmrOrderBlockSetup','kmrLevelPlan','scalpScan','scalpLevels','scalpCtx','scalpEvaluate','scalpOpen','scalpClose','scalpCheckRange','scalpCandleCheck','scalpManageAll','fmtP','freshQuote'];
 const paper=fs.readFileSync(path.join(root,'paper-engine.js'),'utf8');
 const source=fs.readFileSync(path.join(root,'trading-core.js'),'utf8')+'\n'+
  fs.readFileSync(path.join(root,'market-context.js'),'utf8')+'\n'+
@@ -53,7 +53,7 @@ async function scan(job){
  let calendarCache=job.calendar||null,calendarCacheAt=job.calendarAt||0,calendarHealth={expiresAt:job.expiresAt||calendarCacheAt+30*60e3};
  let signalHistory=job.history.filter(x=>x.type!=='low-profit').map(x=>x.record),scalpHist=job.history.filter(x=>x.type==='low-profit').map(x=>x.record);
  let scalpCfg={...SCALP_DEF,...job.config,assets:{...SCALP_DEF.assets,...job.config?.assets}};
- const basketDemo={enabled:!!job.basketEnabled,active:job.basketActive||null};
+ const basketDemo={enabled:false,active:job.basketActive||null};
  let activeSignals={},sigCooldown={},lastSigCandleTs={},lastGuardToast={},signalEntryPending={},signalEntryStatus={};
  for(const r of signalHistory){if(r.outcome==='OPEN')activeSignals[r.sym]=r.id;else sigCooldown[r.sym]=Math.max(sigCooldown[r.sym]||0,(r.closedAt||0)+SIGNAL_COOLDOWN_MS);}
  for(const sym of SYMS){
