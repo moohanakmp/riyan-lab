@@ -4342,7 +4342,7 @@ function renderScalpTab(){
     <button class="sc-switch ${c.auto?'on':''}" onclick="scalpToggleAuto()"><i></i><span>${c.auto?'AUTO ON':'AUTO OFF'}</span></button>
   </div>
   <div id="scalpLive"></div>
-  <div class="sc-row" style="margin:12px 0"><button id="basketModeToggle" class="sc-switch ${basketDemo.enabled?'on':''}" role="switch" aria-checked="${!!basketDemo.enabled}" aria-label="Basket paper scalping" onclick="basketToggle()" ${basketDemo.modePending?'disabled':''}><i class="bi bi-cash-stack" aria-hidden="true"></i><span>Basket paper ${basketDemo.enabled?'ON':'OFF'}</span></button><span class="sc-dim">Optional · off by default · browser required</span></div>
+  <div class="sc-row" style="margin:12px 0"><button id="basketModeToggle" class="sc-switch ${basketDemo.enabled?'on':''}" role="switch" aria-checked="${!!basketDemo.enabled}" aria-label="Basket paper scalping" onclick="basketToggle()" ${basketDemo.modePending?'disabled':''}><i aria-hidden="true"></i><span class="bi bi-cash-stack" aria-hidden="true"></span><span>Basket paper ${basketDemo.enabled?'ON':'OFF'}</span></button><span class="sc-dim">Optional · off by default · browser required</span></div>
   <div id="basketDemoPanel"></div>
   <div class="ic"><div class="it">⚙ Your targets</div><div class="ib">
     <div class="sc-set">
@@ -4401,7 +4401,7 @@ function renderScalpLive(){
   SYMS.forEach(s=>{
     const st=scalpState[s]||{},sc=st.scan;
     const openTrade=scalpHist.find(t=>t.sym===s&&t.status==='OPEN');
-    const entryIssue=st.block||st.modeBlocked||st.note||st.preview?.reject;
+    const entryIssue=st.block||st.modeBlocked||st.note||(sc?.dir?st.preview?.reject:null);
     const ready=sc&&sc.dir&&sc.gatesOk&&!entryIssue&&!st.entryPending;
     const fails=sc?sc.gates.filter(x=>!x.ok):[];
     const chip=openTrade?'<span class="sc-chip rdy">TRADE OPEN</span>':st.entryPending?'<span class="sc-chip wt">SUBMITTING</span>':!c.assets[s]?'<span class="sc-chip off">OFF</span>':entryIssue?'<span class="sc-chip blk">ENTRY BLOCKED</span>':fails.length?'<span class="sc-chip blk">BLOCKED</span>':ready?`<span class="sc-chip rdy">${sc.dir} CANDIDATE</span>`:'<span class="sc-chip wt">WATCHING</span>';
