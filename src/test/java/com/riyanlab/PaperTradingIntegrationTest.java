@@ -118,4 +118,25 @@ class PaperTradingIntegrationTest {
             .andExpect(status().isConflict()).andExpect(jsonPath("$.reason").value("Invalid size or stop risk exceeds $4"));
     }
 
+    @Test void defaultScalpSettingsAndExplicitBasketToggleRespectExistingPositions()throws Exception{
+        var owner=user("baskettoggle");String engine="basket-toggle-engine";assertTrue(lease(owner,engine));
+        var settings=json.createObjectNode().put("enabled",false).put("basketEnabled",false).put("basketModeVersion",2);
+        var scalp=settings.putObject("scalp");scalp.put("target",2).put("maxLoss",4).put("goal",10).put("dayStop",8).put("timeStopMin",45).put("auto",true).put("stopAtGoal",true);
+        scalp.putObject("assets").put("XAUUSD",true).put("XAGUSD",true).put("BTCUSD",true);
+        // This is the current browser default: the removed continuation switch is absent.
+        mvc.perform(post("/api/v1/paper/background/settings").cookie(owner.cookies).header("X-CSRF-Token",owner.csrf).contentType(MediaType.APPLICATION_JSON).content(settings.toString())).andExpect(status().isOk());
+        String path="/api/v1/records/basket-positions/baskettoggle--id-"+"a".repeat(64);var n=entry("basket-mode-candle",99);
+        mvc.perform(put(path).cookie(owner.cookies).header("X-CSRF-Token",owner.csrf).header("X-Paper-Engine",engine).contentType(MediaType.APPLICATION_JSON).content(n.toString())).andExpect(status().isConflict()).andExpect(jsonPath("$.reason").value(org.hamcrest.Matchers.containsString("OFF")));
+        settings.put("basketEnabled",true).put("basketModeVersion",1);
+        mvc.perform(post("/api/v1/paper/background/settings").cookie(owner.cookies).header("X-CSRF-Token",owner.csrf).contentType(MediaType.APPLICATION_JSON).content(settings.toString())).andExpect(status().isBadRequest());
+        settings.put("basketModeVersion",2);
+        mvc.perform(post("/api/v1/paper/background/settings").cookie(owner.cookies).header("X-CSRF-Token",owner.csrf).contentType(MediaType.APPLICATION_JSON).content(settings.toString())).andExpect(status().isOk());
+        mvc.perform(put(path).cookie(owner.cookies).header("X-CSRF-Token",owner.csrf).header("X-Paper-Engine",engine).contentType(MediaType.APPLICATION_JSON).content(n.toString())).andExpect(status().isOk());
+        settings.put("basketEnabled",false);
+        mvc.perform(post("/api/v1/paper/background/settings").cookie(owner.cookies).header("X-CSRF-Token",owner.csrf).contentType(MediaType.APPLICATION_JSON).content(settings.toString())).andExpect(status().isOk());
+        var closed=n.deepCopy().put("status","CLOSED").put("exit",102).put("pnl",1.65).put("closedAt",2000).put("updatedAt",2000);
+        mvc.perform(put(path).cookie(owner.cookies).header("X-CSRF-Token",owner.csrf).header("X-Paper-Engine",engine).contentType(MediaType.APPLICATION_JSON).content(closed.toString())).andExpect(status().isOk());
+        assertEquals(false,jdbc.queryForObject("SELECT enabled FROM background_scanner_settings WHERE username='baskettoggle'",Boolean.class));
+    }
+
 }

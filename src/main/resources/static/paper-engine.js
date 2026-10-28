@@ -69,8 +69,9 @@ async function paperSaveEntry(type,id,record){
     await riyanApi('/api/v1/records/'+type+'/'+safe,{method:'PUT',body:JSON.stringify(data)});
     // Do not attach an accepted response to a different logged-in account.
     if(currentUser?.username!==user)return false;
-    return true;
+    paperEngine.lastEntryError='';return true;
   }catch(e){
+    paperEngine.lastEntryError=e.detail||e.message;
     // An uncertain response may already be committed. Reconcile before another entry.
     paperEngine.until=0;
     paperEngine.reason='Entry paused: '+(e.detail||e.message)+' — reconciling server ledger';
@@ -99,7 +100,7 @@ async function riyanReadAll(type){
   }
 }
 
-async function paperReconcileConflict(item,user){
+async function paperReconcileConflict(item,user,reason=''){
   if(!['auto-signals','manual-signals','low-profit','basket-positions','basket-sessions'].includes(item.type))return false;
   try{
     const id=await riyanSafeRecordId(item.type,item.id);
@@ -111,5 +112,16 @@ async function paperReconcileConflict(item,user){
       log[item.type+'|'+item.id]={...item,remote,at:Date.now(),resolution:'Server state retained'};
       localStorage.setItem(key,JSON.stringify(log));return true;
     }
-  }catch(e){}return false;
+  }catch(e){
+    // A definitive rejection plus a missing server record is safe to quarantine.
+    // Keep the complete snapshot for audit; never discard a committed position.
+    if(e.message==='HTTP 404'&&item.type==='basket-positions'&&
+       /Basket entries retired|Basket mode is OFF/.test(reason)){
+      try{
+        const key='riyan_conflicts_'+user,log=JSON.parse(localStorage.getItem(key)||'{}');
+        log[item.type+'|'+item.id]={...item,at:Date.now(),resolution:'Unaccepted basket entry quarantined; explicit mode opt-in and a new confirmed setup required',rejection:reason};
+        localStorage.setItem(key,JSON.stringify(log));return true;
+      }catch(storageError){}
+    }
+  }return false;
 }

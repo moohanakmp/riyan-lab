@@ -658,7 +658,7 @@ body{background:
 .hero-prev{width:100%;height:90px;border-radius:12px;border:1px dashed rgba(255,255,255,.15);background:rgba(255,255,255,.03) center/cover no-repeat;margin:8px 0;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--dim)}
 
 </style>
-<link rel="stylesheet" href="/workspace-ui.css?v=20261020-volume-details">
+<link rel="stylesheet" href="/workspace-ui.css?v=20261028-active-basket2">
 <link rel="preload" as="video" href="happy.mp4" type="video/mp4"><link rel="preload" as="video" href="bull.mp4" type="video/mp4"><link rel="preload" as="video" href="bear.mp4" type="video/mp4">
 </head>
 <body>
@@ -725,7 +725,7 @@ body{background:
   <button class="tab" data-tab="scalp" onclick="showTab('scalp',this)"><span class="tab-ic"><i class="bi bi-cash-stack" aria-hidden="true"></i></span><span class="tab-lbl">Low Profit</span><i class="tab-ripple"></i></button>
   <button class="tab" data-tab="history" onclick="showTab('history',this)"><span class="tab-ic"><i class="bi bi-clock-history" aria-hidden="true"></i></span><span class="tab-lbl">History</span><i class="tab-ripple"></i></button>
   <button class="tab" data-tab="session" onclick="showTab('session',this)"><span class="tab-ic"><i class="bi bi-clock" aria-hidden="true"></i></span><span class="tab-lbl">Session</span><i class="tab-ripple"></i></button>
-  <button class="tab" data-tab="volumeTrap" onclick="showTab('volumeTrap',this)"><span class="tab-ic"><i class="bi bi-bar-chart-line" aria-hidden="true"></i></span><span class="tab-lbl">Volume Trap</span><i class="tab-ripple"></i></button>
+  <button class="tab" data-tab="volumeTrap" onclick="showTab('volumeTrap',this)"><span class="tab-ic"><i class="bi bi-bar-chart" aria-hidden="true"></i></span><span class="tab-lbl">Volume Trap</span><i class="tab-ripple"></i></button>
   <button class="tab" data-tab="flow" onclick="showTab('flow',this)"><span class="tab-ic"><i class="bi bi-water" aria-hidden="true"></i></span><span class="tab-lbl">Flow</span><i class="tab-ripple"></i></button>
   <button class="tab" data-tab="manual" onclick="showTab('manual',this)"><span class="tab-ic"><i class="bi bi-compass" aria-hidden="true"></i></span><span class="tab-lbl">Manual</span><i class="tab-ripple"></i></button>
   <button class="tab" data-tab="research" onclick="showTab('research',this)"><span class="tab-ic"><i class="bi bi-search" aria-hidden="true"></i></span><span class="tab-lbl">Research</span><i class="tab-ripple"></i></button>
@@ -817,26 +817,23 @@ body{background:
 <!-- SIGNALS -->
 <!-- LOW-PROFIT SCALPS -->
 <div id="tsc" style="display:none">
-  <div class="sig-wrap"><button class="recheck-btn" onclick="showTriggeredSignals()">View all triggered signals →</button><div id="scalpContainer"></div></div>
+  <div class="sig-wrap"><button class="recheck-btn" onclick="showTriggeredSignals()">View active trades →</button><div id="scalpContainer"></div></div>
 </div>
 
 <div id="ts" style="display:none">
   <div class="sig-wrap">
-    <section id="triggeredSignals" class="ic" aria-label="All triggered signals"><div class="ib">
-      <div class="trend-hdr"><h2 class="sec-ttl" style="margin:0">All Triggered Signals</h2><button class="recheck-btn" onclick="refreshTriggeredSignals()">Refresh saved signals</button></div>
-      <p class="sc-dim">Accepted paper entries across Auto, Manual and Low Profit, including closed and archived records. A live BUY/SELL setup is not an entry until accepted.</p>
+    <section id="triggeredSignals" class="ic" aria-label="Active paper trades"><div class="ib">
+      <div class="trend-hdr"><h2 class="sec-ttl" style="margin:0">Active Trades</h2><button class="recheck-btn" onclick="refreshTriggeredSignals()">Refresh active trades</button></div>
+      <p class="sc-dim">Open paper trades across Auto, Manual, Low Profit and Basket. Floating P&amp;L uses fresh quotes and modeled spread. Closed trades remain in History and P&amp;L.</p>
       <div class="filter-row">
         <select id="triggerSource" aria-label="Signal source" onchange="triggeredPage=0;renderTriggeredSignals()"><option value="ALL">All sources</option><option>Auto</option><option>Manual paper</option><option>Low Profit</option><option>Basket</option></select>
         <select id="triggerAsset" aria-label="Signal asset" onchange="triggeredPage=0;renderTriggeredSignals()"><option value="ALL">All assets</option><option>XAUUSD</option><option>XAGUSD</option><option>BTCUSD</option></select>
-        <select id="triggerStatus" aria-label="Signal status" onchange="triggeredPage=0;renderTriggeredSignals()"><option value="ALL">All statuses</option><option>OPEN</option><option value="CLOSED">Closed</option><option>WIN</option><option>LOSS</option><option>BE</option></select>
+
       </div>
       <div id="triggeredSync" role="status" class="sc-dim"></div><div id="triggeredList"></div>
     </div></section>
 
-    <div class="trend-hdr"><div class="sec-ttl" style="margin:0">Market Trend</div><button class="recheck-btn" onclick="recheckTrends()">🔄 Re-check Trend</button></div>
-    <div class="trend-strip" id="trendStrip"></div>
-    <details class="workspace-explainer"><summary>Signal rules & safety gates</summary><div class="notice"><b>🧠 Engine v3 — trades like a disciplined trader:</b> direction comes only from the <b>4H + 1H</b> trend (both must agree), the market must actually be <b>trending</b> (ADX&nbsp;20+), and entries happen only on a <b>pullback into value</b> (EMA20/EMA50, an order block, or right after a liquidity sweep) with a real <b>trigger candle</b>. It refuses to <b>chase</b> stretched moves, stands aside <b>30 min before / 15 min after high-impact USD news</b> and during the 02:00–04:00 IST rollover, and blocks entries when <b>volume pressure</b> is on the other side.<br><b>★ HIGH</b> (quality 84+) → 0.01 paper lot · <b>◆ MED</b> (70–83) → 0.01 paper lot · every WAIT card tells you exactly what it's waiting for.<br><b>🔒 Stable levels:</b> closed candles only, TP/SL locked at entry. <b>👀 Reversal watch</b> still scans open trades across 1m→4h.</div></details>
-    <details class="workspace-explainer"><summary>Backtest & validation</summary><div class="notice" style="margin-top:8px"><b>🧪 Check it yourself:</b> Analytics → <b>Run backtest</b> replays Engine v3 over the real candles on this device and shows its actual win rate and R. Use that — not hope — to judge it. Few signals is by design: the engine would rather miss a trade than take a bad one.</div></details>
+    <div id="trendStrip" hidden></div>
     <div id="signalsContainer"></div>
   </div>
 </div>
@@ -1161,8 +1158,8 @@ body{background:
 <script src="/btc-feed.js?v=20261019-recovery"></script>
 <script src="/reference-feed.js?v=20261017-2"></script>
 <script src="/market-context.js?v=20261020-context"></script>
-<script src="/paper-engine.js?v=20261020-context"></script>
-<script src="/basket-demo.js?v=20261028-retired"></script>
+<script src="/paper-engine.js?v=20261028-active-basket2"></script>
+<script src="/basket-demo.js?v=20261028-active-basket2"></script>
 
 <script>
 // Init EmailJS lazily once public key is set (see saveNotifSettings)
@@ -4174,7 +4171,8 @@ function scalpEvaluate(sym){
     scalpCfg.stopAtGoal&&day.goalHit?`🎯 Daily goal $${scalpCfg.goal} reached — paused until tomorrow`:
     day.stopHit?`🛑 Daily stop −$${scalpCfg.dayStop} hit — paused until tomorrow`:null;
   // Preserve risk accounting for open legacy positions during retirement.
-  if(basketDemo.active){st.block='Existing legacy paper positions must close before new Low Profit entries';return;}
+  st.modeBlocked=basketDemo.enabled?'Basket mode selected — regular Low Profit entries paused':basketDemo.active?'Existing basket positions must close before regular Low Profit entries':null;
+  if(st.modeBlocked)return;
   if(!scan.dir||!scan.gatesOk||st.block||live==null)return;
   if(st.entryPending||st.handledBar===scan.barT||scalpHist.some(t=>t.sym===sym&&t.lastBar===scan.barT))return;
   st.note='';
@@ -4200,7 +4198,7 @@ async function scalpOpen(sym,scan,lv){
       ema21:scan.e21,marketEvidence:marketEvidenceSnapshot(scan.evidence),maxLoss:scalpCfg.maxLoss,target:scalpCfg.target}};
   t.entryBar=scan.barT;t.owner=currentUser?.username;t.accountingVersion=2;t.updatedAt=t.t;
   t.spreadPerUnit=SPREAD[sym]||0;t.signalKey='scalp:'+sym+':5m:'+scan.barT+':'+scan.dir;
-  if(!await paperSaveEntry('low-profit',t.id,t))return false;
+  if(!await paperSaveEntry('low-profit',t.id,t)){scalpState[sym].note=typeof paperEngine!=='undefined'?(paperEngine.lastEntryError||paperEngine.reason):'Entry not accepted; reconciling the paper ledger';return false;}
   try{
   scalpHist.unshift(t);saveScalpHist();
   const col=t.dir==='BUY'?'var(--grn)':'var(--red)';
@@ -4275,7 +4273,7 @@ async function scalpLoop(){
     finally{scalpFetchBusy=false;}
   }
   if(paperReady()){scalpManageAll();basketManage();}
-  SYMS.forEach(sym=>{try{scalpEvaluate(sym);}catch(e){console.warn('scalp',sym,e);}});
+  SYMS.forEach(sym=>{try{scalpEvaluate(sym);basketEvaluate(sym);}catch(e){console.warn('scalp',sym,e);}});
   if(document.getElementById('tsc')?.style.display!=='none')renderScalpLive();
 }
 // ── replay the engine over the last ~3.5 days of 5m candles (no look-ahead) ──
@@ -4344,6 +4342,7 @@ function renderScalpTab(){
     <button class="sc-switch ${c.auto?'on':''}" onclick="scalpToggleAuto()"><i></i><span>${c.auto?'AUTO ON':'AUTO OFF'}</span></button>
   </div>
   <div id="scalpLive"></div>
+  <div class="sc-row" style="margin:12px 0"><button id="basketModeToggle" class="sc-switch ${basketDemo.enabled?'on':''}" role="switch" aria-checked="${!!basketDemo.enabled}" aria-label="Basket paper scalping" onclick="basketToggle()" ${basketDemo.modePending?'disabled':''}><i aria-hidden="true"></i><span class="bi bi-cash-stack" aria-hidden="true"></span><span>Basket paper ${basketDemo.enabled?'ON':'OFF'}</span></button><span class="sc-dim">Optional · off by default · browser required</span></div>
   <div id="basketDemoPanel"></div>
   <div class="ic"><div class="it">⚙ Your targets</div><div class="ib">
     <div class="sc-set">
@@ -4401,14 +4400,16 @@ function renderScalpLive(){
   h+=`<div class="sec-ttl" style="margin:10px 0 6px">Live watch</div><div class="sc-watch">`;
   SYMS.forEach(s=>{
     const st=scalpState[s]||{},sc=st.scan;
-    const ready=sc&&sc.dir&&sc.gatesOk&&!st.block;
+    const openTrade=scalpHist.find(t=>t.sym===s&&t.status==='OPEN');
+    const entryIssue=st.block||st.modeBlocked||st.note||(sc?.dir?st.preview?.reject:null);
+    const ready=sc&&sc.dir&&sc.gatesOk&&!entryIssue&&!st.entryPending;
     const fails=sc?sc.gates.filter(x=>!x.ok):[];
-    const chip=!c.assets[s]?'<span class="sc-chip off">OFF</span>':st.block?'<span class="sc-chip off">PAUSED</span>':fails.length?'<span class="sc-chip blk">BLOCKED</span>':ready?`<span class="sc-chip rdy">${sc.dir} SETUP</span>`:'<span class="sc-chip wt">WATCHING</span>';
+    const chip=openTrade?'<span class="sc-chip rdy">TRADE OPEN</span>':st.entryPending?'<span class="sc-chip wt">SUBMITTING</span>':!c.assets[s]?'<span class="sc-chip off">OFF</span>':entryIssue?'<span class="sc-chip blk">ENTRY BLOCKED</span>':fails.length?'<span class="sc-chip blk">BLOCKED</span>':ready?`<span class="sc-chip rdy">${sc.dir} CANDIDATE</span>`:'<span class="sc-chip wt">WATCHING</span>';
     const pv=st.preview&&!st.preview.reject?st.preview:null;
     h+=`<div class="ic sc-w art-${s}"><div class="ib">
       <div class="sc-row"><b>${ICONS[s]} ${ASSETS[s].sym}</b>${chip}</div>
       ${sc&&sc.A?`<div class="sc-ind"><span>15m <b class="${sc.trend==='BULL'?'up':sc.trend==='BEAR'?'dn':''}">${sc.trend==='BULL'?'▲ up':sc.trend==='BEAR'?'▼ down':'◆ flat'}</b></span><span>ADX <b>${sc.adx!=null?sc.adx.toFixed(0):'—'}</b></span><span>RSI7 <b>${sc.rsi7!=null?sc.rsi7.toFixed(0):'—'}</b></span><span>5m ATR <b>${fmtP(s,sc.A)}</b></span></div>`:''}
-      <div class="sc-look">${st.block?st.block:st.feedError?'⛔ '+st.feedError:fails.length?'⛔ '+fails[0].label:sc?(sc.dir?`✅ ${sc.setup}: ${sc.why.slice(0,2).join(' · ')}`:'👀 '+sc.look):'Loading…'}</div>
+      <div class="sc-look">${entryIssue?basketTxt(entryIssue):st.feedError?'⛔ '+st.feedError:fails.length?'⛔ '+fails[0].label:sc?(sc.dir?`✅ ${sc.setup}: ${sc.why.slice(0,2).join(' · ')}`:'👀 '+sc.look):'Loading…'}</div>
       ${pv?`<div class="sc-dim">${sc?.dir?'Setup risk preview':'Hypothetical only (no entry)'}: ${pv.lot} lot → TP +$${pv.tpUsd.toFixed(2)} / SL −$${pv.slUsd.toFixed(2)}</div>`:st.preview&&st.preview.reject?`<div class="sc-dim">⚠ ${st.preview.reject}</div>`:''}
       ${sc?.watch?`<div class="sc-dim">⚑ WATCH ONLY — ${sc.watch.dir==='NEUTRAL'?'Range: '+fmtP(s,sc.watch.lower)+'–'+fmtP(s,sc.watch.upper):(sc.watch.dir==='BUY'?'BUY if a closed 5m candle confirms above ':'SELL if a closed 5m candle confirms below ')+fmtP(s,sc.watch.level)} · ${sc.watch.note}</div>`:''}
       ${sc?.evidence?.ready?`<div class="sc-dim">Volume momentum ${basketTxt(sc.evidence.momentum)} · ${basketTxt(sc.evidence.patterns.filter(p=>p.detected).map(p=>p.name).join(', ')||'No confirmed candle pattern')}</div>`:''}
@@ -4833,20 +4834,27 @@ function triggeredRows(source='ALL',asset='ALL',status='ALL'){
       (status==='ALL'||(status==='CLOSED'?r.outcome!=='OPEN':r.outcome===status));
   }).sort((a,b)=>(b.ts||b.t||Number(b.id)||0)-(a.ts||a.t||Number(a.id)||0));
 }
+function floatingPaperPnl(r){
+  if(r.outcome!=='OPEN'||!freshQuote(r.sym)||!['BUY','SELL'].includes(r.dir))return null;
+  const entry=r.price,units=r.posUnits,rem=r.remFrac??1,spread=r.spreadPerUnit??SPREAD[r.sym];
+  if(![entry,units,rem,spread,prices[r.sym]].every(Number.isFinite)||entry<=0||units<=0||rem<0||rem>1||spread<0)return null;
+  return ((prices[r.sym]-entry)*(r.dir==='BUY'?1:-1)-spread)*units*rem;
+}
 function renderTriggeredSignals(){
   const box=document.getElementById('triggeredList');if(!box)return;
-  const rows=triggeredRows(document.getElementById('triggerSource')?.value||'ALL',document.getElementById('triggerAsset')?.value||'ALL',document.getElementById('triggerStatus')?.value||'ALL');
-  const total=triggeredRows(),open=total.filter(r=>r.outcome==='OPEN').length,size=20;
+  const rows=triggeredRows(document.getElementById('triggerSource')?.value||'ALL',document.getElementById('triggerAsset')?.value||'ALL','OPEN');
+  const total=triggeredRows('ALL','ALL','OPEN'),open=total.length,size=20;
   triggeredPage=Math.max(0,Math.min(triggeredPage,Math.ceil(rows.length/size)-1));
   const stamp=t=>t?new Date(t).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',hour12:false})+' IST':'Unavailable';
   const num=(sym,v)=>Number.isFinite(v)?fmtP(sym,v):'—';
-  let html=`<p><b>${total.length} triggered · ${open} open · ${total.length-open} closed</b></p>`;
-  if(!rows.length){box.innerHTML=html+'<p class="sc-dim">'+(total.length?'No accepted signals match these filters.':'No accepted entries saved for this account yet. Watch cards and technical setup scores are not triggered trades. Check the entry status below.')+'</p>';return;}
+  let html=`<p><b>${open} active ${open===1?'trade':'trades'}</b></p>`;
+  if(!rows.length){box.innerHTML=html+'<p class="sc-dim">'+(total.length?'No active trades match these filters.':'No active paper trades. Confirmed setups appear here only after an entry is accepted; closed trades are in History.')+'</p>';return;}
   html+=rows.slice(triggeredPage*size,(triggeredPage+1)*size).map(r=>{
     const raw=r.status||r.outcome,entry=r.price,lot=Number.isFinite(r.lot)?r.lot:'—';
     const targets=[r.tp1,r.tp2,r.tp3].filter(Number.isFinite);if(!targets.length&&Number.isFinite(r.tp))targets.push(r.tp);
-    const result=r.outcome==='OPEN'?'Open · result pending':Number.isFinite(r.pnlUsd)?(r.pnlUsd>=0?'+':'')+'$'+r.pnlUsd.toFixed(2):'Result unavailable';
-    return `<article class="sig-card"><div class="sig-hdr"><b>${basketTxt(ASSETS[r.sym]?.sym||r.sym)} · ${basketTxt(r.dir||'—')}</b><span>${basketTxt(raw)}${raw!==r.outcome?' · '+basketTxt(r.outcome):''}</span></div><p>${basketTxt(r.strategy)} · ${basketTxt(r.timeframe||(r.strategy==='Low Profit'?'5m':'15m'))} · ${lot} lot${r.archived?' · Archived':''}</p><p class="sc-dim">Triggered: ${stamp(r.ts||r.t||Number(r.id))}</p><p>Entry <b>${num(r.sym,entry)}</b> · SL <b>${num(r.sym,r.sl)}</b><br>TP ${targets.map(t=>num(r.sym,t)).join(' / ')||'—'}</p><p>${basketTxt(result)}</p><p class="sc-dim">${basketTxt(r.reason||r.setup||'Accepted strategy entry')} · ${basketTxt(r.generator||'Browser')}${r.legacy?' · Legacy record':''}</p>${r.outcome!=='OPEN'?'<p class="sc-dim">Closed: '+stamp(r.closedAt||r.exitAt)+'</p>':''}<small class="sc-dim">Signal ID: ${basketTxt(String(r.id||r.signalKey||'—'))}</small></article>`;
+    const floating=floatingPaperPnl(r);
+    const result=floating==null?'Floating P&L unavailable · waiting for a fresh quote':`Floating P&L: ${floating>=0?'+':'−'}$${Math.abs(floating).toFixed(2)}`;
+    return `<article class="sig-card"><div class="sig-hdr"><b>${basketTxt(ASSETS[r.sym]?.sym||r.sym)} · ${basketTxt(r.dir||'—')}</b><span>${basketTxt(raw)}${raw!==r.outcome?' · '+basketTxt(r.outcome):''}</span></div><p>${basketTxt(r.strategy)} · ${basketTxt(r.timeframe||(r.strategy==='Low Profit'?'5m':'15m'))} · ${lot} lot${r.archived?' · Archived':''}</p><p class="sc-dim">Triggered: ${stamp(r.ts||r.t||Number(r.id))}</p><p>Entry <b>${num(r.sym,entry)}</b> · SL <b>${num(r.sym,r.slNow??r.sl)}</b><br>TP ${targets.map(t=>num(r.sym,t)).join(' / ')||'—'}</p><p>${basketTxt(result)}</p><p class="sc-dim">${basketTxt(r.reason||r.setup||'Accepted strategy entry')} · ${basketTxt(r.generator||'Browser')}${r.legacy?' · Legacy record':''}</p>${r.outcome!=='OPEN'?'<p class="sc-dim">Closed: '+stamp(r.closedAt||r.exitAt)+'</p>':''}<small class="sc-dim">Signal ID: ${basketTxt(String(r.id||r.signalKey||'—'))}</small></article>`;
   }).join('');
   html+=`<div class="trend-hdr"><button class="recheck-btn" ${triggeredPage===0?'disabled':''} onclick="triggeredPage--;renderTriggeredSignals()">Previous</button><span>${triggeredPage*size+1}–${Math.min(rows.length,(triggeredPage+1)*size)} of ${rows.length}</span><button class="recheck-btn" ${(triggeredPage+1)*size>=rows.length?'disabled':''} onclick="triggeredPage++;renderTriggeredSignals()">Next</button></div>`;
   box.innerHTML=html;
@@ -4861,28 +4869,7 @@ async function refreshTriggeredSignals(){
 function showTriggeredSignals(){showTab('signals',document.querySelector('[data-tab=signals]'));document.getElementById('triggeredSignals')?.scrollIntoView({behavior:'smooth',block:'start'});}
 function renderSignals(){
   renderTriggeredSignals();
-  const isAdmin=currentUser&&currentUser.role==='admin';
-  const canSeeHigh=isAdmin||hasAccess('historyHigh');
-  const canSeeMed=isAdmin||hasAccess('historyMed');
-  let html='';
-  SYMS.forEach(sym=>{
-    const a=ASSETS[sym];
-    const act=activeSignals[sym]?signalHistory.find(r=>r.id===activeSignals[sym]&&r.outcome==='OPEN'):null;
-    if(act){
-      if(act.confidence==='HIGH'&&!canSeeHigh)return;
-      if(act.confidence==='MED'&&!canSeeMed)return;
-      const isNew=!flashedSigIds.has(act.id);
-      if(isNew)flashedSigIds.add(act.id);
-      html+=lockedCard(sym,a,act,isAdmin,isNew);
-    }else if(sym!=='BTCUSD'&&!isMetalsMarketOpen()){
-      html+=closedMarketCard(sym,a);
-    }else{
-      html+=waitCard(sym,a,computeSignal(sym),isAdmin);
-    }
-  });
-  if(!html)html=`<div style="text-align:center;color:var(--dim);font-size:12px;padding:30px 0">No signals available for your access level right now.</div>`;
-  html=`<div class="notice"><b>PAPER ONLY</b> · ${basketTxt(paperEngine.reason)}<br>Signal score measures rule agreement, not win probability. Reference quotes and modeled costs can differ from your broker.</div><div class="vp-strip">${SYMS.map(x=>kmrVolumeCardHtml(x,true)).join('')}</div>`+html;
-  setEvidenceHtml(document.getElementById('signalsContainer'),html);
+  const extra=document.getElementById('signalsContainer');if(extra)extra.replaceChildren();
 }
 
 // Active signal card — every level frozen exactly as sent to Telegram/Email
@@ -6387,7 +6374,7 @@ async function riyanDrainQueue(paperOnly=false){
         sent++;
       }catch(e){
         const err=String(e.message||e),latest=JSON.parse(localStorage.getItem(key)||'{}');
-        if(err==='HTTP 409'&&await paperReconcileConflict(item,user)){
+        if(err==='HTTP 409'&&await paperReconcileConflict(item,user,e.detail||'')){
           if(latest[k]?.value===item.value){delete latest[k];localStorage.setItem(key,JSON.stringify(latest));}
           continue;
         }
@@ -6553,6 +6540,6 @@ initAuth();
 
 <button id="riyanSyncBtn" type="button" onclick="riyanConnect()" style="position:fixed;bottom:8px;right:8px;z-index:9999;padding:7px 11px;border-radius:15px;background:#284f72;color:white;border:1px solid #8ac8e7;font-size:11px">☁ DB Sync</button>
 <script src="orbital-ui.js?v=20261020-volume-details" defer></script>
-<script src="/background-client.js?v=20261028-structure"></script>
+<script src="/background-client.js?v=20261028-active-basket2"></script>
 </body>
 </html>

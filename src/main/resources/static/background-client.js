@@ -3,7 +3,7 @@
 let backgroundUser='',backgroundEnabled=true,backgroundDigest='',backgroundBusy=false,backgroundStatus=null;
 async function backgroundRefresh(){
   if(typeof currentUser==='undefined'||!currentUser||currentUser.role==='guest')return;
-  if(backgroundBusy)return;backgroundBusy=true;
+  if(backgroundBusy||basketDemo.modePending)return;backgroundBusy=true;
   const user=currentUser.username;
   try{
     const status=await riyanApi('/api/v1/paper/background/status');
@@ -16,7 +16,7 @@ async function backgroundRefresh(){
       else if(health.fetchedAt>calendarCacheAt)fetchEconCalendar(true).catch(()=>{});
       renderCalendarHealth();
     }
-    const settings={enabled:backgroundEnabled,scalp:scalpCfg,basketEnabled:false};
+    const settings={enabled:backgroundEnabled,scalp:scalpCfg,basketEnabled:!!basketDemo.enabled,basketModeVersion:2};
     const digest=JSON.stringify(settings);
     if(digest!==backgroundDigest){await riyanApi('/api/v1/paper/background/settings',{method:'POST',body:digest});backgroundDigest=digest;}
     backgroundRender(status);
@@ -32,7 +32,7 @@ function backgroundRender(status){
     const recent=age!==null&&age<120;
     const state=!backgroundEnabled?'Background scanner paused':status.owner==='BROWSER'?'Browser active · server takes over after it closes':status.owner==='SERVER'&&recent&&status.state==='SCANNING'&&status.phase!=='ERROR'?'Server scanning · app can be closed':status.state==='ERROR'||status.phase==='ERROR'?'Server scanner needs attention':status.state==='UNAVAILABLE'?'Background status unavailable':recent?'Server checked recently':'Waiting for server background check';
     box.replaceChildren();const summary=document.createElement('summary');summary.textContent=state+(age!==null?' · last server check '+age+'s ago':'');box.append(summary);
-    const text=document.createElement('p');text.style.marginTop='10px';text.textContent='Auto Signals and enabled Low Profit strategies use the same paper rules in the server worker. Low Profit uses news-independent order blocks and support/resistance. Fresh candles, quotes and account risk limits still apply. Legacy positions keep browser exit management; new basket entries are retired.';box.append(text);
+    const text=document.createElement('p');text.style.marginTop='10px';text.textContent='Auto Signals and enabled Low Profit strategies use the same paper rules in the server worker. Low Profit uses news-independent order blocks and support/resistance. Fresh candles, quotes and account risk limits still apply. Optional Basket paper is off by default and requires this browser for entry/exit management. Regular Low Profit continues on the server when Basket mode is off.';box.append(text);
     const hosting=document.createElement('p');hosting.textContent='Hosting: Render free can sleep after 15 minutes without incoming traffic. Uninterrupted background scanning requires an always-on service. Background scanning does not deliver device push, Telegram or email while the browser is closed.';box.append(hosting);
     let detail;try{detail=typeof status.details==='string'?JSON.parse(status.details):status.details;}catch(e){}
     if(detail){const lines=document.createElement('p');lines.textContent=detail.reason||Object.entries(detail.instruments||{}).map(([sym,s])=>sym+': '+s.auto+' / '+s.lowProfit).join(' · ');box.append(lines);}

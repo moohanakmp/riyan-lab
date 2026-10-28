@@ -11,7 +11,8 @@ function basketLoad(){
     basketDemo=saved&&typeof saved==='object'?
       Object.assign({enabled:false,active:null,history:[],events:[],lastBars:{},replays:{}},saved):
       {enabled:false,active:null,history:[],events:[],lastBars:{},replays:{}};
-    basketDemo.replays={};basketDemo.enabled=false;
+    basketDemo.replays={};basketDemo.modePending=false;
+    basketDemo.enabled=basketDemo.modeVersion===2&&basketDemo.enabled===true;
     if(currentUser&&currentUser.role==='guest')basketDemo.enabled=false;
   }catch(e){console.warn('Basket paper history unavailable',e);}
 }
@@ -43,6 +44,29 @@ function basketRiskAtStops(positions,sym){
 // Always start at 0.01 lot; adding positions is not a way to evade max risk.
 
 
+function basketCanAdd(session,plan,price,cfg){
+  if(!plan||plan.reject)return{ok:false,reason:plan?.reject||'No valid entry plan'};
+  if(!cfg||!Number.isFinite(cfg.maxLoss)||cfg.maxLoss<=0||
+     !Number.isFinite(price)||price<=0)
+    return{ok:false,reason:'Invalid quote or basket risk limit'};
+  if(session&&(!Array.isArray(session.positions)||session.status&&session.status!=='OPEN'))
+    return{ok:false,reason:'Invalid or closed basket session'};
+  if(session&&session.positions.length>=5)return{ok:false,reason:'Five positions reached'};
+  if(session&&(session.sym!==plan.sym||session.dir!==plan.dir))
+    return{ok:false,reason:'Only one symbol/direction in a basket'};
+  if(session&&basketPnlAt(session.positions,price,session.sym)<-1e-8)
+    return{ok:false,reason:'No averaging down: existing basket must be non-losing'};
+  var total=basketRiskAtStops([...(session?session.positions:[]),plan],plan.sym);
+  if(!Number.isFinite(total))return{ok:false,reason:'Invalid position data: risk cannot be verified'};
+  if(total>cfg.maxLoss+1e-6)return{ok:false,
+    reason:'Combined stop risk $'+total.toFixed(2)+' exceeds $'+cfg.maxLoss};
+  return{ok:true,totalRiskUsd:total};
+}
+function basketPlan(sym,scan,entry,c5,cfg){
+  if(!scan?.dir||!scan.gatesOk||!['sr-volume-v1','ob-volume-v1'].includes(scan.strategyVersion))return{reject:'Confirmed price-structure setup required'};
+  const plan=scalpLevels(sym,scan.dir,entry,scan,c5,cfg);
+  return plan.reject?plan:{...plan,dir:scan.dir,sym,riskUsd:plan.slUsd};
+}
 function basketRecordId(id){return (currentUser?currentUser.username:'unknown')+':'+id;}
 function basketPersistSession(session){
   if(!currentUser||currentUser.role==='guest'||!session)return;
@@ -142,7 +166,61 @@ function basketManage(){
     basketClose(quote,'TIME_STOP');return;
   }
 }
-async function basketEvaluate(){return;}
+async function basketEvaluate(sym){
+  if(!paperReady()||!freshQuote(sym)||Date.now()<(basketDemo.cooldown||0)||basketDemo.entryBusy||!currentUser||currentUser.role==='guest'||!basketDemo.enabled||
+     !scalpCfg.auto||!scalpCfg.assets[sym])return;
+  if(scalpHist.some(t=>t.status==='OPEN'))return;
+  var s=basketDemo.active,st=scalpState[sym]||{},scan=st.scan,
+    quote=prices[sym],c5=kmrClosed(scalpData[sym]||[]);
+  if(c5.some(k=>k.analysisOnly)||!scan||!scan.dir||!scan.gatesOk||st.block||st.feedError||
+     !Number.isFinite(quote)||quote<=0||c5.length<60)return;
+  var latest=c5[c5.length-1];
+  if(!latest||Date.now()-latest.t>12*60000)return;
+  if(s&&(s.sym!==sym||s.dir!==scan.dir))return;
+  if(basketDemo.lastBars[sym]===scan.barT)return;
+  var ran=(scan.dir==='BUY'?1:-1)*(quote-scan.price);
+  if(ran>0.4*scan.A||ran<-0.5*scan.A)return;
+  var plan=basketPlan(sym,scan,quote,c5,scalpCfg),
+    decision=basketCanAdd(s,plan,quote,scalpCfg);
+  if(!decision.ok){basketDemo.blockReason=decision.reason;return;}
+  const account=paperAccountRisk(sym,scan.dir,quote,plan.sl,plan.units);
+  if(!account.ok){basketDemo.blockReason=account.reason;return;}
+  var day=scalpToday(),basketDay=basketToday();
+  if(day.stopHit||(day.goalHit&&scalpCfg.stopAtGoal)||
+     (scalpCfg.stopAtGoal&&day.pnl+basketDay.pnl>=scalpCfg.goal)||
+     day.pnl+basketDay.pnl<=-scalpCfg.dayStop)return;
+  var session=s;
+  if(!session){
+    session={id:'basket-'+Date.now()+'-'+Math.floor(Math.random()*10000),
+      sym,dir:scan.dir,status:'OPEN',createdAt:Date.now(),
+      positions:[],lastCheckedBar:scan.barT,paperOnly:true,netPnl:0};
+
+  }
+  var pos={id:'paper-'+Date.now()+'-'+Math.floor(Math.random()*100000),
+    sym,dir:scan.dir,status:'OPEN',entry:quote,sl:plan.sl,tp:plan.tp,
+    units:plan.units,lot:0.01,estimatedStopLossUsd:plan.riskUsd,
+    openedAt:Date.now(),confirmed5mBar:scan.barT,setup:scan.setup,
+    reason:scan.setup,why:scan.why,
+    conditions:{trend:scan.trend,adx:scan.adx,rsi7:scan.rsi7,relVolume:scan.relVol,
+      atr5m:scan.A,gates:scan.gates,strategyVersion:scan.strategyVersion||'v28-original'},
+    feedSource:st.feedSource||'unknown',paperOnly:true,brokerOrderId:null};
+  pos.accountingVersion=2;pos.updatedAt=pos.openedAt;pos.spreadPerUnit=SPREAD[sym]||0;
+  pos.owner=currentUser.username;pos.signalKey='basket:'+sym+':5m:'+scan.barT+':'+scan.dir;
+  pos.basketId=session.id;
+  basketDemo.entryBusy=true;
+  try{if(!await paperSaveEntry('basket-positions',basketRecordId(pos.id),pos))return;}
+  finally{basketDemo.entryBusy=false;}
+  // The position is durable before the browser creates the session or alerts.
+  basketDemo.active=session;
+  session.positions.push(pos);session.updatedAt=Date.now();basketDemo.lastBars[sym]=scan.barT;
+  basketDemo.blockReason='';
+  basketEvent(session,'OPEN_POSITION',{positionId:pos.id,entry:quote,sl:pos.sl,
+    risk:plan.riskUsd,combinedRisk:decision.totalRiskUsd,conditions:pos.conditions});
+  basketPersistPosition(session,pos);basketPersistSession(session);basketSave();
+  showToast('🧺 PAPER '+scan.dir+' '+sym+' 0.01 lot ('+
+    session.positions.length+'/5) · basket risk $'+decision.totalRiskUsd.toFixed(2),
+    'var(--acc)');
+}
 async function basketDbRestore(){
   if(!currentUser||currentUser.role==='guest')return false;
   const user=currentUser.username;
@@ -176,7 +254,22 @@ async function basketDbRestore(){
     basketSave();return true;
   }catch(e){console.warn('Paper basket restoration unavailable',e);return false;}
 }
-function basketToggle(){basketDemo.enabled=false;basketSave();}
+async function basketToggle(){
+  if(!currentUser||currentUser.role==='guest'||basketDemo.modePending)return;
+  if(typeof backgroundBusy!=='undefined'&&backgroundBusy){showToast('Settings are synchronizing — try the toggle again shortly','var(--acc)');return;}
+  const next=!basketDemo.enabled;
+  if(next&&scalpHist.some(t=>t.status==='OPEN')){showToast('Close existing Low Profit positions before enabling Basket paper','var(--acc)');return;}
+  const user=currentUser.username;basketDemo.modePending=true;
+  try{
+    const status=await riyanApi('/api/v1/paper/background/status');
+    if(currentUser?.username!==user)return;
+    await riyanApi('/api/v1/paper/background/settings',{method:'POST',body:JSON.stringify({enabled:status.enabled!==false,scalp:scalpCfg,basketEnabled:next,basketModeVersion:2})});
+    if(currentUser?.username!==user)return;
+    basketDemo.enabled=next;basketDemo.modeVersion=2;basketSave();
+    if(typeof backgroundDigest!=='undefined')backgroundDigest='';
+  }catch(e){showToast('Basket mode unchanged: '+(e.detail||e.message),'var(--red)');}
+  finally{basketDemo.modePending=false;renderScalpTab();}
+}
 function basketCloseNow(){
   var s=basketDemo.active;if(!s||!paperReady())return;
   var price=prices[s.sym];
@@ -192,8 +285,8 @@ function renderBasketDemo(){
   var b=basketDemo,s=b.active,quote=s?prices[s.sym]:null;
   var pnl=s&&Number.isFinite(quote)?basketPnlAt(s.positions,quote,s.sym):null;
   var risk=s?basketRiskAtStops(s.positions,s.sym):0;
-  if(!s&&!b.history.length&&!b.conflict){root.innerHTML='';return;}
-  var html='<div class="ic"><div class="it">Legacy paper positions and history</div><div class="ib"><p class="sc-note">New basket entries are retired. Existing positions keep their stop/exit management.</p>';
+  if(!b.enabled&&!s&&!b.conflict){root.innerHTML='';return;}
+  var html='<div class="ic"><div class="it">Basket paper scalping</div><div class="ib"><p class="sc-note">Opt-in paper simulation · maximum 5 × 0.01 lot · no averaging down · combined account risk applies. Turning this mode off prevents new entries; existing positions keep exit management. Keep this browser open.</p>';
   if(s){
     html+='<div class="sc-row"><b>'+basketTxt(s.sym)+' '+basketTxt(s.dir)+
       ' · '+s.positions.length+'/5 OPEN</b><b class="'+
@@ -204,7 +297,7 @@ function renderBasketDemo(){
     for(var pos of s.positions){
       html+='<div class="lvl-row"><span>0.01 lot '+basketTxt(pos.dir)+' · '+
         basketTxt(pos.setup)+'</span><span class="sc-dim">Entry '+
-        fmtP(s.sym,pos.entry)+' · SL '+fmtP(s.sym,pos.sl)+'</span></div>';
+        fmtP(s.sym,pos.entry)+' · SL '+fmtP(s.sym,pos.sl)+' · TP '+(Number.isFinite(pos.tp)?fmtP(s.sym,pos.tp):'Basket net target')+'</span></div>';
     }
     html+='<button class="anal-refresh" onclick="basketCloseNow()">Close entire PAPER basket</button>';
   }else html+='<div class="sc-note">No paper positions. Enable PAPER and AUTO; wait for a real, confirmed closed-candle setup that fits the risk budget.</div>';

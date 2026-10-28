@@ -58,6 +58,7 @@ jobs:
           node scripts/check-calendar.cjs
           node scripts/check-volume-trap.cjs
           node scripts/check-structure.cjs
+          node scripts/check-active-entry-state.cjs
           node scripts/check-market-context.cjs
           node scripts/check-entry-approval.cjs
           node scripts/check-triggered-signals.cjs
