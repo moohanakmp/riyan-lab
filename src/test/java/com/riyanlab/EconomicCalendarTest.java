@@ -107,4 +107,10 @@ class EconomicCalendarTest {
   assertEquals(false,sameHost.view().get("ready"));verify(client,times(1)).send(any(HttpRequest.class),any(HttpResponse.BodyHandler.class));
  }
 
+ @Test void numericComparisonValuesMustNotDiscardTheWholeWeek(){
+  var input=events(start);((ObjectNode)input.get(0)).put("forecast","<1.25%").put("previous",">=0.25%");
+  var parsed=EconomicCalendar.validate(input,start,json);assertEquals("<1.25%",parsed.get(0).path("forecast").asText());
+  ((ObjectNode)input.get(0)).put("forecast","<img src=x onerror=alert(1)>");assertThrows(RuntimeException.class,()->EconomicCalendar.validate(input,start,json));
+ }
+
 }

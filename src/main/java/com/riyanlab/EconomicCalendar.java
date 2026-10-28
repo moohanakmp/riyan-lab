@@ -142,7 +142,7 @@ public class EconomicCalendar {
                !Set.of("High","Medium","Low","Holiday","Non-Economic").contains(impact)||at<start||at>=end)throw new IllegalArgumentException("Invalid calendar coverage or event");
             ObjectNode event=json.createObjectNode().put("title",title).put("country",country).put("date",Instant.ofEpochMilli(at).toString()).put("impact",impact);
             for(String field:List.of("forecast","previous","actual")){
-                String value=ev.path(field).asText("");if(value.length()>100||value.contains("<")||value.contains(">"))throw new IllegalArgumentException("Invalid event value");event.put(field,value);
+                String value=ev.path(field).asText("");if(value.length()>100||((value.contains("<")||value.contains(">"))&&!value.matches("[<>]=?\\s*[+-]?[0-9][0-9.,]*(?:%|[KMBT])?")))throw new IllegalArgumentException("Invalid event value");event.put(field,value);
             }
             usd|=country.equals("USD");String key=at+"|"+country+"|"+title;
             ObjectNode old=unique.put(key,event);if(old!=null&&!old.equals(event))throw new IllegalArgumentException("Conflicting calendar events");

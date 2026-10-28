@@ -40,4 +40,13 @@ class SchemaSmokeTest {
             assertTrue(sql.contains("CREATE INDEX IF NOT EXISTS basket_replays_owner_idx"));
         }
     }
+    @Test void migrationVersionsAreUnique()throws Exception{
+        var location=java.nio.file.Path.of(getClass().getResource("/db/migration").toURI());
+        var versions=new java.util.HashSet<String>();
+        try(var files=java.nio.file.Files.list(location)){
+            for(var name:files.map(p->p.getFileName().toString()).filter(n->n.startsWith("V")).toList())
+                assertTrue(versions.add(name.split("__")[0]),"Duplicate migration version: "+name);
+        }
+    }
+
 }
