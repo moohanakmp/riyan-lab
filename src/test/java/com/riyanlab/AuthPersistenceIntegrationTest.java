@@ -319,6 +319,13 @@ class AuthPersistenceIntegrationTest {
                 "basket-events","basket-replays")) {
             String path="/api/v1/records/"+type+"/"+ownId;
             String paperJson=paperJson("basket-ci");
+            if(type.equals("basket-positions")){
+                mvc.perform(put(path).cookie(ownerCookies)
+                    .header("X-CSRF-Token",csrf).header("X-Paper-Engine","integration-engine").contentType(MediaType.APPLICATION_JSON)
+                    .content(paperJson)).andExpect(status().isConflict());
+                mvc.perform(get("/api/v1/records/"+type).cookie(ownerCookies)).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+                continue;
+            }
             mvc.perform(put(path).cookie(ownerCookies)
                 .header("X-CSRF-Token",csrf).header("X-Paper-Engine","integration-engine").contentType(MediaType.APPLICATION_JSON)
                 .content(paperJson)).andExpect(status().isOk());

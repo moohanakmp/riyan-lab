@@ -6,8 +6,8 @@ const source=fs.readFileSync('src/main/resources/static/basket-demo.js','utf8');
 const replay=fs.readFileSync('src/main/resources/static/basket-replay.js','utf8');
 const html=fs.readFileSync('src/main/resources/static/index.html','utf8');
 assert.match(html, /<script src="\/basket-demo\.js(?:\?v=[^"]+)?"><\/script>/);
-assert.match(html, /<script src="\/basket-replay\.js(?:\?v=[^"]+)?"><\/script>/);
-assert(html.includes('basketEvaluate(sym)'));
+assert(!html.includes('<script src="/basket-replay.js'));
+assert(!html.includes('basketEvaluate(sym)'));
 assert(html.includes('basketCandleCheck()'));
 const now=Date.now();
 let queued=[],calls=[];
@@ -52,7 +52,7 @@ const context=vm.createContext({
  })
 });
 vm.runInContext(source,context);
-vm.runInContext(replay,context);
+
 const run=(expression)=>vm.runInContext(expression,context);
 const candidate={dir:'BUY',A:1,gatesOk:true,setup:'Trend pullback',barT:now-600000,
   gates:[{ok:true,label:'Safe'}],trend:'BULL'};
@@ -60,23 +60,13 @@ const recent=[{t:now-1200000,l:99.9,h:101,c:100,o:100},
  {t:now-900000,l:99.8,h:100.8,c:100,o:100},
  {t:now-600000,l:99.7,h:100.6,c:100,o:100}];
 context.demoScan=candidate;context.demoCandles=recent;
-const plan=run("basketPlan('XAUUSD',demoScan,100,demoCandles,scalpCfg)");
-assert(!plan.reject,'0.01 simulated Gold setup must fit $4 cap when tight enough');
-assert.equal(plan.lot,.01);
-assert(plan.riskUsd<=4,'single position must not exceed basket $4');
-const tooWide=run("basketPlan('XAUUSD',demoScan,100,demoCandles,{maxLoss:.2})");
-assert(tooWide.reject,'too-wide 0.01 lot Gold stop must be rejected');
-const session={sym:'XAUUSD',dir:'BUY',positions:[{...plan,entry:100}]};
-context.plan=plan;context.session=session;
-const averaging=run("basketCanAdd(session,plan,100,scalpCfg)");
-assert.equal(averaging.ok,false,'no averaging down after spread');
-assert.match(averaging.reason,/averaging down/);
-const up=run("basketCanAdd(session,plan,105,scalpCfg)");
-assert.equal(up.ok,true,'non-losing basket can add only if combined stop risk fits');
-const over={...session,positions:Array.from({length:5},()=>({...plan,entry:100}))};
-context.fullSession=over;
-assert.equal(run("basketCanAdd(fullSession,plan,105,scalpCfg)").ok,false,'5 positions is the strict cap');
-assert.equal(run("basketPnlAt(session.positions,100,'XAUUSD')")<0,true,'spread is counted');
+assert.equal(typeof context.basketPlan,'undefined','basket creation logic is retired');
+assert.equal(typeof context.basketCanAdd,'undefined');
+storage.set('kmr_basket_paper_v1_basketowner',JSON.stringify({enabled:true,active:null,history:[],events:[],lastBars:{}}));
+run('basketLoad()');assert.equal(context.basketDemo.enabled,false,'legacy enabled flag is migrated off');
+run('basketToggle()');assert.equal(context.basketDemo.enabled,false,'retired mode cannot be re-enabled');
+context.basketDemo.enabled=true;
+run("basketEvaluate('XAUUSD')");assert.equal(queued.length,0,'no new basket orders even from stale enabled state');
 const s={id:'paper-case',sym:'XAUUSD',dir:'BUY',status:'OPEN',
  createdAt:now-20*60000,lastCheckedBar:0,positions:[{
  id:'p1',dir:'BUY',entry:100,sl:99,lot:.01,units:1,
@@ -96,28 +86,6 @@ assert(queued.some(x=>x.type==='basket-sessions'),'sessions must be queued for P
 assert(queued.some(x=>x.type==='basket-positions'),'positions must be queued');
 assert(queued.some(x=>x.type==='basket-events'),'events must be queued');
 assert(queued.every(x=>x.id.startsWith('basketowner:')),'owner-scoped source ID required');
-const old=run('basketDemo.enabled');
-assert.equal(old,true,'demo on/off is independent of original scalpCfg.auto');
-const series=Array.from({length:290},(_,i)=>{
- const o=100+i*.035;return{t:now-(290-i)*300000,o,h:o+.12,l:o-.08,c:o+.035,v:100};
-});
-context.history=series;
-const results=run("basketReplaySimulation('XAUUSD',history,scalpCfg)");
-assert.equal(results.ok,true);
-assert(results.positions>0,'synthetic confirmed candles should open paper positions');
-assert(results.maxPositions<=5,'replay may never open more than five positions');
-assert(results.baskets>0,'replay should close and report at least one basket');
-assert(results.assumptions.some(x=>x.includes('no commission')), 'replay must disclose omitted costs');
-assert(!source.includes('mt5_executor')&&!source.includes('execute-demo'),
- 'paper mode must not call MT5');
-
-// Three safety regressions: corrupt saved positions cannot bypass combined risk,
-// the configured +$2 NET target exits all simulated positions, and no real orders.
-context.corruptSession={sym:'XAUUSD',dir:'BUY',status:'OPEN',positions:[
- {dir:'BUY',entry:100,sl:NaN,units:1}
-]};
-assert.equal(run("basketCanAdd(corruptSession,plan,105,scalpCfg)").ok,false,
- 'invalid restored stop must fail closed instead of returning NaN risk');
 const targetSession={
  id:'basket-target-test',sym:'XAUUSD',dir:'BUY',status:'OPEN',
  createdAt:now-2*60000,lastCheckedBar:0,
@@ -144,7 +112,7 @@ assert(queued.filter(x=>x.type==='basket-positions').length>=3,
  'all position state transitions must queue for PostgreSQL');
 console.log('PASS: +$2 NET closes entire basket, corrupt risk fails closed, audit events persist');
 
-console.log('PASS: paper-only basket entries, 0.01 sizing, combined risk, non-losing additions, five-position cap');
+console.log('PASS: basket creation retired; legacy settings disabled and existing positions remain managed');
 console.log('PASS: conservative stop before profit, owner-scoped audit ledger, next-bar replay summary');
 
 (async()=>{
