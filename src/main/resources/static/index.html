@@ -833,7 +833,10 @@ body{background:
       <div id="triggeredSync" role="status" class="sc-dim"></div><div id="triggeredList"></div>
     </div></section>
 
-    <div id="trendStrip" hidden></div>
+    <div class="trend-hdr" id="autoSignalAnalysis"><div class="sec-ttl" style="margin:0">Market Trend</div><button class="recheck-btn" onclick="recheckTrends()">🔄 Re-check Trend</button></div>
+    <div class="trend-strip" id="trendStrip"></div>
+    <details class="workspace-explainer"><summary>Signal rules & safety gates</summary><div class="notice"><b>🧠 Engine v3 — trades like a disciplined trader:</b> direction comes only from the <b>4H + 1H</b> trend (both must agree), the market must actually be <b>trending</b> (ADX&nbsp;20+), and entries happen only on a <b>pullback into value</b> (EMA20/EMA50, an order block, or right after a liquidity sweep) with a real <b>trigger candle</b>. It refuses to <b>chase</b> stretched moves, stands aside <b>30 min before / 15 min after high-impact USD news</b> and during the 02:00–04:00 IST rollover, and blocks entries when <b>volume pressure</b> is on the other side.<br><b>★ HIGH</b> (quality 84+) → 0.01 paper lot · <b>◆ MED</b> (70–83) → 0.01 paper lot · every WAIT card tells you exactly what it's waiting for.<br><b>🔒 Stable levels:</b> closed candles only, TP/SL locked at entry. <b>👀 Reversal watch</b> still scans open trades across 1m→4h.</div></details>
+    <details class="workspace-explainer"><summary>Backtest & validation</summary><div class="notice" style="margin-top:8px"><b>🧪 Check it yourself:</b> Analytics → <b>Run backtest</b> replays Engine v3 over the real candles on this device and shows its actual win rate and R. Use that — not hope — to judge it. Few signals is by design: the engine would rather miss a trade than take a bad one.</div></details>
     <div id="signalsContainer"></div>
   </div>
 </div>
@@ -4869,7 +4872,28 @@ async function refreshTriggeredSignals(){
 function showTriggeredSignals(){showTab('signals',document.querySelector('[data-tab=signals]'));document.getElementById('triggeredSignals')?.scrollIntoView({behavior:'smooth',block:'start'});}
 function renderSignals(){
   renderTriggeredSignals();
-  const extra=document.getElementById('signalsContainer');if(extra)extra.replaceChildren();
+  const isAdmin=currentUser&&currentUser.role==='admin';
+  const canSeeHigh=isAdmin||hasAccess('historyHigh');
+  const canSeeMed=isAdmin||hasAccess('historyMed');
+  let html='';
+  SYMS.forEach(sym=>{
+    const a=ASSETS[sym];
+    const act=activeSignals[sym]?signalHistory.find(r=>r.id===activeSignals[sym]&&r.outcome==='OPEN'):null;
+    if(act){
+      if(act.confidence==='HIGH'&&!canSeeHigh)return;
+      if(act.confidence==='MED'&&!canSeeMed)return;
+      const isNew=!flashedSigIds.has(act.id);
+      if(isNew)flashedSigIds.add(act.id);
+      html+=lockedCard(sym,a,act,isAdmin,isNew);
+    }else if(sym!=='BTCUSD'&&!isMetalsMarketOpen()){
+      html+=closedMarketCard(sym,a);
+    }else{
+      html+=waitCard(sym,a,computeSignal(sym),isAdmin);
+    }
+  });
+  if(!html)html=`<div style="text-align:center;color:var(--dim);font-size:12px;padding:30px 0">No signals available for your access level right now.</div>`;
+  html=`<div class="notice"><b>PAPER ONLY</b> · ${basketTxt(paperEngine.reason)}<br>Signal score measures rule agreement, not win probability. Reference quotes and modeled costs can differ from your broker.</div><div class="vp-strip">${SYMS.map(x=>kmrVolumeCardHtml(x,true)).join('')}</div>`+html;
+  setEvidenceHtml(document.getElementById('signalsContainer'),html);
 }
 
 // Active signal card — every level frozen exactly as sent to Telegram/Email
