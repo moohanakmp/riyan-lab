@@ -4056,6 +4056,37 @@ function kmrOrderBlockSetup(c,ctx={}){
   out.reason=out.gates.find(g=>!g.ok)?.label||'Confirmed order-block rejection';return out;
 }
 
+// Alternative structure setup: a completed breakout followed by its first retest.
+function kmrBreakRetestSetup(c,ctx={}){
+  const now=ctx.now??Date.now(),bars=PaperMath.closed(c||[],300000,now);
+  const out={dir:null,gatesOk:false,why:[],reason:'Waiting for a confirmed break and first retest'};
+  if(bars.length<60||bars.some(k=>k.analysisOnly))return out;
+  const last=bars.at(-1),A=atr(bars),recent=bars.slice(-30);
+  if(!(A>0)||now-last.t>12*60000||!recent.every((k,i)=>Number.isFinite(k.v)&&k.v>0&&(!i||k.t-recent[i-1].t===300000)))return out;
+  const range=last.h-last.l,body=Math.abs(last.c-last.o);
+  if(range<=0||body/range<0.4)return out;
+  for(let i=bars.length-2;i>=bars.length-9;i--){
+    const before=bars.slice(i-20,i),br=bars[i],after=bars.slice(i+1,-1);
+    const avg=before.reduce((n,k)=>n+k.v,0)/20;
+    const hi=Math.max(...before.map(k=>k.h)),lo=Math.min(...before.map(k=>k.l));
+    const dir=br.c>hi+0.1*A&&br.c>br.o?'BUY':br.c<lo-0.1*A&&br.c<br.o?'SELL':null;
+    if(!dir||Math.abs(br.c-br.o)<0.4*A||br.v<avg*1.2)continue;
+    const sign=dir==='BUY'?1:-1,level=dir==='BUY'?hi:lo;
+    if(after.some(k=>sign*(k.c-level)<0||(dir==='BUY'?k.l<=level+0.1*A:k.h>=level-0.1*A)))continue;
+    const touched=dir==='BUY'?last.l<=level+0.15*A&&last.l>=level-0.4*A:last.h>=level-0.15*A&&last.h<=level+0.4*A;
+    const closeAt=(last.c-last.l)/range;
+    if(!touched||sign*(last.c-level)<=0||sign*(last.c-level)>0.6*A||sign*(last.c-last.o)<=0||(dir==='BUY'?closeAt<0.65:closeAt>0.35))continue;
+    const vavg=bars.slice(-21,-1).reduce((n,k)=>n+k.v,0)/20;
+    if(last.v<vavg*0.8||ctx.adx>=30&&((dir==='BUY'&&ctx.trend==='BEAR')||(dir==='SELL'&&ctx.trend==='BULL')))continue;
+    const zones=kmrLevelZones(bars,A),opposing=dir==='BUY'?zones.resistance.find(z=>z.level>last.c):zones.support.filter(z=>z.level<last.c).at(-1);
+    return{...out,dir,gatesOk:true,A,price:last.c,barT:last.t,
+      stop:dir==='BUY'?Math.min(last.l,level)-0.15*A:Math.max(last.h,level)+0.15*A,
+      targetBarrier:opposing?(dir==='BUY'?opposing.low-0.1*A:opposing.high+0.1*A):null,
+      why:['20-bar structure broken on above-average volume','First retest held with a directional closed candle','Retest volume at least 0.8× average'],reason:'Confirmed break and first retest'};
+  }
+  return out;
+}
+
 function kmrLevelPlan(sym,dir,entry,scan,cfg){
   const level=scan.levelSetup,A=scan.A,spread=SPREAD[sym]||0,sgn=dir==='BUY'?1:-1;
   if(!level||!level.gatesOk||level.dir!==dir||!Number.isFinite(entry)||entry<=0)return{reject:'Level setup is not confirmed'};
@@ -4103,12 +4134,13 @@ function scalpScan(sym,c5,c15,h1,ctx){
   // Entries come exclusively from closed-candle price structure; legacy EMA/news settings are ignored.
   const level=kmrLevelSetup(c5,{now:ctx.now,trend,adx});
   const block=kmrOrderBlockSetup(c5,{now:ctx.now,trend,adx});
-  const selected=level.dir&&level.gatesOk?level:block.dir&&block.gatesOk?block:null;
+  const retest=kmrBreakRetestSetup(c5,{now:ctx.now,trend,adx});
+  const selected=level.dir&&level.gatesOk?level:block.dir&&block.gatesOk?block:retest.dir&&retest.gatesOk?retest:null;
   if(selected){
-    out.dir=selected.dir;out.setup=selected===block?'Order-block rejection':selected.trap?'Volume trap at support/resistance':'Support/resistance rejection';
-    out.why=selected.why;out.levelSetup=selected;out.strategyVersion=selected===block?'ob-volume-v1':'sr-volume-v1';
+    out.dir=selected.dir;out.setup=selected===retest?'Break and first retest':selected===block?'Order-block rejection':selected.trap?'Volume trap at support/resistance':'Support/resistance rejection';
+    out.why=selected.why;out.levelSetup=selected;out.strategyVersion=selected===retest?'break-retest-v1':selected===block?'ob-volume-v1':'sr-volume-v1';
   }
-  out.look=level.reason+' · '+block.reason;
+  out.look=level.reason+' · '+block.reason+' · '+retest.reason;
   // Non-actionable price watch. Never pass this to scalpOpen directly:
   // only a later confirmed candle and all original gates can create an entry.
   if(!out.dir&&e9[n]!=null&&A>0){
@@ -4130,7 +4162,7 @@ function scalpScan(sym,c5,c15,h1,ctx){
 }
 function scalpLevels(sym,dir,entry,scan,c5,cfg){
   if(!['BUY','SELL'].includes(dir)||!Number.isFinite(entry)||entry<=0||!Number.isFinite(scan?.A)||scan.A<=0||!Array.isArray(c5)||c5.length<3||!Number.isFinite(cfg?.maxLoss)||cfg.maxLoss<=0)return{reject:'Invalid setup or risk inputs'};
-  if(['sr-volume-v1','ob-volume-v1'].includes(scan.strategyVersion))return kmrLevelPlan(sym,dir,entry,scan,cfg);
+  if(['sr-volume-v1','ob-volume-v1','break-retest-v1'].includes(scan.strategyVersion))return kmrLevelPlan(sym,dir,entry,scan,cfg);
   const A=scan.A,spread=SPREAD[sym]||0,cs=ASSETS[sym].contractSz,sgn=dir==='BUY'?1:-1;
   let tpDist=Math.max(0.8*A,2.5*spread);
   if(scan.tpCap)tpDist=Math.min(tpDist,Math.max(scan.tpCap,0.45*A));

@@ -2,8 +2,58 @@ package com.riyanlab;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 class BackgroundFeedsTest {
  private final ObjectMapper json=new ObjectMapper();
+ @Test void oneFailedTimeframeDoesNotDiscardHealthyHistory()throws Exception{
+  var market=mock(MarketDataController.class);
+  when(market.publicData(anyString())).thenAnswer(call->{
+   String url=call.getArgument(0);
+   if(url.contains("granularity=300&"))return org.springframework.http.ResponseEntity.status(503).body("5m unavailable");
+   int seconds=url.contains("granularity=900&")?900:3600;
+   long t=(System.currentTimeMillis()/1000/seconds-2)*seconds;
+   return org.springframework.http.ResponseEntity.ok("[["+t+",99,102,100,101,12]]");
+  });
+  var result=new BackgroundFeeds(market,json).instrument("BTCUSD");
+  assertFalse(result.path("bars").path("15m").isEmpty());
+  assertFalse(result.path("bars").path("1h").isEmpty());
+  assertTrue(result.path("frameErrors").has("5m"));assertTrue(result.has("scalpError"));
+ }
+ @Test void failedFifteenMinuteFeedFallsBackToCompleteFiveMinuteGroups()throws Exception{
+  var market=mock(MarketDataController.class);
+  when(market.publicData(anyString())).thenAnswer(call->{
+   String url=call.getArgument(0);
+   if(url.contains("granularity=900&"))return org.springframework.http.ResponseEntity.status(503).body("15m unavailable");
+   int seconds=url.contains("granularity=300&")?300:3600;
+   long t=(System.currentTimeMillis()/1000/900-10)*900;
+   var rows=json.createArrayNode();for(int i=0;i<6;i++)rows.addArray().add(t+i*seconds).add(99).add(102).add(100).add(101).add(12);
+   return org.springframework.http.ResponseEntity.ok(rows.toString());
+  });
+  var result=new BackgroundFeeds(market,json).instrument("BTCUSD");
+  assertEquals(2,result.path("bars").path("15m").size());
+  assertTrue(result.path("frameErrors").has("15m"));assertFalse(result.has("scalpError"));
+  var five=result.path("five").deepCopy();((com.fasterxml.jackson.databind.node.ArrayNode)five).remove(1);
+  assertEquals(1,new BackgroundFeeds(null,json).aggregatePeriod(five,300000,3).size(),"missing candles cannot be interpolated");
+ }
+ @Test void allHistoriesFinishBeforeAnyQuoteIsFetched(){
+  var finished=new java.util.concurrent.atomic.AtomicInteger();
+  var early=new java.util.concurrent.atomic.AtomicBoolean();
+  var feeds=new BackgroundFeeds(null,json){
+   @Override com.fasterxml.jackson.databind.node.ObjectNode instrument(String sym){finished.incrementAndGet();return json.createObjectNode();}
+   @Override void refreshQuote(String sym,com.fasterxml.jackson.databind.node.ObjectNode out){
+    if(finished.get()!=3)early.set(true);out.put("price",100).put("quoteAt",System.currentTimeMillis());
+   }
+  };
+  var result=feeds.snapshot();assertFalse(early.get());
+  for(String sym:java.util.List.of("XAUUSD","XAGUSD","BTCUSD"))assertEquals(100,result.path(sym).path("price").asInt());
+ }
+ @Test void failedQuoteDoesNotLeaveAnOldPriceAvailable(){
+  var market=mock(MarketDataController.class);
+  when(market.publicData(anyString())).thenReturn(org.springframework.http.ResponseEntity.status(503).body("unavailable"));
+  var out=json.createObjectNode().put("price",100).put("quoteAt",System.currentTimeMillis());
+  new BackgroundFeeds(market,json).refreshQuote("BTCUSD",out);
+  assertFalse(out.has("price"));assertFalse(out.has("quoteAt"));assertTrue(out.has("quoteError"));
+ }
  @Test void historyValidationRejectsFormingMalformedAndConflictingBars()throws Exception{
   long t=1792375200000L;t=t/300000*300000;
   var rows=json.readTree("[["+(t/1000)+",99,102,100,101,12]]");

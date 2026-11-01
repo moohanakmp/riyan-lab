@@ -31,15 +31,24 @@ public class BackgroundFeeds {
             var jobs=new LinkedHashMap<String,Future<ObjectNode>>();
             for(String sym:List.of("XAUUSD","XAGUSD","BTCUSD"))jobs.put(sym,pool.submit(()->instrument(sym)));
             jobs.forEach((sym,f)->{try{out.set(sym,f.get(65,TimeUnit.SECONDS));}catch(Exception e){f.cancel(true);out.set(sym,json.createObjectNode().put("error","Market snapshot timed out"));}});
+            // Fetch quotes only after every history task has finished. A slow metal
+            // history must not age an already-fetched BTC quote out of its 30s gate.
+            var quotes=new LinkedHashMap<String,Future<?>>();
+            for(String sym:List.of("XAUUSD","XAGUSD","BTCUSD")){
+                ObjectNode instrument=(ObjectNode)out.get(sym);
+                quotes.put(sym,pool.submit(()->refreshQuote(sym,instrument)));
+            }
+            quotes.forEach((sym,f)->{try{f.get(12,TimeUnit.SECONDS);}catch(Exception e){f.cancel(true);((ObjectNode)out.get(sym)).put("quoteError","Quote request timed out");}});
         }
         return out;
     }
-    private ObjectNode instrument(String sym){
+    ObjectNode instrument(String sym){
         var out=json.createObjectNode();var bars=out.putObject("bars");
         boolean btc=sym.equals("BTCUSD");
         out.put("source",btc?"Coinbase BTC/USD":"OKX "+(sym.equals("XAUUSD")?"XAU":"XAG")+"/USDT perp");
-        try{
-            for(String tf:List.of("5m","15m","1h","4h")){
+        var errors=out.putObject("frameErrors");
+        for(String tf:List.of("5m","15m","1h","4h")){
+            try{
                 if(btc&&tf.equals("4h")){bars.set(tf,aggregate(bars.path("1h"),4));continue;}
                 int minutes=Map.of("5m",5,"15m",15,"1h",60,"4h",240).get(tf);
                 int count=tf.equals("15m")?700:tf.equals("1h")?(btc?400:300):300;
@@ -58,9 +67,16 @@ public class BackgroundFeeds {
                     normalized=metals.candles(sym,tf,count);
                 }
                 if(tf.equals("5m"))out.set("five",normalized);else bars.set(tf,normalized);
-            }
-        }catch(Exception e){out.put("error",safeError(e));}
-        // Quote is fetched last, so history loading cannot silently make it stale.
+            }catch(Exception e){errors.put(tf,safeError(e));if(tf.equals("5m"))out.put("scalpError",safeError(e));}
+        }
+        // Complete 5m candles are an exact fallback, never interpolated history.
+        if(bars.path("15m").isEmpty()&&!out.path("five").isEmpty())
+            bars.set("15m",aggregatePeriod(out.path("five"),300000L,3));
+        if(!errors.isEmpty())out.put("error","Some candle timeframes unavailable; see frameErrors");
+        return out;
+    }
+    void refreshQuote(String sym,ObjectNode out){
+        boolean btc=sym.equals("BTCUSD");
         try{
             var q=get(btc?"https://api.exchange.coinbase.com/products/BTC-USD/ticker":"https://api.gold-api.com/price/"+(sym.equals("XAUUSD")?"XAU":"XAG"));
             double price=q.path("price").asDouble(Double.NaN);long now=System.currentTimeMillis();
@@ -71,12 +87,11 @@ public class BackgroundFeeds {
                 // Same spot scaling used by the existing browser Low Profit feed.
                 var five=out.path("five");if(!five.isEmpty()){
                     double ratio=price/five.path(five.size()-1).path("c").asDouble();
-                    if(ratio<=.9||ratio>=1.1){out.remove("five");out.put("error","Quote / candle mismatch exceeds 10%");}
+                    if(ratio<=.9||ratio>=1.1){out.remove("five");out.put("scalpError","Quote / candle mismatch exceeds 10%");out.put("error","Quote / candle mismatch exceeds 10%");}
                     else for(var k:five)for(String key:List.of("o","h","l","c"))((ObjectNode)k).put(key,k.path(key).asDouble()*ratio);
                 }
             }
-        }catch(Exception e){out.put("error",safeError(e));}
-        return out;
+        }catch(Exception e){out.remove(List.of("price","quoteAt"));out.put("quoteError",safeError(e));}
     }
     private String safeError(Exception e){return e.getMessage()==null?"Market data unavailable":e.getMessage().substring(0,Math.min(240,e.getMessage().length()));}
     static long metalQuoteTime(JsonNode quote,String symbol,long now){
@@ -101,11 +116,14 @@ public class BackgroundFeeds {
         var out=json.createArrayNode();sorted.values().forEach(out::add);return out;
     }
     ArrayNode aggregate(JsonNode bars,int hours){
-        var out=json.createArrayNode();long ms=hours*3600000L;var groups=new TreeMap<Long,List<JsonNode>>();
+        return aggregatePeriod(bars,3600000L,hours);
+    }
+    ArrayNode aggregatePeriod(JsonNode bars,long sourceMs,int count){
+        var out=json.createArrayNode();long ms=count*sourceMs;var groups=new TreeMap<Long,List<JsonNode>>();
         for(var k:bars)groups.computeIfAbsent(Math.floorDiv(k.path("t").asLong(),ms)*ms,x->new ArrayList<>()).add(k);
         groups.forEach((t,ks)->{
-            if(ks.size()!=hours)return;
-            for(int i=0;i<hours;i++)if(ks.get(i).path("t").asLong()!=t+i*3600000L)return;
+            if(ks.size()!=count)return;
+            for(int i=0;i<count;i++)if(ks.get(i).path("t").asLong()!=t+i*sourceMs)return;
             var k=json.createObjectNode().put("t",t).put("ms",ms).put("o",ks.getFirst().path("o").asDouble()).put("c",ks.getLast().path("c").asDouble()).put("complete",true);
             k.put("h",ks.stream().mapToDouble(x->x.path("h").asDouble()).max().orElseThrow());k.put("l",ks.stream().mapToDouble(x->x.path("l").asDouble()).min().orElseThrow());k.put("v",ks.stream().mapToDouble(x->x.path("v").asDouble()).sum());out.add(k);
         });return out;

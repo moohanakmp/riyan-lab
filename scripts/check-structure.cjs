@@ -40,5 +40,10 @@ function fixture(){
  const sellResult=await scan({...job,feeds:{XAUUSD:{...job.feeds.XAUUSD,price:mirror.at(-1).c,five:mirror,bars:{'15m':PaperMath.aggregate(mirror,15)}}}});
  const sellEntry=sellResult.changes.find(x=>x.type==='low-profit');assert(sellEntry,JSON.stringify(sellResult));assert.equal(sellEntry.record.dir,'SELL');assert(sellEntry.record.tp<sellEntry.record.entry);assert(sellEntry.record.sl>sellEntry.record.entry);
  const result=await scan({...job,feeds:{XAUUSD:{...job.feeds.XAUUSD,quoteAt:now-31000}}});assert(!result.changes.some(x=>x.type==='low-profit'),'stale quote still blocks structure entry');
+ const partial=await scan({...job,feeds:{XAUUSD:{...job.feeds.XAUUSD,error:'Some candle timeframes unavailable; see frameErrors',frameErrors:{'4h':'Provider unavailable'}}}});
+ assert(partial.changes.some(x=>x.type==='low-profit'),'an unrelated 4h failure must not block valid 5m/15m Low Profit data');
+ assert.equal(partial.diagnostics.XAUUSD.frameErrors['4h'],'Provider unavailable');
+ const failedFive=await scan({...job,feeds:{XAUUSD:{...job.feeds.XAUUSD,scalpError:'Conflicting 5m history'}}});
+ assert(!failedFive.changes.some(x=>x.type==='low-profit'),'an explicit 5m error still blocks entries');
  console.log('PASS mirrored order-block displacement/BOS/retest, no lookahead, invalidation, volume, gap, reference, trend, configurable net targets, structural risk and news-independent background entries');
 })().catch(e=>{console.error(e);process.exitCode=1;});

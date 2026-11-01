@@ -15,7 +15,7 @@ function extract(name,kind='function'){
   }
   throw Error('Cannot parse shared strategy '+name);
 }
-const names=['ema','rsi','atr','swingLevels','emaSeries','macd','kmrAdx','kmrPivots','kmrStructure','kmrVolumePressure','kmrSweep','kmrTfBias','kmrSmartScan','ev2txt','kmrTradePlan','kmrClosed','kmrIstHour','kmrNewsEvents','calendarReady','kmrScan','getCandles','computeSignal','orderBlocks','calcPos','computeVolSpike','marketEvidenceSnapshot','paperAccountRisk','autoEntryCheck','evaluateSignals','recordSignal','checkOutcome','isMetalsMarketOpen','istDayKey','scalpToday','bbAt','aggMinutes','scalpClosed15m','kmrLevelZones','kmrLevelSetup','kmrOrderBlockSetup','kmrLevelPlan','scalpScan','scalpLevels','scalpCtx','scalpEvaluate','scalpOpen','scalpClose','scalpCheckRange','scalpCandleCheck','scalpManageAll','fmtP','freshQuote'];
+const names=['ema','rsi','atr','swingLevels','emaSeries','macd','kmrAdx','kmrPivots','kmrStructure','kmrVolumePressure','kmrSweep','kmrTfBias','kmrSmartScan','ev2txt','kmrTradePlan','kmrClosed','kmrIstHour','kmrNewsEvents','calendarReady','kmrScan','getCandles','computeSignal','orderBlocks','calcPos','computeVolSpike','marketEvidenceSnapshot','paperAccountRisk','autoEntryCheck','evaluateSignals','recordSignal','checkOutcome','isMetalsMarketOpen','istDayKey','scalpToday','bbAt','aggMinutes','scalpClosed15m','kmrLevelZones','kmrLevelSetup','kmrOrderBlockSetup','kmrBreakRetestSetup','kmrLevelPlan','scalpScan','scalpLevels','scalpCtx','scalpEvaluate','scalpOpen','scalpClose','scalpCheckRange','scalpCandleCheck','scalpManageAll','fmtP','freshQuote'];
 const paper=fs.readFileSync(path.join(root,'paper-engine.js'),'utf8');
 const source=fs.readFileSync(path.join(root,'trading-core.js'),'utf8')+'\n'+
  fs.readFileSync(path.join(root,'market-context.js'),'utf8')+'\n'+
@@ -59,7 +59,7 @@ async function scan(job){
  for(const sym of SYMS){
   const f=job.feeds[sym]||{};prices[sym]=f.price;quoteAt[sym]=f.quoteAt||0;ohlcData[sym]=f.bars||{};scalpData[sym]=f.five||[];
   const closed=scalpHist.filter(r=>r.sym===sym&&r.status!=='OPEN');
-  scalpState[sym]={feedSource:f.source||'Unavailable',feedError:f.error||'',cooldown:closed.reduce((n,r)=>Math.max(n,(r.closedAt||0)+(r.pnl<0?15:5)*60000),0)};
+  scalpState[sym]={feedSource:f.source||'Unavailable',feedError:f.scalpError||(!f.five?.length?f.error||'':''),cooldown:closed.reduce((n,r)=>Math.max(n,(r.closedAt||0)+(r.pnl<0?15:5)*60000),0)};
  }
  function computeMTFTrend(sym){return {'1h':kmrTfBias(kmrClosed(ohlcData[sym]['1h']||[])),'4h':kmrTfBias(kmrClosed(ohlcData[sym]['4h']||[]))};}
  // Entries retain the exact existing evaluateSignals/scalpEvaluate paths.
@@ -69,7 +69,7 @@ async function scan(job){
  await vm.runInContext(`(async()=>{
   for(const sym of SYMS)await checkOutcome(sym,prices[sym]);
   scalpCandleCheck();scalpManageAll();if(job.allowEntries!==false)evaluateSignals();
-  for(const sym of SYMS){if(job.allowEntries!==false)scalpEvaluate(sym);else scalpState[sym].block="Open the app once to synchronize your strategy and risk settings";const st=scalpState[sym],s=computeSignal(sym);diagnostics[sym]={auto:s.reason||s.wait||s.state,lowProfit:st.block||st.modeBlocked||st.note||st.scan?.gates?.find(g=>!g.ok)?.label||st.scan?.look||'Waiting for confirmed setup',source:st.feedSource,quoteAt:quoteAt[sym]||0,last15m:ohlcData[sym]['15m']?.at(-1)?.t||0,last5m:scalpData[sym]?.at(-1)?.t||0};}
+  for(const sym of SYMS){if(job.allowEntries!==false)scalpEvaluate(sym);else scalpState[sym].block="Open the app once to synchronize your strategy and risk settings";const st=scalpState[sym],s=computeSignal(sym);diagnostics[sym]={auto:s.reason||s.wait||s.state,lowProfit:st.block||st.modeBlocked||st.note||st.scan?.gates?.find(g=>!g.ok)?.label||st.scan?.look||'Waiting for confirmed setup',source:st.feedSource,quoteAt:quoteAt[sym]||0,last15m:ohlcData[sym]['15m']?.at(-1)?.t||0,last5m:scalpData[sym]?.at(-1)?.t||0,frameErrors:job.feeds[sym]?.frameErrors||{},quoteError:job.feeds[sym]?.quoteError||''};}
  })()`,context,{timeout:5000});
  await Promise.all(pending);
  vm.runInContext(`for(const r of scalpHist)__save('low-profit',r.id||r.t,r);`,context,{timeout:2000});
