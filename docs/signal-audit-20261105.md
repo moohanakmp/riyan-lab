@@ -2,7 +2,7 @@
 
 ## Outcome and limits
 
-The missing-signal complaint is not resolved by passing the existing checks. The deployed commit and authenticated account diagnostics still need verification. Staging `/api/v1/health` returned `{"status":"UP"}`; no authenticated browser flow, Telegram delivery, broker execution, or production database inspection was completed.
+The missing-signal complaint is not resolved by passing the existing checks. At the initial pre-login audit, the deployed commit and authenticated account diagnostics still needed verification. Staging `/api/v1/health` returned `{"status":"UP"}`; no authenticated browser flow, Telegram delivery, broker execution, or production database inspection was completed.
 
 ## Reproduced defects fixed
 
@@ -38,4 +38,17 @@ Raw provider-response SHA-256 values:
 
 All 21 `scripts/check-*.cjs` checks passed. Java 21 backend unit tests passed: 39 executed, 14 database integration cases skipped locally because no PostgreSQL integration environment was configured. Maven `verify` succeeded after supplying the runtime proxy and explicit Byte Buddy test agent required in this container. The GitHub workflow provisions PostgreSQL and enables those integration cases; its result must be checked separately for the final commit.
 
-Render has no workspace selected. The connector lists `My Workspace` (`moohanakmp@gmail.com`), but confirmation is needed before inspecting services/logs or deploying. No live fix or profitable-signal claim is established by this audit.
+The workspace initially required confirmation; the user subsequently confirmed it. Follow-up results are below. No profitable-signal claim is established by this audit.
+
+
+## Authenticated follow-up — 5 November, approximately 20:19 IST
+
+The user signed into the cloud browser as the `kalai` administrator. Render confirmed that staging deploy `dep-dbm7tc17lnhs738q45a0` automatically deployed `0c06f4e10bbf8bd37973aa26a73162a6585ba5db` and reached `live` at 13:05:43 UTC. GitHub's staging deploy job being skipped did not prevent Render's separate auto-deploy. The served HTML contains the new selection logic and rejection message; health returned UP. Startup logs validate all 11 migrations on the staging schema.
+
+The built-in authenticated staging audit completed with **40 PASS, 16 WARN, zero FAIL**. Passing checks include session/role, unauthorized access rejection, all record endpoints, all three quote endpoints, Coinbase history, primary OKX gold/silver history, RSS news and static assets. Warnings are calendar HTTP 429, four legacy Binance feed/route checks (provider HTTP 451/server HTTP 503), and eleven unavailable delayed reference feeds. These warnings are unresolved provider availability limitations. HTTP 200 quote checks alone do not establish uninterrupted quote freshness.
+
+Live Auto diagnostics showed gold ADX about 19 with no trigger; silver had no clear higher-timeframe alignment; BTC had opposing volume and no trigger. Low Profit was enabled for all three assets, Basket was off, targets remained $2/$4, and no trades were active. Gold's latest candle failed the spike gate and its hypothetical minimum-lot stop exceeded $4; silver and BTC lacked confirmed structure entries. The account shows 48 historical accepted entries, not 48 trades today. Telegram delivery status showed 25 sent, zero pending and zero failed; no test message was sent.
+
+Scanner status was enabled and available, with no cycle error, browser ownership and recent server diagnostics. Its last recorded cycle saved zero and rejected zero: no entry was submitted in that cycle. Calendar failure was advisory for technical entries. Browser synchronization had a pending queue that was draining; completion was not established.
+
+A further quote-refresh defect was reproduced: after a valid metal quote, an HTTP failure cleared its timestamp even while the sample was younger than 30 seconds. The fix retains that previously validated sample only until the original freshness deadline. It never re-dates the sample. Expired samples and successful responses containing stale, future, malformed or wrong-symbol data still revoke entry eligibility. Regression checks cover failed initial fetch, failed refresh of a fresh sample, expiry, invalid provider times and independent asset recovery. All 21 JavaScript checks pass with this change. Its final CI and Render deployment must be verified separately.

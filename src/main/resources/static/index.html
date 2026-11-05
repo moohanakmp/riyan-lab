@@ -1938,16 +1938,23 @@ function fetchLiveMetals(){
 }
 async function performMetalQuotes(){
   await Promise.allSettled(['XAUUSD','XAGUSD'].map(async sym=>{
+    let quoteResponse=false;
     try{
       const code=sym==='XAUUSD'?'XAU':'XAG',response=await liveFetch('https://api.gold-api.com/price/'+code);
       if(!response.ok)throw Error('Metal quote HTTP '+response.status);
+      quoteResponse=true;
       const q=await response.json(),now=Date.now(),at=Date.parse(q?.updatedAt),p=q?.price;
       if(q?.symbol!==code||(q.currency&&q.currency!=='USD')||!PaperMath.positive(p)||!Number.isFinite(at)||at>now||now-at>=30000)throw Error('Metal quote stale or invalid');
       if(dayOpen[sym]===undefined)dayOpen[sym]=p;
       prev[sym]=prices[sym];prices[sym]=p;quoteAt[sym]=at;
       const ticks=metalTicks[sym];if(ticks.at(-1)?.t!==at)ticks.push({t:at,p});if(ticks.length>3000)ticks.splice(0,500);
       appendLiveTick(sym,p);updateCard(sym,p,(p-dayOpen[sym])/dayOpen[sym]*100);checkOutcome(sym,p);
-    }catch(e){quoteAt[sym]=0;}
+    }catch(e){
+      // A transport/HTTP failure does not invalidate a previously accepted sample.
+      // Keep its original provider timestamp; the unchanged 30s gate still expires it.
+      // A successful response containing invalid/stale data revokes the quote immediately.
+      if(quoteResponse||!freshQuote(sym))quoteAt[sym]=0;
+    }
   }));
   metalsOk=freshQuote('XAUUSD')&&freshQuote('XAGUSD');
 }
