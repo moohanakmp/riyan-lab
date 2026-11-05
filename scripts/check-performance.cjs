@@ -39,7 +39,7 @@ function fixture(){
  }
  let releaseNews,newsCalls=0;
  const a=vm.createContext({Date,analysisAsset:'XAUUSD',analysisCache:{},analysisLoading:{},ANALYSIS_CACHE_MS:60000,
-  computeMTFTrend(){},renderAnalysis(){},fetchNews:()=>{newsCalls++;return new Promise(r=>{releaseNews=r;});},fetchEconCalendar:async()=>[],
+  computeMTFTrend(){},volumeTrapLoadMinute:async()=>{},renderAnalysis(){},fetchNews:()=>{newsCalls++;return new Promise(r=>{releaseNews=r;});},fetchEconCalendar:async()=>[],
   recordHeadlines(){},currentUser:null,console:{warn(){}}});
  vm.runInContext(extract('async function refreshAnalysis(force){','// ═══ P&L DASHBOARD'),a);
  const first=a.refreshAnalysis(false);await a.refreshAnalysis(false);assert.equal(newsCalls,1);releaseNews([]);await first;

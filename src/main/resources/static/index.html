@@ -836,7 +836,7 @@ body{background:
     <div class="trend-hdr" id="autoSignalAnalysis"><div class="sec-ttl" style="margin:0">Market Trend</div><button class="recheck-btn" onclick="recheckTrends()">🔄 Re-check Trend</button></div>
     <div class="trend-strip" id="trendStrip"></div>
     <details class="workspace-explainer"><summary>Signal rules & safety gates</summary><div class="notice"><b>🧠 Engine v3 — trades like a disciplined trader:</b> direction comes only from the <b>4H + 1H</b> trend (both must agree), the market must actually be <b>trending</b> (ADX&nbsp;20+), and entries happen only on a <b>pullback into value</b> (EMA20/EMA50, an order block, or right after a liquidity sweep) with a real <b>trigger candle</b>. It refuses to <b>chase</b> stretched moves, stands aside <b>30 min before / 15 min after high-impact USD news</b> and during the 02:00–04:00 IST rollover, and blocks entries when <b>volume pressure</b> is on the other side.<br><b>★ HIGH</b> (quality 84+) → 0.01 paper lot · <b>◆ MED</b> (70–83) → 0.01 paper lot · every WAIT card tells you exactly what it's waiting for.<br><b>🔒 Stable levels:</b> closed candles only, TP/SL locked at entry. <b>👀 Reversal watch</b> still scans open trades across 1m→4h.</div></details>
-    <details class="workspace-explainer"><summary>Backtest & validation</summary><div class="notice" style="margin-top:8px"><b>🧪 Check it yourself:</b> Analytics → <b>Run backtest</b> replays Engine v3 over the real candles on this device and shows its actual win rate and R. Use that — not hope — to judge it. Few signals is by design: the engine would rather miss a trade than take a bad one.</div></details>
+    <details class="workspace-explainer"><summary>Backtest & validation</summary><div class="notice" style="margin-top:8px"><b>🧪 Check it yourself:</b> Analytics → <b>Run backtest</b> runs an indicator-only historical replay on the candles loaded here. It excludes live account-risk approval, costs and order-block history, so its trade count and returns do not represent accepted app entries. The Low Profit page has a separate replay of its own structure rules.</div></details>
     <div id="signalsContainer"></div>
   </div>
 </div>
@@ -987,8 +987,8 @@ body{background:
     <div id="analyticsVolumeContainer"></div>
     <div class="sec-ttl" style="margin:14px 0 6px">Entry / SL / TP — Engine v3 trade plan</div>
     <div id="analyticsEntryContainer"></div>
-    <div class="sec-ttl" style="margin:18px 0 6px">🧪 Backtest Engine v3 on real data</div>
-    <details class="workspace-explainer"><summary>How backtest replay works</summary><div class="notice">Replays the new engine candle-by-candle over the ~7 days of real 15m candles already loaded on this device, with no peeking at future candles, and reports how it actually would have done. Use this to judge the engine yourself instead of taking anyone's word for it.</div></details>
+    <div class="sec-ttl" style="margin:18px 0 6px">🧪 Indicator-only historical replay</div>
+    <details class="workspace-explainer"><summary>How backtest replay works</summary><div class="notice">Indicator-only historical replay on the loaded 15m candles. It excludes live dollar-risk approval, account budgets, spread/slippage and historical order blocks. These results cannot establish how many entries the live app would accept or what it would earn.</div></details>
     <button class="anal-refresh bt-btn" id="kmrBtBtn" onclick="runKmrBacktest()">🧪 Run backtest</button>
     <div id="kmrBtBox"></div>
   </div>
@@ -1013,7 +1013,7 @@ body{background:
     </div>
     <div id="pnlBody"></div>
     <button class="login-btn" style="margin-top:12px" onclick="sendPnlReport()">📤 Send This Report to Telegram &amp; Email</button>
-    <div style="text-align:center;font-size:9.5px;color:var(--dim);margin-top:7px">Automatic reports are sent every morning &amp; night by the background Worker</div>
+    <div style="text-align:center;font-size:9.5px;color:var(--dim);margin-top:7px">Scheduled reports require a separately configured external worker; use this button for an on-demand report.</div>
   </div>
 </div>
 
@@ -1089,7 +1089,7 @@ body{background:
         <button class="login-btn" style="margin-top:10px;background:var(--sur);color:var(--txt);border:1px solid var(--bdr)" onclick="testEmail()">Send Test Email</button>
       </div>
       <button class="login-btn" style="margin-top:12px" onclick="sendPnlReport()">📤 Send Today's P&amp;L Report Now</button>
-      <div class="ib" style="margin-top:8px;font-size:10.5px">Automatic daily reports (morning &amp; night) are sent by the Cloudflare Worker — see the worker folder README.</div>
+      <div class="ib" style="margin-top:8px;font-size:10.5px">Daily reports can be sent with the report button. Automatic scheduled reports require a separately configured external worker; this service does not establish that one is running.</div>
       <div class="ib" style="margin-top:10px;font-size:10.5px">
         <b>Telegram setup:</b> Message @BotFather → /newbot → copy token. Message @userinfobot to get your Chat ID.<br>
         <b>💡 To alert ALL users:</b> create a Telegram <b>channel or group</b>, add your bot as admin, and use the channel's Chat ID (starts with -100...). Every user who joins the channel gets every signal — no per-user setup needed.<br>
@@ -1103,22 +1103,17 @@ body{background:
 <div id="ti" style="display:none">
   <div class="iwrap">
     <div class="ic"><div class="it">🎯 Signal Logic (Trader's Rules)</div><div class="ib">
-      <b>6 checks, all weighted:</b><br>
-      1. HTF Trend (EMA50) — never trade counter-trend<br>
-      2. EMA9 vs EMA21 cross — short-term direction<br>
-      3. RSI band avoiding overbought/oversold entries — tuned per asset (gold 45–62/38–55, silver 42–64/36–58, BTC 45–62/38–55, since silver's RSI swings more before a genuine trend confirms)<br>
-      4. Ichimoku TK cross — trend momentum<br>
-      5. Last candle body ≥40% — no dojis/spinning tops<br>
-      6. Near S&R level ±0.5% — only enter at key price zones<br>
-      <b>Volatility gate:</b> No signal if ATR too high or too low.<br>
+      <b>Auto Signals:</b> closed 15m setups use higher-timeframe alignment, structure, value zones, momentum and traded-volume evidence. A technical score is not a win probability or an accepted entry.<br>
+      <b>Entry approval:</b> fresh prices, a valid structural stop, modeled costs, account risk, ownership and duplicate checks must pass before an entry appears in Active Trades.<br>
+      <b>Low Profit:</b> closed 5m support/resistance rejections, order-block retests and break/first-retest setups with volume. Your configured target and loss cap apply, with at least 1.3× net reward/risk. News is not an entry dependency.<br>
       <b>Reversal watch (1m/5m/15m/1h/4h):</b> Every open trade is scanned across 5 timeframes — the same top-down stack pro traders use (4h/1h for macro bias, 15m for structure, 1m/5m for the earliest tell). 👀 <b>WATCH</b> = fast (1m/5m) momentum turns against you, structure still holds. ⚠️ <b>FLIP</b> = the 15m structural trend (same EMA50 used for entries) turns against you. 🔴 <b>STRONG</b> = 15m + 1h + 4h all against you — full confluence, exit territory. Levels always stay locked, but you can tap <b>🚪 Close Trade Now</b> on any open trade, any time — not only on a warning.<br>
-      <b>🧠 Engine v3 (auto + manual):</b> 12 safety gates (HTF agreement, volatility band, ADX trend strength, no-chase, spike candle, RSI exhaustion, news blackout, rollover hours, opposing volume, value zone, trigger candle, 15m structure) then a 0–100 quality score (4H/1H trend, structure, pullback location, trigger, momentum, volume, liquidity sweep). Fixes found in the v2 audit: SELL signals used to skip the 1H/4H check; "near support" passed when no support existed; three correlated momentum checks triple-counted one move; the strong-candle trigger chased moves.<br>
+      <b>🧠 Engine v3 (auto + manual):</b> 12 safety gates (HTF agreement, volatility band, ADX trend strength, no-chase, spike candle, RSI exhaustion, known-news blackout with advisory outages, rollover hours, opposing volume, value zone, trigger candle, 15m structure) then a 0–100 quality score (4H/1H trend, structure, pullback location, trigger, momentum, volume, liquidity sweep). Fixes found in the v2 audit: SELL signals used to skip the 1H/4H check; "near support" passed when no support existed; three correlated momentum checks triple-counted one move; the strong-candle trigger chased moves.<br>
       <b>📊 Volume Pressure:</b> buy vs sell volume over the last 20 × 15m candles (estimated from where each candle closes in its range), cumulative delta, OBV, and divergence warnings. BTC uses Coinbase BTC/USD traded volume. Metals retain their live perpetual/token source when reachable; otherwise delayed COMEX futures history supplies reference volume. Futures contract volume is not spot/broker volume. The reference fallback supports analysis and replay only, with entries paused.<br>
       <b>🧭 Manual & 📉 Analytics:</b> always give a full plan — entry (market or limit at the pullback), stop beyond structure, TP1 1R / TP2 next liquidity / TP3 runner, $ risk at your lot size, and the exact price that proves the idea wrong. Graded CONFIRMED only when every gate passes; otherwise LOWER CONFIDENCE with what to wait for. Never counted in Dashboard or P&L.<br>
-      <b>🧪 Backtest:</b> Analytics → Run backtest replays Engine v3 on the real candles on your device, with no look-ahead, and reports win rate, R and profit factor.<br>
+      <b>🧪 Backtest:</b> Analytics → Run backtest performs an indicator-only historical replay. It reports sample outcomes in R and excludes live account approval, spread/slippage and historical order blocks. Its trades are hypothetical, not accepted live entries.<br>
       <b>🔥 Spike badge:</b> shown on the trend strip when ATR expands sharply vs its own recent average (or, for BTC, when real candle volume runs high) — a heads-up that a bigger move may be underway. Informational only — it doesn't change entries or exits.<br>
       <b>Duplicate alerts:</b> if KMR is open in more than one tab on the same device/browser at once, only one tab sends each Telegram/email alert — the rest detect they lost the claim and stay silent. A server lease selects one active paper engine per account across browsers; durable signal keys reject duplicate entries. The engine pauses while ownership or saved records are being restored.<br>
-      <b>🔒 Stability:</b> All checks run on <b>closed candles only</b> — the live forming candle is ignored, so indicators can't flicker mid-candle. Once a signal fires, entry/TP1/TP2/TP3/SL are frozen until the trade closes, followed by a 15-min cooldown per symbol.
+      <b>🔒 Stability:</b> All checks run on <b>closed candles only</b> — the live forming candle is ignored, so indicators can't flicker mid-candle. Once a signal fires, entry/TP1/TP2/TP3/SL are frozen until the trade closes, followed by a 3-minute Auto cooldown for medium-confidence entries; high-confidence setups still require all entry guards. Low Profit cooldown is 15 minutes after a loss and 5 minutes otherwise.
     </div></div>
     <div class="ic"><div class="it">💰 Fixed Paper Lot and Risk Limits</div><div class="ib">
       <b>★ HIGH (Engine v3 quality 84+, all gates passed):</b> 0.01 paper lot<br>
@@ -1132,12 +1127,12 @@ body{background:
       <b>Silver chart:</b> TradingView OANDA:XAGUSD<br>
       <b>BTC chart:</b> TradingView COINBASE:BTCUSD<br>
       <b>Signal OHLC:</b> Coinbase BTC/USD; metals use live derivatives when reachable or delayed futures reference history. Source, age and entry eligibility are shown across tabs<br>
-      <b>Live prices:</b> gold-api.com + Coinbase every 5s<br>
-      <b>Fast timeframes (1m/5m):</b> built live from the same price ticks, no extra API calls · <b>4h:</b> completed provider history, aggregated only with every source bar present<br>
-      <b>Analysis news:</b> Google News via rss2json (browser-friendly, no proxy needed), GDELT as backup · <b>Econ calendar:</b> Forex Factory's own JSON export (via Fair Economy) tried through an AI content-reader proxy first, then direct + public CORS relays, with a bullish/bearish bias hint per event · both best-effort — if either can't reach your network, a direct "Open on Forex Factory / Google News ↗" link is always shown so you're never stuck
+      <b>Live prices:</b> gold-api.com every 8s; Coinbase every 5s. Only provider-timed quotes younger than 30 seconds can authorize entries.<br>
+      <b>Fast timeframes (1m/5m):</b> completed provider history where loaded, with closed quote-sample candles as a fallback · <b>4h:</b> completed provider history, aggregated only with every source bar present<br>
+      <b>Analysis news:</b> server-polled Google News RSS, with browser news services as fallbacks · <b>Econ calendar:</b> shared Forex Factory / Fair Economy schedule with provider backoff and a labelled saved-schedule view during outages. Calendar outages do not block technical entries; news risk remains unchecked. Direct news/calendar links remain available.
     </div></div>
     <div class="ic"><div class="it">💾 Storage & Alerts</div><div class="ib">
-      History saved to <b>IndexedDB</b> — never lost on refresh or restart.<br>
+      Accepted paper trades are stored in the server ledger. This device caches history and queued updates; restore and synchronization require a working connection.<br>
       Alerts: 🔊 Beep + 📳 Vibration + 📢 on-screen banner — no permissions needed.
     </div></div>
     <div class="ic" style="background:rgba(246,201,14,.04);border-color:rgba(246,201,14,.15)"><div class="it">⚠ Disclaimer</div><div class="ib">Rule-based signals only. Not financial advice. Past signals do not guarantee future results. Always use your own judgment.</div></div>
@@ -1155,7 +1150,7 @@ body{background:
 <div id="toast"></div>
 <div id="evPop" class="evpop" role="status" aria-live="polite"></div>
 <button id="evFab" class="evfab" onclick="evwReopen()" aria-label="Show next event popup"></button>
-<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script async src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script src="/trading-core.js?v=20261017-2"></script>
 <script src="/public-market-fetch.js?v=20261019-recovery"></script>
 <script src="/btc-feed.js?v=20261019-recovery"></script>
@@ -1337,9 +1332,12 @@ function applyRoleUI(){
     btn.style.display=visible?'':'none';
   });
 
-  // Auto-select first visible tab
-  const firstVisible=[...document.querySelectorAll('#tabsRow .tab')].find(b=>b.style.display!=='none');
-  if(firstVisible)showTab(firstVisible.getAttribute('data-tab'),firstVisible);
+  // Restore only a permitted route; a refresh or role update must not reset the page.
+  const visibleTabs=[...document.querySelectorAll('#tabsRow .tab')].filter(b=>b.style.display!=='none');
+  let route='';try{route=decodeURIComponent(location.hash.slice(1));}catch(e){}
+  const selected=visibleTabs.find(b=>b.getAttribute('data-tab')===route)||
+    visibleTabs.find(b=>b.classList.contains('active'))||visibleTabs[0];
+  if(selected)showTab(selected.getAttribute('data-tab'),selected);
 
   if(currentUser.role==='admin')renderAdminPanel();
   applyTheme(); // refresh 🎨 button visibility for this role
@@ -2494,11 +2492,19 @@ function tfTrendFromCandles(candles,minLen,fast,slow){
   if(eF==null||eS==null)return null;
   return eF>eS?'BULL':'BEAR';
 }
+function mtfClosedCandles(sym,tf){
+  const ms={'1m':60000,'5m':300000,'1h':3600000,'4h':14400000}[tf],now=Date.now();
+  const provider=tf==='1m'?volumeTrapMinuteCache.get(sym)?.bars:tf==='5m'?scalpData[sym]:ohlcData[sym]?.[tf];
+  const usable=bars=>{const c=PaperMath.closed(bars||[],ms,now);return c.length&&!c.some(k=>k.analysisOnly)&&now-(c.at(-1).t+ms)<=2*ms?c:[];};
+  const loaded=usable(provider);
+  if(loaded.length>=12||!['1m','5m'].includes(tf))return loaded;
+  return usable(buildTFFromTicks(sym,ms)).slice(-60);
+}
 function computeMTFTrend(sym){
-  const m1=buildTFFromTicks(sym,60000).slice(-60);
-  const m5=buildTFFromTicks(sym,300000).slice(-60);
-  const h1=ohlcData[sym]['1h']||[];
-  const h4=ohlcData[sym]['4h']||[];
+  const m1=mtfClosedCandles(sym,'1m').slice(-60);
+  const m5=mtfClosedCandles(sym,'5m').slice(-60);
+  const h1=mtfClosedCandles(sym,'1h');
+  const h4=mtfClosedCandles(sym,'4h');
   const t={
     '1m': tfTrendFromCandles(m1,12,4,9),   // fast EMA cross — earliest possible warning
     '5m': tfTrendFromCandles(m5,12,4,9),
@@ -2681,18 +2687,20 @@ function renderDashboard(){
 
   html+=`<div class="hist-section-title">MARKET PULSE · ENGINE v3</div><div class="pulse-grid">`;
   SYMS.forEach(sym=>{
-    let sc=null;try{sc=kmrScan(sym);}catch(e){}
+    let sig=null;try{sig=computeSignal(sym);}catch(e){}
+    const sc=sig?.smart||null,approval=sig?autoEntryCheck(sym,sig):null;
     const vp=sc&&sc.vp&&sc.vp.ok?sc.vp:null;
     const trend=sc?(sc.bias4h===sc.bias1h&&sc.bias1h?sc.bias1h:'MIXED'):null;
     const tcls=trend==='BULL'?'up':trend==='BEAR'?'dn':'';
     const fs=feedStatus(sym);
     if(fs.reference&&sc)sc.tier=null;
-    const state=fs.reference||fs.stale?fs.message:!sc?'Loading…':sc.tier?`${sc.dir} setup · ${sc.score}/100`:(sc.wait||sc.reason||'Waiting');
-    html+=`<div class="pulse a-${sym} ${sc&&sc.tier?'ready':''}" onclick="showTab('manual',document.querySelector('[data-tab=manual]'))">
+    const ready=!!approval?.ok;
+    const state=fs.reference||fs.stale?fs.message:!sc?(sig?.reason||'Loading…'):ready?`${sc.dir} candidate · ${sc.score}/100 · awaiting acceptance`:(approval?.reason||sc.wait||sc.reason||'Waiting');
+    html+=`<div class="pulse a-${sym} ${ready?'ready':''}" onclick="showTab('manual',document.querySelector('[data-tab=manual]'))">
       <div class="pulse-h"><span>${ICONS[sym]} ${ASSETS[sym].sym}</span><b class="${tcls}">${trend==='BULL'?'▲ UPTREND':trend==='BEAR'?'▼ DOWNTREND':!sc?.bias1h?'DATA UNAVAILABLE':'◆ MIXED'}</b></div>
       ${vp?`<div class="vp-bar sm"><div class="vp-buy" style="width:${vp.buyPct.toFixed(1)}%">${vp.buyPct.toFixed(0)}%</div><div class="vp-sell" style="width:${vp.sellPct.toFixed(1)}%">${vp.sellPct.toFixed(0)}%</div></div>`:`<div class="vp-empty" style="padding:4px 0">${fs.last?'Provider has no usable volume in recent candles':'Candle history unavailable'}</div>`}
       <div class="vp-src">${fs.source}</div>
-      <div class="pulse-s">${sc&&sc.tier?'🎯 ':'⏳ '}${state}</div>
+      <div class="pulse-s">${ready?'🎯 ':'⏳ '}${basketTxt(state)}</div>
     </div>`;
   });
   html+=`</div>`;
@@ -3235,6 +3243,7 @@ async function runResearch(){
   if(el)el.innerHTML=`<div style="text-align:center;color:var(--dim);font-size:12px;padding:20px 0">Pulling multi-year daily history and searching for similar historical setups — this can take a little while...</div>`;
   try{
     for(const sym of SYMS){
+      try{
       const candles=await fetchResearchHistory(sym);
       if(candles.length<120){researchCache[sym]={ready:false,reason:'Not enough daily history available for this asset yet.'};continue;}
       const todayCond=researchConditionAt(candles,candles.length-1);
@@ -3282,8 +3291,9 @@ async function runResearch(){
         ready:true,todayCond,byWindow,primary,bullPct,bearPct,flatPct,confidence,scenario,
         referenceOnly:candles.some(k=>k.analysisOnly),source:candles.some(k=>k.analysisOnly)?ReferenceFeed.info(sym).source:(sym==='BTCUSD'?'Coinbase BTC/USD':'Metal derivatives history'),
         daysUsed:Math.round((candles[candles.length-1].t-candles[0].t)/(24*3600*1000)),
-        updatedAt:Date.now(),
+        dailyCloseAt:candles.at(-1).t+86400000,updatedAt:Date.now(),
       };
+      }catch(e){researchCache[sym]={ready:false,reason:'Daily history unavailable: '+String(e.message||e).slice(0,180)};}
     }
   }finally{
     if(btn){btn.disabled=false;btn.innerHTML='🔎 Research';}
@@ -3301,11 +3311,11 @@ function renderResearchTab(){
     const a=ASSETS[sym];
     html+=`<div class="ic"><div class="it">${ICONS[sym]} ${a.sym}</div><div class="ib">`;
     if(!c){html+=`<span style="color:var(--dim)">Not researched yet.</span>`;}
-    else if(!c.ready){html+=`<span style="color:var(--dim)">${c.reason}</span>`;}
+    else if(!c.ready){html+=`<span style="color:var(--dim)">${basketTxt(c.reason)}</span>`;}
     else{
       const tc=c.todayCond;
       if(c.source)html+=`<div class="notice">${c.source}${c.referenceOnly?' · Futures-price scenarios only, not spot entry recommendations. Contract rollovers can distort historical patterns.':''}</div>`;
-      html+=`<div style="font-size:10.5px;color:var(--mut);margin-bottom:8px">Current: <b>${fmtP(sym,tc.price)}</b> · Trend: <b style="color:${tc.trend==='BULL'?'var(--grn)':tc.trend==='BEAR'?'var(--red)':'var(--dim)'}">${tc.trend}</b> · RSI(14): ${tc.rsi.toFixed(0)} · ATR%: ${tc.atrPct.toFixed(2)}% · ~${c.daysUsed} days of history</div>`;
+      html+=`<div style="font-size:10.5px;color:var(--mut);margin-bottom:8px">Last completed daily close: <b>${fmtP(sym,tc.price)}</b>${c.dailyCloseAt?' · '+new Date(c.dailyCloseAt).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})+' IST':''} · Trend: <b style="color:${tc.trend==='BULL'?'var(--grn)':tc.trend==='BEAR'?'var(--red)':'var(--dim)'}">${tc.trend}</b> · RSI(14): ${tc.rsi.toFixed(0)} · ATR%: ${tc.atrPct.toFixed(2)}% · ~${c.daysUsed} days of history</div>`;
       html+=`<div style="font-size:10px;color:var(--acc);font-weight:700;margin-bottom:4px">HISTORICAL MATCHES (10-day forward outcome)</div>`;
       html+=`<div class="lvl-row"><span class="lvl-tag sup">BULL</span><span style="flex:1">${c.primary.bull} of ${c.primary.total} similar days</span><span style="color:var(--grn);font-weight:700">${c.bullPct}%</span></div>`;
       html+=`<div class="lvl-row"><span class="lvl-tag res">BEAR</span><span style="flex:1">${c.primary.bear} of ${c.primary.total} similar days</span><span style="color:var(--red);font-weight:700">${c.bearPct}%</span></div>`;
@@ -3318,7 +3328,7 @@ function renderResearchTab(){
         html+=`<div class="anal-verdict mix">NO TRADE</div><div style="font-size:11px;color:var(--mut);margin-top:6px">${c.scenario.reason}. Historical evidence must clear a real bar before this shows a trade idea — this is the honest output, not a failure to analyze.</div>`;
       }else{
         const s=c.scenario;
-        html+=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span class="sig-badge ${s.type==='BUY'?'sig-buy':'sig-sell'}">${s.type} SCENARIO</span><span style="font-size:10px;color:var(--dim)">Historical probability: ${s.probability}%</span></div>`;
+        html+=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span class="sig-badge ${s.type==='BUY'?'sig-buy':'sig-sell'}">${s.type} HISTORICAL SCENARIO</span><span style="font-size:10px;color:var(--dim)">Historical sample frequency: ${s.probability}%</span></div><p class="sc-dim">Daily-close scenario for comparison, not an accepted trade or current market entry. Live entry approval is shown in Signals.</p>`;
         html+=`<div class="tpsl-row"><div class="tpsl-box"><div class="tpsl-label">ENTRY</div><div class="tpsl-val">${fmtP(sym,s.entry)}</div></div><div class="tpsl-box"><div class="tpsl-label">STOP LOSS</div><div class="tpsl-val sl-val">${fmtP(sym,s.sl)}</div></div></div>`;
         html+=`<div class="tpsl-row" style="margin-top:6px"><div class="tpsl-box"><div class="tpsl-label">TP1</div><div class="tpsl-val" style="color:var(--grn)">${fmtP(sym,s.tp1)}</div></div><div class="tpsl-box"><div class="tpsl-label">TP2</div><div class="tpsl-val" style="color:var(--grn)">${fmtP(sym,s.tp2)}</div></div></div>`;
         html+=`<div style="font-size:9px;color:var(--dim);margin-top:6px">R:R to TP2 ≈ 1:${s.rr.toFixed(1)} · SL/TP sized from ATR(14), not an arbitrary fixed distance. Invalidation: a close back through the stop level means the historical analog no longer applies.</div>`;
@@ -3390,11 +3400,14 @@ function loadAnalyticsWidget(sym){
   script.onerror=()=>{host.style.height='auto';host.innerHTML=`<div style="text-align:center;color:var(--dim);font-size:12px;padding:30px 0">⚠ Widget needs internet to load.</div>`;};
   host.querySelector('.tradingview-widget-container').appendChild(script);
 }
+let analyticsEntryRequest=0;
 async function loadAnalyticsEntry(sym){
+  const request=++analyticsEntryRequest;
   const box=document.getElementById('analyticsEntryContainer');
   if(!box)return;
   box.innerHTML=`<div class="kmr-empty"><div class="kmr-spinner"></div>Engine v3 is reading ${ASSETS[sym].sym}…</div>`;
   try{await Promise.all([fetchLiveCrypto(),fetchLiveMetals()]);}catch(e){}
+  if(request!==analyticsEntryRequest||analyticsSym!==sym)return;
   const res=runManualAnalysis(sym);
   box.innerHTML=`<div class="ic art-${sym}"><div class="ib">${manualResultBodyHtml(sym,res)}</div></div>`;
 }
@@ -4472,7 +4485,7 @@ function renderScalpLive(){
     </div></div>`;
   });
   h+=`</div>`;
-  const recent=scalpHist.filter(t=>t.status!=='OPEN').slice(0,15);
+  const recent=scalpHist.filter(t=>t.status!=='OPEN').sort((a,b)=>(b.closedAt||b.t)-(a.closedAt||a.t)).slice(0,15);
   h+=`<div class="sec-ttl" style="margin:10px 0 6px;display:flex;justify-content:space-between;align-items:center">Recent scalps ${day.closed.length?`<button class="qa" style="padding:3px 9px;font-size:10px" onclick="scalpResetToday()">Clear today</button>`:''}</div>`;
   if(!recent.length)h+=`<div class="kmr-empty">No scalps yet — the engine checks every 5-minute candle on all three assets.</div>`;
   else h+=`<div class="ic"><div class="ib">${recent.map(t=>`<div class="lvl-row"><span class="lvl-tag ${t.dir==='BUY'?'sup':'res'}">${t.dir}</span><span style="flex:1">${ICONS[t.sym]} ${ASSETS[t.sym].sym} <span class="sc-dim">${t.setup} · ${{TP:'TP',SL:'SL',BE:'BE',TIME:'time',MANUAL:'manual'}[t.status]||t.status} · ${new Date(t.closedAt||t.t).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</span></span><b class="${t.pnl>=0?'up':'dn'}">${t.pnl>=0?'+':'−'}$${Math.abs(t.pnl).toFixed(2)}</b></div>`).join('')}</div></div>`;
@@ -5383,7 +5396,7 @@ function renderHistory(){
     if(r.confidence==='HIGH')return canHigh;
     if(r.confidence==='MED')return canMed;
     return true;
-  });
+  }).sort((a,b)=>(b.ts||Number(b.id)||0)-(a.ts||Number(a.id)||0));
 
   if(!canOverall && !histFilter){histFilter='ALL';}
 
@@ -5404,12 +5417,12 @@ function renderHistory(){
     const isBuy=r.dir==='BUY',oc=r.outcome;
     const isHigh=r.confidence==='HIGH';
     const ocCls=oc==='WIN'?'outcome-win':oc==='LOSS'?'outcome-loss':'outcome-open';
-    const ocTxt=(oc==='WIN'?'✅ WIN':oc==='LOSS'?'❌ LOSS':'⏳ OPEN')+(oc==='WIN'?'<span class="hist-mood">🤑</span>':oc==='LOSS'?'<span class="hist-mood">😭</span>':'');
+    const ocTxt=(oc==='WIN'?'✅ WIN':oc==='LOSS'?'❌ LOSS':oc==='BE'?'➖ BREAKEVEN':oc==='OPEN'?'⏳ OPEN':'UNKNOWN')+(oc==='WIN'?'<span class="hist-mood">🤑</span>':oc==='LOSS'?'<span class="hist-mood">😭</span>':'');
     const pnlStr=r.pnlUsd!=null
-      ?`<span style="color:var(--${r.pnlUsd>=0?'grn':'red'})">${r.pnlUsd>=0?'+':''}$${r.pnlUsd.toFixed(2)} (${r.pnlPct>=0?'+':''}${r.pnlPct.toFixed(2)}%)</span>`
+      ?`<span style="color:var(--${r.pnlUsd>=0?'grn':'red'})">${r.pnlUsd>=0?'+':''}$${r.pnlUsd.toFixed(2)}${Number.isFinite(r.pnlPct)?` (${r.pnlPct>=0?'+':''}${r.pnlPct.toFixed(2)}%)`:''}</span>`
       :`<span style="color:var(--mut)">Awaiting close</span>`;
     const cur=prices[r.sym];
-    const flt=cur&&oc==='OPEN'?((isBuy?(cur-r.price):(r.price-cur))*r.posUnits):null;
+    const flt=oc==='OPEN'?floatingPaperPnl(r):null;
     const fltHtml=flt!=null?`<div style="font-size:10px;font-family:'JetBrains Mono',monospace;margin-top:4px;padding:3px 6px;background:var(--sur);border-radius:4px">Float: <span style="color:var(--${flt>=0?'grn':'red'})">${flt>=0?'+':''}$${flt.toFixed(2)}</span> · Now: ${fmtP(r.sym,cur)}</div>`:'';
     const exitRow=r.exitPrice?`<div style="margin-top:4px;padding:3px 6px;background:var(--sur);border-radius:4px;font-size:9px;font-family:'JetBrains Mono',monospace"><span style="color:var(--dim)">EXIT</span> ${fmtP(r.sym,r.exitPrice)} · ${r.exitTimeStr}</div>`:'';
     const confBadge=isHigh?'<span class="badge-high">★ HIGH</span>':'<span class="badge-med">◆ MED</span>';
@@ -5677,7 +5690,22 @@ async function throttleFeedCall(){
   if(wait>0)await new Promise(res=>setTimeout(res,wait));
   lastFeedCallAt=Date.now();
 }
+async function fetchStoredNews(sym){
+  try{
+    const rows=await riyanApi('/api/v1/news/latest?symbol='+encodeURIComponent(sym));
+    if(!Array.isArray(rows))return null;
+    const now=Date.now();
+    const articles=rows.filter(a=>{
+      const at=Date.parse(a.published_at||a.checked_at);
+      try{return typeof a.headline==='string'&&a.headline.trim()&&['http:','https:'].includes(new URL(a.url).protocol)&&Number.isFinite(at)&&at<=now+300000&&at>=now-7*86400000;}catch(e){return false;}
+    }).slice(0,6).map(a=>({title:a.headline,url:a.url,domain:a.source_name||'RSS',seen:a.published_at||a.checked_at,sent:tagSentiment(a.headline)}));
+    return articles.length?articles:null;
+  }catch(e){return null;}
+}
 async function fetchNews(sym){
+  // The authenticated server already polls RSS. Use it before slow external fallbacks.
+  const stored=await fetchStoredNews(sym);
+  if(stored){feedError.news=null;return stored;}
   // rss2json.com + Google News RSS is the primary source: rss2json exists specifically to
   // be called from browser JS (built-in CORS support, no proxy needed), which makes it a
   // fundamentally different — and more reliable from a phone — kind of source than GDELT's
@@ -5707,15 +5735,8 @@ async function fetchNews(sym){
     if(data){feedError.news=null;return a.map(data);}
     lastErr=error;
   }
-  // The server stores its own internet RSS checks as a fallback when browser feeds fail.
-  try{
-    const r=await riyanApi('/api/v1/news/latest?symbol='+encodeURIComponent(sym));
-    if(Array.isArray(r)&&r.length){
-      feedError.news=null;
-      return r.slice(0,6).map(a=>({title:a.headline,url:a.url,domain:a.source_name||'RSS',
-        seen:a.published_at||a.checked_at,sent:tagSentiment(a.headline)}));
-    }
-  }catch(e){}
+  const recovered=await fetchStoredNews(sym);
+  if(recovered){feedError.news=null;return recovered;}
   feedError.news=lastErr;
   return null;
 }
@@ -5931,7 +5952,7 @@ function renderAnalysis(){
   else if(news&&news.length){
     news.forEach(n=>{
       const sentLbl=n.sent==='pos'?'BULLISH TONE':n.sent==='neg'?'BEARISH TONE':'NEUTRAL';
-      html+=`<div class="news-item"><div class="news-hdl">${n.title||''}</div><div class="news-meta"><span class="sent-tag ${n.sent}">${sentLbl}</span><span>${n.domain||''}</span></div></div>`;
+      html+=`<div class="news-item"><div class="news-hdl">${basketTxt(n.title||'')}</div><div class="news-meta"><span class="sent-tag ${n.sent}">${sentLbl}</span><span>${basketTxt(n.domain||'')}</span></div></div>`;
     });
     html+=`<div style="font-size:9.5px;color:var(--dim);margin-top:4px">Tone is auto-tagged from headline keywords — a rough signal, not verified sentiment analysis.</div>`;
   }else html+=`<span style="color:var(--dim)">No recent headlines found.</span>`;
@@ -5969,11 +5990,12 @@ async function refreshAnalysis(force){
   renderAnalysis(); // render immediately from local candle data, then fill in news/calendar
   const sym=analysisAsset;
   const cached=analysisCache[sym];
-  const stale=!cached||Date.now()-cached.at>ANALYSIS_CACHE_MS;
+  const stale=!cached||Date.now()-cached.at>(cached.news?.length?ANALYSIS_CACHE_MS:30000);
   if((!force&&!stale)||analysisLoading[sym])return;
   analysisLoading[sym]=true;
+  renderAnalysis();
   try{
-    const[news,]=await Promise.all([fetchNews(sym),fetchEconCalendar(force)]);
+    const[news,]=await Promise.all([fetchNews(sym),fetchEconCalendar(force),volumeTrapLoadMinute(sym)]);
     if(news)recordHeadlines(sym,news);
     analysisCache[sym]={news,at:Date.now()};
     if(currentUser&&currentUser.role!=='guest')riyanQueue('analysis',sym+'-'+analysisCache[sym].at,{symbol:sym,...analysisCache[sym]});
@@ -5992,7 +6014,7 @@ function setPnlPeriod(p,el){
   if(el)el.classList.add('active');
   document.getElementById('customRow').style.display=p==='custom'?'flex':'none';
   if(p==='custom'&&!document.getElementById('pnlFrom').value){
-    const d=new Date(),iso=x=>x.toISOString().slice(0,10);
+    const d=new Date(),iso=x=>new Date(x.getTime()+19800000).toISOString().slice(0,10);
     document.getElementById('pnlFrom').value=iso(new Date(d.getTime()-6*864e5));
     document.getElementById('pnlTo').value=iso(d);
   }
@@ -6006,7 +6028,7 @@ function pnlRange(){
     case 'today':return{a:sod,b:Infinity,label:'Today'};
     case 'yest':return{a:sod-864e5,b:sod-1,label:'Yesterday'};
     case 'week':return{a:sod-6*864e5,b:Infinity,label:'Last 7 Days'};
-    case 'month':return{a:Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),1)-19800000,b:Infinity,label:now.toLocaleDateString('en-IN',{month:'long',year:'numeric'})};
+    case 'month':return{a:Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),1)-19800000,b:Infinity,label:now.toLocaleDateString('en-IN',{timeZone:'UTC',month:'long',year:'numeric'})};
     case 'all':return{a:0,b:Infinity,label:'All Time'};
     case 'custom':{
       const f=document.getElementById('pnlFrom').value,t=document.getElementById('pnlTo').value;

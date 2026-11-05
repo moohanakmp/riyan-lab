@@ -108,7 +108,7 @@
   }
   function update(){
     frame=0;
-    const user=typeof currentUser==='undefined'?null:currentUser;
+    const user=typeof currentUser==='undefined'||$('appRoot').style.display==='none'?null:currentUser;
     const tab=document.querySelector('#tabsRow .tab.active')?.dataset.tab;
     if(syncWorkspace(user,tab))return;
     if(user&&workspaces[tab])decoratePanel(tab);
