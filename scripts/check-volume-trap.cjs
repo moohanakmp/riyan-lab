@@ -5,7 +5,7 @@ const PaperMath=require('../src/main/resources/static/trading-core.js');
 const now=Date.UTC(2026,9,22,10,0,1); // Stable open metals session; test must also run on weekends.
 const names=['kmrIstHour','ema','rsi','atr','emaSeries','bbAt','fmtP','kmrAdx','kmrPivots','kmrTfBias','kmrVolumePressure','kmrLevelZones','kmrLevelSetup','kmrOrderBlockSetup','kmrBreakRetestSetup','kmrLevelPlan','scalpScan','scalpLevels'];
 const ctx=vm.createContext({Date,Math,PaperMath});
-vm.runInContext(['ASSETS','SPREAD'].map(n=>extract(n,'const')).join('\n')+'\n'+names.map(n=>extract(n)).join('\n'),ctx);
+vm.runInContext(['ASSETS','SPREAD','SCALP_DEF'].map(n=>extract(n,'const')).join('\n')+'\n'+names.map(n=>extract(n)).join('\n'),ctx);
 function sample(){
  const bars=Array.from({length:240},(_,i)=>{const p=4160+4.5*Math.cos(i*Math.PI/6);return{t:now-1000-(240-i)*300000,ms:300000,o:p-.1,c:p+.1,h:p+.5,l:p-.5,v:100};});
  bars.at(-2).o=4163.5;bars.at(-2).c=4163.8;bars.at(-2).h=4164.1;bars.at(-2).l=4163.2;

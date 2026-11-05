@@ -4098,9 +4098,13 @@ function kmrLevelPlan(sym,dir,entry,scan,cfg){
   if(!Number.isFinite(target)||target<=0)return{reject:'Profit target must be a positive number'};
   // Configured dollars are NET of modeled spread; never move a structural stop inward.
   let tpDist=target/units+spread;
-  if(level.targetBarrier!=null)tpDist=Math.min(tpDist,sgn*(level.targetBarrier-entry));
+  const barrierDist=level.targetBarrier==null?null:sgn*(level.targetBarrier-entry);
+  const barrierLimited=barrierDist!=null&&barrierDist<tpDist;
+  if(barrierDist!=null)tpDist=Math.min(tpDist,barrierDist);
   const reward=tpDist-spread,rr=reward/risk;
-  if(!Number.isFinite(rr)||rr<1.3)return{reject:'Next opposing level leaves less than 1.3× reward/risk after spread'};
+  if(!Number.isFinite(rr)||rr<1.3)return{reject:barrierLimited?
+    `Next opposing level leaves $${Math.max(0,reward*units).toFixed(2)} reward for $${slUsd.toFixed(2)} risk — below 1.3× after spread`:
+    `Configured $${target.toFixed(2)} target is below 1.3× the $${slUsd.toFixed(2)} structural risk; needs at least $${(1.3*slUsd).toFixed(2)} net reward`};
   return{entry,sl:level.stop,tp:entry+sgn*tpDist,beAt:entry+sgn*tpDist*0.6,lot:0.01,units,tpUsd:reward*units,slUsd,tpDist,slDist,rr};
 }
 
@@ -4135,7 +4139,15 @@ function scalpScan(sym,c5,c15,h1,ctx){
   const level=kmrLevelSetup(c5,{now:ctx.now,trend,adx});
   const block=kmrOrderBlockSetup(c5,{now:ctx.now,trend,adx});
   const retest=kmrBreakRetestSetup(c5,{now:ctx.now,trend,adx});
-  const selected=level.dir&&level.gatesOk?level:block.dir&&block.gatesOk?block:retest.dir&&retest.gatesOk?retest:null;
+  // A confirmed setup is not necessarily executable. Keep the existing priority,
+  // but do not let an oversized stop or a nearby barrier mask another valid setup.
+  const candidates=[level,block,retest].filter(s=>s.dir&&s.gatesOk);
+  const entry=ctx.entry??last.c,cfg=ctx.cfg||SCALP_DEF;
+  out.candidateChecks=candidates.map(s=>({
+    strategyVersion:s===retest?'break-retest-v1':s===block?'ob-volume-v1':'sr-volume-v1',
+    dir:s.dir,reject:kmrLevelPlan(sym,s.dir,entry,{A,levelSetup:s},cfg).reject||null
+  }));
+  const selected=candidates.find((s,i)=>!out.candidateChecks[i].reject)||candidates[0]||null;
   if(selected){
     out.dir=selected.dir;out.setup=selected===retest?'Break and first retest':selected===block?'Order-block rejection':selected.trap?'Volume trap at support/resistance':'Support/resistance rejection';
     out.why=selected.why;out.levelSetup=selected;out.strategyVersion=selected===retest?'break-retest-v1':selected===block?'ob-volume-v1':'sr-volume-v1';
@@ -4185,7 +4197,7 @@ function scalpLevels(sym,dir,entry,scan,c5,cfg){
   const units=lot*cs;
   return{entry,tp:entry+sgn*tpDist,sl:entry-sgn*slDist,beAt:entry+sgn*tpDist*0.6,lot:+lot.toFixed(2),units,tpUsd:net*units,slUsd,tpDist,slDist};
 }
-function scalpCtx(sym,now){return{now,isMetal:sym!=='BTCUSD',marketOpen:sym==='BTCUSD'||isMetalsMarketOpen(),spread:SPREAD[sym]||0,dec:ASSETS[sym].dec};}
+function scalpCtx(sym,now){return{now,isMetal:sym!=='BTCUSD',marketOpen:sym==='BTCUSD'||isMetalsMarketOpen(),spread:SPREAD[sym]||0,dec:ASSETS[sym].dec,entry:prices[sym],cfg:scalpCfg};}
 function scalpEvaluate(sym){
   const st=scalpState[sym],now=Date.now();
   const c5=kmrClosed(scalpData[sym]||[]);
@@ -4229,7 +4241,7 @@ async function scalpOpen(sym,scan,lv){
     marketDataSource:scalpState[sym]?.feedSource||null,
     strategyVersion:scan.strategyVersion||'v28-original',
     conditions:{closed5mBarAt:scan.barT,trend15m:scan.trend,ADX:scan.adx,RSI7:scan.rsi7,
-      ATR5m:scan.A,relativeVolume:scan.relVol,gates:scan.gates,levelSetup:scan.levelSetup||null,ema9:scan.e9,
+      ATR5m:scan.A,relativeVolume:scan.relVol,gates:scan.gates,candidateChecks:scan.candidateChecks||[],levelSetup:scan.levelSetup||null,ema9:scan.e9,
       ema21:scan.e21,marketEvidence:marketEvidenceSnapshot(scan.evidence),maxLoss:scalpCfg.maxLoss,target:scalpCfg.target}};
   t.entryBar=scan.barT;t.owner=currentUser?.username;t.accountingVersion=2;t.updatedAt=t.t;
   t.spreadPerUnit=SPREAD[sym]||0;t.signalKey='scalp:'+sym+':5m:'+scan.barT+':'+scan.dir;
@@ -4332,7 +4344,7 @@ function scalpSimulate(sym,history,cfg){
     const next=all[i+1],endT=all[i].t+300e3,day=daily.get(istDayKey(next.t))||0;
     if(next.t<cool||day<=-cfg.dayStop||(cfg.stopAtGoal&&day>=cfg.goal)){i++;continue;}
     const win=all.slice(0,i+1),c15=aggMinutes(win,15).filter(k=>k.t+900e3<=endT);
-    const scan=scalpScan(sym,win,c15,null,{now:endT,events:[],isMetal:sym!=='BTCUSD',marketOpen:true,spread,dec:ASSETS[sym].dec,});
+    const scan=scalpScan(sym,win,c15,null,{now:endT,events:[],isMetal:sym!=='BTCUSD',marketOpen:true,spread,dec:ASSETS[sym].dec,entry:next.o,cfg});
     if(!scan.dir||!scan.gatesOk){i++;continue;}
     const sgn=scan.dir==='BUY'?1:-1,ran=sgn*(next.o-scan.price);
     if(ran>0.4*scan.A||ran<-0.5*scan.A){i++;continue;}
