@@ -1789,9 +1789,9 @@ async function historyAttempt(key,fn){
   try{return await fn();}catch(e){historyBackoff.set(key,Date.now()+60000);throw e;}
 }
 function metalHistorySources(sym){
-  const sources=[{name:`OKX ${sym==='XAUUSD'?'XAU':'XAG'}/USDT perp`,fn:(iv,lim)=>historyAttempt('okx:'+sym,()=>fetchOkxMetal(sym,iv,lim))},
-    {name:`Binance ${FAPI_SYM[sym]} perp`,fn:(iv,lim)=>historyAttempt('futures:'+sym,()=>fetchFapiKlines(FAPI_SYM[sym],iv,lim))}];
-  if(sym==='XAUUSD')sources.push({name:'Binance PAXG/USDT proxy',fn:(iv,lim)=>historyAttempt('paxg',()=>fetchBinanceKlines('PAXGUSDT',iv,lim))});
+  const sources=[{name:`OKX ${sym==='XAUUSD'?'XAU':'XAG'}/USDT perp`,fn:(iv,lim)=>historyAttempt('okx:'+sym+':'+iv,()=>fetchOkxMetal(sym,iv,lim))},
+    {name:`Binance ${FAPI_SYM[sym]} perp`,fn:(iv,lim)=>historyAttempt('futures:'+sym+':'+iv,()=>fetchFapiKlines(FAPI_SYM[sym],iv,lim))}];
+  if(sym==='XAUUSD')sources.push({name:'Binance PAXG/USDT proxy',fn:(iv,lim)=>historyAttempt('paxg:'+iv,()=>fetchBinanceKlines('PAXGUSDT',iv,lim))});
   sources.push({name:ReferenceFeed.info(sym).source,reference:true,fn:(iv,lim)=>ReferenceFeed.candles(sym,iv,lim)});
   return sources;
 }
@@ -1850,7 +1850,9 @@ async function fetchMetalOHLC(sym){
     try{
       const c15=await t.fn('15m',CANDLE_LIMIT);if(!(c15?.length>50))continue;
       let c1h=null,c4h=null;
-      try{[c1h,c4h]=await Promise.all([t.fn('1h',CANDLE_LIMIT),t.fn('4h',CANDLE_LIMIT)]);}catch(e){}
+      const higher=await Promise.allSettled([t.fn('1h',CANDLE_LIMIT),t.fn('4h',CANDLE_LIMIT)]);
+      if(higher[0].status==='fulfilled')c1h=higher[0].value;
+      if(higher[1].status==='fulfilled')c4h=higher[1].value;
       metalRaw[sym]={'15m':c15,'1h':c1h?.length>50?c1h:aggregate15m(c15,1),'4h':c4h?.length>50?c4h:aggregate15m(c15,4),analysisOnly:!!t.reference,at:Date.now()};
       metalSrc[sym]=t.name;metalFeedError[sym]='';
       calibrateMetal(sym);
@@ -1871,8 +1873,8 @@ function resyncOHLC(){
 async function performOhlcSync(){
   lastOhlcSync=Date.now();
   try{
-    const [a,b,c]=await Promise.all(['15m','1h','4h'].map(tf=>fetchBinanceKlines('BTCUSDT',tf,CANDLE_LIMIT)));
-    if(a?.length>50)ohlcData.BTCUSD['15m']=a;if(b?.length>50)ohlcData.BTCUSD['1h']=b;if(c?.length>50)ohlcData.BTCUSD['4h']=c;
+    const frames=['15m','1h','4h'],results=await Promise.allSettled(frames.map(tf=>fetchBinanceKlines('BTCUSDT',tf,CANDLE_LIMIT)));
+    results.forEach((r,i)=>{if(r.status==='fulfilled'&&r.value?.length>50)ohlcData.BTCUSD[frames[i]]=r.value;});
     if(prices.BTCUSD)appendLiveTick('BTCUSD',prices.BTCUSD);
   }catch(e){}
   await Promise.allSettled([fetchMetalOHLC('XAUUSD'),fetchMetalOHLC('XAGUSD')]);
