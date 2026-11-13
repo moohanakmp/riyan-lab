@@ -8,7 +8,12 @@ async function backgroundRefresh(){
   try{
     const status=await riyanApi('/api/v1/paper/background/status');
     if(currentUser?.username!==user)return;
-    if(backgroundUser!==user){backgroundUser=user;backgroundDigest='';backgroundEnabled=status.enabled!==false;}
+    if(backgroundUser!==user){
+      backgroundUser=user;backgroundDigest='';backgroundEnabled=status.enabled!==false;
+      // Opening the app on another device must not silently replace the active server
+      // strategy. Adopt the saved server settings; only a later local change is sent.
+      if(backgroundAdoptSettings(status.settings))backgroundDigest=JSON.stringify(backgroundSettings());
+    }
     backgroundStatus=status;
     if(status.calendarHealth){
       const health=status.calendarHealth;
@@ -16,12 +21,23 @@ async function backgroundRefresh(){
       else if(health.fetchedAt>calendarCacheAt)fetchEconCalendar(true).catch(()=>{});
       renderCalendarHealth();
     }
-    const settings={enabled:backgroundEnabled,scalp:scalpCfg,basketEnabled:!!basketDemo.enabled,basketModeVersion:2};
-    const digest=JSON.stringify(settings);
+    const digest=JSON.stringify(backgroundSettings());
     if(digest!==backgroundDigest){await riyanApi('/api/v1/paper/background/settings',{method:'POST',body:digest});backgroundDigest=digest;}
     backgroundRender(status);
   }catch(e){backgroundRender({state:'UNAVAILABLE',reason:'Background status unavailable — '+e.message});}
   finally{backgroundBusy=false;renderCalendarHealth();}
+}
+function backgroundSettings(){return {enabled:backgroundEnabled,scalp:scalpCfg,basketEnabled:!!basketDemo.enabled,basketModeVersion:2};}
+function backgroundAdoptSettings(saved){
+  const scalp=saved&&typeof saved==='object'?saved.scalp:null;
+  if(!scalp||typeof scalp!=='object'||!scalp.assets||typeof scalp.assets!=='object')return false;
+  const next={...SCALP_DEF,...scalp,assets:{...SCALP_DEF.assets,...scalp.assets}};
+  // Same bounds as the settings form and the server validator.
+  for(const k of ['target','maxLoss','goal','dayStop','timeStopMin'])if(!(Number.isFinite(+next[k])&&+next[k]>0))next[k]=SCALP_DEF[k];else next[k]=+next[k];
+  next.maxLoss=Math.min(next.maxLoss,4);next.dayStop=Math.min(next.dayStop,8);
+  scalpCfg=next;saveScalpCfg();
+  try{if(typeof renderScalpLive==='function'&&document.getElementById('tsc')?.style.display!=='none')renderScalpLive();}catch(e){}
+  return true;
 }
 function backgroundRender(status){
   for(const id of ['ts','tsc','tad']){

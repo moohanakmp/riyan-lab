@@ -222,3 +222,30 @@ body[data-workspace-tab=chart] #workspaceRelated{padding-top:9px}
 .market-evidence{padding:14px;border:1px solid var(--bdr);border-radius:14px;background:linear-gradient(140deg,rgba(56,186,255,.07),rgba(165,139,255,.04));margin:12px 0;line-height:1.6}.market-evidence details{margin-top:12px}.evidence-concepts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:10px 0}.evidence-concepts .cond{display:block}.evidence-table{overflow-x:auto;margin:10px 0}.evidence-table table{width:100%;border-collapse:collapse;text-align:left;min-width:430px}.evidence-table td,.evidence-table th{padding:8px;border-bottom:1px solid var(--bdr)}.delta-chart-scroll{overflow-x:auto}.delta-chart-scroll svg{display:block;width:100%;min-width:760px;height:auto}.quality-chip{overflow-wrap:anywhere}@media(max-width:650px){.evidence-concepts{grid-template-columns:1fr}}
 
 .market-evidence .evidence-buy{background:rgba(34,197,94,.12);border-color:#22c55e;color:#6ee7a0}.market-evidence .evidence-sell{background:rgba(239,68,68,.12);border-color:#ef4444;color:#fca5a5}.market-evidence .evidence-neutral{background:rgba(148,163,184,.12);color:#cbd5e1}.evidence-inactive{color:var(--dim)}
+
+/* 2026-11-13 declutter: one slim page title, no duplicate link rows. The tab bar and
+   More menu remain the single navigation; the hidden link markup stays for deep links. */
+#orbitalWorkspace{margin:0 auto 10px;padding-top:10px}
+.workspace-heading,body[data-workspace-tab] .workspace-heading{min-height:0;padding:4px 2px;background:none;border:0;border-radius:0;gap:10px}
+.workspace-heading>div{max-width:100%;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+#workspaceGroup{margin:0;font-size:9px;order:2}#workspaceTitle{font-size:20px;letter-spacing:-.02em}
+#workspaceDescription,#workspaceArtwork,#workspaceRelated,#workspaceDirectory{display:none!important}
+body[data-workspace-tab=chart] #orbitalWorkspace{display:none}
+@media(max-width:520px){#workspaceTitle{font-size:19px}.workspace-heading{min-height:0;padding:2px 2px}}
+/* Status notices: compact, one line until opened. */
+#mainScroll [data-feed-status],#mainScroll [data-background-scanner],#calendarHealth{margin:0 0 8px!important;padding:7px 12px!important;font-size:10.5px!important;line-height:1.5!important}
+#mainScroll [data-feed-status][hidden],#calendarHealth[hidden]{display:none!important}
+/* Live Volume Trap */
+.live-card{border-color:#2f6db5!important}
+.live-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#e9b949;margin-right:6px;vertical-align:middle}
+.live-dot.ok{background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.18)}.live-dot.off{background:#64748b}
+.flow-bar{display:flex;height:10px;border-radius:6px;overflow:hidden;margin:10px 0 4px;background:#1e2d45}
+.flow-buy{background:#22c55e}.flow-sell{background:#ef4444}
+#tvt>.sig-wrap>details.notice>summary{cursor:pointer;font-weight:600}
+/* Signals "Right now" summary */
+.glance .glance-head{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#7cbcf4;margin-bottom:6px}
+.glance-row{display:grid;grid-template-columns:auto auto 1fr;gap:4px 10px;align-items:baseline;padding:8px 0;border-top:1px solid #1f3352;font-size:12px}
+.glance-row:first-of-type{border-top:0}.glance-why{color:#a9bfdf;font-size:11px;line-height:1.5}
+.glance-tag{font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:6px;background:#22324d;color:#cbd5e1;white-space:nowrap}
+.glance-on{background:rgba(34,197,94,.16);color:#6ee7a0}.glance-near{background:rgba(233,185,73,.16);color:#f3d27a}
+@media(max-width:520px){.glance-row{grid-template-columns:auto 1fr}.glance-why{grid-column:1/-1}}

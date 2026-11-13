@@ -32,10 +32,32 @@ public class NewsMonitor {
         "XAGUSD","silver commodities price inflation",
         "BTCUSD","bitcoin crypto market regulation"
     );
+    private final java.util.concurrent.atomic.AtomicBoolean polling=new java.util.concurrent.atomic.AtomicBoolean();
+    /** A free Render instance sleeps; refresh soon after waking instead of serving an old snapshot. */
+    static final long STALE_AFTER_MS=10*60*1000;
     public NewsMonitor(JdbcTemplate jdbc,AuthService auth){this.jdbc=jdbc;this.auth=auth;}
 
-    @Scheduled(initialDelay=45000,fixedDelay=15*60*1000)
+    @Scheduled(initialDelay=5000,fixedDelay=60*1000)
+    public void scheduledPoll(){
+        if(stale())poll();
+    }
+    /** True when no successful poll has completed recently (also across restarts). */
+    boolean stale(){
+        try{
+            java.sql.Timestamp last=jdbc.queryForObject("SELECT max(checked_at) FROM news_fetch_runs WHERE status='OK'",java.sql.Timestamp.class);
+            return last==null||System.currentTimeMillis()-last.getTime()>=STALE_AFTER_MS;
+        }catch(Exception e){return true;}
+    }
+    /** Refresh in the background when a reader finds old headlines; never blocks the request. */
+    void refreshIfStale(){
+        if(polling.get()||!stale())return;
+        Thread.ofVirtual().name("news-refresh").start(this::poll);
+    }
     public void poll() {
+        if(!polling.compareAndSet(false,true))return;
+        try{pollTopics();}finally{polling.set(false);}
+    }
+    private void pollTopics() {
         TOPICS.forEach((symbol,topic)->{
             int count=0;String error=null;
             try {
@@ -84,6 +106,7 @@ public class NewsMonitor {
     public List<Map<String,Object>> latest(HttpServletRequest request,@RequestParam(defaultValue="XAUUSD") String symbol){
         auth.require(request,false);
         if(!TOPICS.containsKey(symbol))throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        refreshIfStale();
         return jdbc.queryForList("""
           SELECT headline,source_url AS url,source_name,published_at,checked_at
           FROM news_feed_items WHERE symbol=? ORDER BY published_at DESC NULLS LAST LIMIT 20

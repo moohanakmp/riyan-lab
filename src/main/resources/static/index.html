@@ -658,7 +658,7 @@ body{background:
 .hero-prev{width:100%;height:90px;border-radius:12px;border:1px dashed rgba(255,255,255,.15);background:rgba(255,255,255,.03) center/cover no-repeat;margin:8px 0;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--dim)}
 
 </style>
-<link rel="stylesheet" href="/workspace-ui.css?v=20261028-active-basket2">
+<link rel="stylesheet" href="/workspace-ui.css?v=20261113-declutter">
 <link rel="preload" as="video" href="happy.mp4" type="video/mp4"><link rel="preload" as="video" href="bull.mp4" type="video/mp4"><link rel="preload" as="video" href="bear.mp4" type="video/mp4">
 </head>
 <body>
@@ -822,6 +822,7 @@ body{background:
 
 <div id="ts" style="display:none">
   <div class="sig-wrap">
+    <div id="signalGlance" role="status"></div>
     <section id="triggeredSignals" class="ic" aria-label="Active paper trades"><div class="ib">
       <div class="trend-hdr"><h2 class="sec-ttl" style="margin:0">Active Trades</h2><button class="recheck-btn" onclick="refreshTriggeredSignals()">Refresh active trades</button></div>
       <p class="sc-dim">Open paper trades across Auto, Manual, Low Profit and Basket. Floating P&amp;L uses fresh quotes and modeled spread. Closed trades remain in History and P&amp;L.</p>
@@ -924,7 +925,8 @@ body{background:
 <div id="tvt" style="display:none"><div class="sig-wrap">
   <div class="sec-ttl">Volume Trap · Support &amp; Resistance</div>
   <div class="qa-row"><button class="qa" data-trap-symbol="XAUUSD" onclick="volumeTrapPick('XAUUSD')">Gold</button><button class="qa" data-trap-symbol="XAGUSD" onclick="volumeTrapPick('XAGUSD')">Silver</button><button class="qa" data-trap-symbol="BTCUSD" onclick="volumeTrapPick('BTCUSD')">Bitcoin</button><button class="anal-refresh" id="volumeTrapRefresh" onclick="volumeTrapRefresh()">Refresh scanner</button></div>
-  <div class="notice">Confirmed repeated levels + closed 5m rejection + increased traded volume. Failed breaks are labelled as traps. Volume pressure is estimated from candle location, not actual buyer/seller order flow. Metals use the named proxy/perpetual source. These are paper setups, not guaranteed profits.</div>
+  <div id="volumeTrapLive" aria-live="off"></div>
+  <details class="notice"><summary>How Volume Trap works</summary>Setups need a confirmed repeated level, a closed 5m rejection and increased traded volume. Failed breaks are labelled as traps. The live panel streams the forming 1m candle and real taker buy/sell flow for display only; the setup checks below and every paper entry use closed candles. Metals use the OKX XAU/XAG-USDT perpetual, not broker spot volume. These are paper setups, not guaranteed profits.</details>
   <div id="volumeTrapContainer" role="status"></div>
 </div></div>
 
@@ -1156,6 +1158,7 @@ body{background:
 <script src="/btc-feed.js?v=20261019-recovery"></script>
 <script src="/reference-feed.js?v=20261017-2"></script>
 <script src="/market-context.js?v=20261020-context"></script>
+<script src="/live-volume.js?v=20261113-live"></script>
 <script src="/paper-engine.js?v=20261028-active-basket2"></script>
 <script src="/basket-demo.js?v=20261028-active-basket2"></script>
 
@@ -1675,7 +1678,8 @@ function showTab(n,el){
   if(n==='analysis')refreshAnalysis(false);
   if(n==='session')renderSessionTab();
   if(n==='flow')renderFlowTab();
-  if(n==='volumeTrap')renderVolumeTrap();
+  if(n==='volumeTrap'){renderVolumeTrap();renderVolumeTrapLive();}
+  volumeTrapLiveSync();
   if(n==='manual')renderManualTab();
   if(n==='research')renderResearchTab();
   if(n==='analytics')renderAnalyticsTab();
@@ -2342,7 +2346,8 @@ function renderFeedStatus(){
     const panel=document.getElementById(id);if(!panel||panel.style.display==='none')continue;
     let note=panel.querySelector('[data-feed-status]');
     if(!note){note=document.createElement('details');note.className='notice';note.dataset.feedStatus='';note.append(document.createElement('summary'),document.createElement('div'));panel.prepend(note);}
-    note.querySelector('summary').textContent='Market data · '+states.map(f=>ASSETS[f.sym].sym+': '+(!f.last?'unavailable':f.reference?'delayed reference':f.stale?'last session / stale':'recent')).join(' · ');
+    note.hidden=states.every(f=>f.last&&!f.reference&&!f.stale);
+    note.querySelector('summary').textContent='Candle history · '+states.map(f=>ASSETS[f.sym].sym+': '+(!f.last?'loading or unavailable':f.reference?'delayed reference':f.stale?'last session / stale':'recent')).join(' · ');
     const detail=note.querySelector('div');detail.replaceChildren();
     for(const f of states){const row=document.createElement('p');row.textContent=ASSETS[f.sym].sym+': '+f.message+' · '+f.source+(f.last?' · last bar '+new Date(f.last.t).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})+' IST':'');detail.append(row);}
   }
@@ -4526,12 +4531,12 @@ function volumeDeltaCandlesHtml(e,sym,source){
 }
 
 // Volume Trap reuses the live scanner's candles; opening this page never creates an order.
-let volumeTrapSym='XAUUSD',volumeTrapTf='5m';
+let volumeTrapSym='XAUUSD',volumeTrapTf='1m';
 const volumeTrapMinuteCache=new Map();
 function volumeTrapTimeframe(tf){if(!['1m','5m'].includes(tf))return;volumeTrapTf=tf;renderVolumeTrap();}
 async function volumeTrapLoadMinute(sym){
   const old=volumeTrapMinuteCache.get(sym);
-  if(old?.pending||old&&Date.now()-old.checkedAt<30000)return;
+  if(old?.pending||old&&Date.now()-old.checkedAt<15000)return;
   const state={...old,pending:true,checkedAt:Date.now()};volumeTrapMinuteCache.set(sym,state);
   try{
     const bars=sym==='BTCUSD'?await BtcFeed.candles('1m',180):await fetchOkxMetal(sym,'1m',180);
@@ -4563,7 +4568,39 @@ function tradeVolumeDetailsHtml(e,sym,source){
   return `<div class="ic" style="grid-column:1 / -1"><div class="ib"><h3>Trade volume details · ${step/60000}m</h3><p>${basketTxt(source||'Source unavailable')} · ${basketTxt(unit)} · ${e.entryData?'Recent closed history':'Stale/reference history'}</p><div class="sc-ind"><span>Latest volume <b>${n(last.v)} ${basketTxt(unit)}</b></span><span>Prior 20-bar average <b>${n(avg)}</b></span><span>Relative volume <b>${n(e.relVol)}×</b></span><span>Last ${rows.length} candles total <b>${n(total)}</b></span></div><p><b>Latest interval:</b> ${stamp(last.t)} → ${stamp(last.t+step)}</p><p><b>Paper order reference: 0.01 lot = ${n(.01*a.contractSz)} ${basketTxt(a.lotUnit)}</b> under this app's ${n(a.contractSz)} ${basketTxt(a.lotUnit)}/lot model. This is your paper order size, not the market's executed lot volume. Individual trade lot sizes and trade counts are unavailable from this candle feed.</p><p class="sc-dim">Each row aggregates the named venue's executions during that interval. Buy, sell and delta columns are candle-location estimates. Source units and broker lots are not interchangeable.</p><div class="evidence-table"><table><thead><tr><th>Start (IST)</th><th>End (IST)</th><th>Open</th><th>High</th><th>Low</th><th>Close</th><th>Volume (${basketTxt(unit)})</th><th>Relative volume</th><th>Est. buy</th><th>Est. sell</th><th>Est. delta</th></tr></thead><tbody>${[...rows].reverse().map(k=>{const i=e.rows.indexOf(k),prev=e.rows.slice(Math.max(0,i-20),i),mean=prev.length===20?prev.reduce((v,r)=>v+r.v,0)/20:null;return `<tr><td>${stamp(k.t)}</td><td>${stamp(k.t+step)}</td><td>${fmtP(sym,k.o)}</td><td>${fmtP(sym,k.h)}</td><td>${fmtP(sym,k.l)}</td><td>${fmtP(sym,k.c)}</td><td>${n(k.v)}</td><td>${mean>0?n(k.v/mean)+'×':'Unavailable'}</td><td>${e.volumeReady?n(k.buy):'Unavailable'}</td><td>${e.volumeReady?n(k.sell):'Unavailable'}</td><td>${e.volumeReady?n(k.delta):'Unavailable'}</td></tr>`;}).join('')}</tbody></table></div></div></div>`;
 }
 
-function volumeTrapPick(sym){if(!SYMS.includes(sym))return;volumeTrapSym=sym;renderVolumeTrap();}
+function volumeTrapPick(sym){if(!SYMS.includes(sym))return;volumeTrapSym=sym;volumeTrapLiveSync();renderVolumeTrap();renderVolumeTrapLive();}
+// Live stream runs only while Volume Trap is visible, to save the phone's data and battery.
+function volumeTrapLiveSync(){
+  if(typeof LiveVolume==='undefined')return;
+  const visible=!document.hidden&&document.getElementById('tvt')?.style.display!=='none';
+  if(visible)LiveVolume.start(volumeTrapSym);else LiveVolume.stop();
+}
+function renderVolumeTrapLive(){
+  const el=document.getElementById('volumeTrapLive');if(!el||typeof LiveVolume==='undefined')return;
+  const sym=volumeTrapSym,now=Date.now(),live=LiveVolume.snapshot(sym,now),k=live.forming,unit=sym==='BTCUSD'?'BTC':sym.slice(0,3)+' units';
+  const n=v=>Number.isFinite(v)?v.toLocaleString('en-IN',{maximumFractionDigits:v<10?4:2}):'—';
+  const dot=live.status==='live'&&live.fresh?'<span class="live-dot ok"></span>Live':live.status==='quiet'?'<span class="live-dot"></span>Live · no trades in the last 20s':live.status==='connecting'||live.status==='reconnecting'?'<span class="live-dot"></span>Connecting…':'<span class="live-dot off"></span>Live stream unavailable · 1m candles refresh every 15s';
+  const ago=live.updatedAt?Math.max(0,Math.round((now-live.updatedAt)/1000))+'s ago':'';
+  // Pace = volume so far compared with the same fraction of an average closed minute.
+  const history=(volumeTrapMinuteCache.get(sym)?.bars||[]).slice(-20).map(b=>b.v).filter(Number.isFinite);
+  const avg=history.length>=10?history.reduce((a,b)=>a+b,0)/history.length:null;
+  const elapsed=k?Math.min(1,Math.max(.05,(now-k.t)/60000)):null;
+  const pace=k&&avg>0&&!k.partial?k.v/(avg*elapsed):null;
+  const f=live.flow;
+  let h=`<div class="ic live-card"><div class="ib"><div class="sc-row"><b>${ICONS[sym]} ${ASSETS[sym].sym} · live 1m</b><span class="sc-dim">${dot}${ago?' · '+ago:''}</span></div>`;
+  if(k){
+    const stamp=new Date(k.t).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit'});
+    h+=`<div class="sc-ind"><span>Forming ${stamp} IST</span><span>Last <b>${fmtP(sym,k.c)}</b></span><span>High/Low <b>${fmtP(sym,k.h)} / ${fmtP(sym,k.l)}</b></span><span>Volume so far <b>${n(k.v)} ${unit}</b>${k.partial?' (since stream start)':''}</span><span>Pace vs 20-min average <b>${pace==null?'—':pace.toFixed(2)+'×'}</b></span></div>`;
+  }else h+=`<p class="sc-dim">${live.error?basketTxt(live.error):'Waiting for the first live trade…'}</p>`;
+  if(f){
+    const mins=Math.max(1,Math.round(f.windowMs/60000));
+    h+=`<div class="flow-bar" role="img" aria-label="Taker buys ${f.buyPct.toFixed(0)} percent, sells ${f.sellPct.toFixed(0)} percent"><span class="flow-buy" style="width:${f.buyPct.toFixed(1)}%"></span><span class="flow-sell" style="width:${f.sellPct.toFixed(1)}%"></span></div><p class="sc-dim">Taker buys ${f.buyPct.toFixed(0)}% · sells ${f.sellPct.toFixed(0)}% · last ${mins} min · ${f.count} trades (real aggressor side from the exchange)</p>`;
+  }
+  h+=`<p class="data-src">${basketTxt(live.source)} · display only, unconfirmed until the candle closes. Setup checks and paper entries below use closed candles.</p></div></div>`;
+  el.innerHTML=h;
+}
+setInterval(()=>{if(document.getElementById('tvt')?.style.display!=='none'&&!document.hidden)renderVolumeTrapLive();},1000);
+document.addEventListener('visibilitychange',()=>volumeTrapLiveSync());
 function volumeTrapChart(values,label,color,volume=false){
   const series=values.slice(-48).filter(Number.isFinite);
   if(series.length<2)return `<div class="sc-dim">${label}: waiting for data</div>`;
@@ -4958,6 +4995,8 @@ function renderSignals(){
     }
   });
   if(!html)html=`<div style="text-align:center;color:var(--dim);font-size:12px;padding:30px 0">No signals available for your access level right now.</div>`;
+  // The summary is additive: a failure there must never blank the signal cards.
+  try{const glance=document.getElementById('signalGlance');if(glance)glance.innerHTML=signalGlanceHtml(canSeeHigh,canSeeMed);}catch(e){console.warn('Signal summary unavailable',e);}
   html=`<div class="notice"><b>PAPER ONLY</b> · ${basketTxt(paperEngine.reason)}<br>Signal score measures rule agreement, not win probability. Reference quotes and modeled costs can differ from your broker.</div><div class="vp-strip">${SYMS.map(x=>kmrVolumeCardHtml(x,true)).join('')}</div>`+html;
   setEvidenceHtml(document.getElementById('signalsContainer'),html);
 }
@@ -5051,6 +5090,26 @@ function signalQuality(sig,sym){
 function qualityMeterHtml(sig,sym){
   const q=signalQuality(sig,sym),state=q.gatesOk===false?'STAND ASIDE':q.score>=70?'TECHNICAL SETUP':q.score>=55?'WAIT / WATCH':'AVOID',chips=q.chips.map(x=>`<div class="quality-chip ${x[1]}">${x[0]}</div>`).join('');
   return `<div class="quality-card"><div class="quality-head"><span class="quality-title">KMR SIGNAL QUALITY · ENGINE v3</span><span class="quality-score">${q.score}/100</span></div><div class="quality-track"><div class="quality-fill" style="width:${q.score}%"></div></div><div class="quality-foot"><span class="quality-state">${state}</span><span>${q.label}</span></div><div class="quality-grid">${chips}</div><div style="margin-top:10px;font-size:11px;color:var(--mut)">Setup quality, not win probability. ${q.gatesOk===false?'Entry blocked: required gates have not all passed.':'Entry also requires current data, engine ownership and account risk approval.'}</div></div>`;
+}
+// One line per asset so the answer to "is there a trade?" is visible without scrolling.
+// It reads the same computeSignal/autoEntryCheck results as the cards below; no new rules.
+function signalGlanceHtml(canSeeHigh=true,canSeeMed=true){
+  const rows=SYMS.map(sym=>{
+    const a=ASSETS[sym],act=activeSignals[sym]?signalHistory.find(r=>r.id===activeSignals[sym]&&r.outcome==='OPEN'):null;
+    if(act&&(act.confidence==='HIGH'&&!canSeeHigh||act.confidence==='MED'&&!canSeeMed))return '';
+    let state,why;
+    if(act){state=`<span class="glance-tag glance-on">${basketTxt(act.dir||'OPEN')} OPEN</span>`;why='Paper trade is open; see the card below for levels and floating P&L.';}
+    else if(sym!=='BTCUSD'&&!isMetalsMarketOpen()){state='<span class="glance-tag">CLOSED</span>';why='Metals market closed.';}
+    else{
+      const sig=computeSignal(sym),approval=sig.smart?.tier?autoEntryCheck(sym,sig):null;
+      if(sig.smart?.tier&&approval?.ok){state=`<span class="glance-tag glance-on">${basketTxt(sig.state)} SETUP</span>`;why='All checks passed; waiting for server acceptance.';}
+      else{state=sig.smart?.tier?'<span class="glance-tag glance-near">BLOCKED</span>':'<span class="glance-tag">WAIT</span>';
+        why=(approval&&!approval.ok?approval.reason:sig.reason)||'Waiting for a confirmed setup';
+        if(sig.wait&&!sig.dataUnavailable&&!sig.quoteUnavailable)why+=' · Needs: '+sig.wait;}
+    }
+    return `<div class="glance-row"><b>${ICONS[sym]} ${a.sym}</b>${state}<span class="glance-why">${basketTxt(why)}</span></div>`;
+  }).join('');
+  return `<div class="ic glance"><div class="ib"><div class="glance-head">Right now</div>${rows}</div></div>`;
 }
 function waitCard(sym,a,sig,isAdmin){
   const approval=sig.smart?.tier?autoEntryCheck(sym,sig):null;
@@ -5692,6 +5751,12 @@ async function throttleFeedCall(){
   if(wait>0)await new Promise(res=>setTimeout(res,wait));
   lastFeedCallAt=Date.now();
 }
+function newsAge(seen){
+  const at=Date.parse(typeof seen==='string'&&/^\d{8}T\d{6}Z$/.test(seen)?seen.replace(/^(\d{4})(\d\d)(\d\d)T(\d\d)(\d\d)(\d\d)Z$/,'$1-$2-$3T$4:$5:$6Z'):seen);
+  if(!Number.isFinite(at))return '';
+  const mins=Math.max(0,Math.round((Date.now()-at)/60000));
+  return mins<60?mins+' min ago':mins<1440?Math.round(mins/60)+' h ago':Math.round(mins/1440)+' d ago';
+}
 async function fetchStoredNews(sym){
   try{
     const rows=await riyanApi('/api/v1/news/latest?symbol='+encodeURIComponent(sym));
@@ -5722,16 +5787,15 @@ async function fetchNews(sym){
   const mapRss2json=d=>d.items.slice(0,6).map(a=>({title:(a.title||'').replace(/\s*-\s*[^-]+$/,''),domain:(()=>{try{return new URL(a.link).hostname.replace('www.','');}catch(e){return'';}})(),url:a.link,seen:a.pubDate,sent:tagSentiment(a.title)}));
   const mapGdelt=d=>d.articles.slice(0,6).map(a=>({title:a.title,domain:a.domain,url:a.url,seen:a.seendate,sent:tagSentiment(a.title)}));
 
+  // Two quick public fallbacks only. The server refreshes its stored RSS when it is
+  // stale, so a second stored read usually succeeds before slow wide-window searches.
   const attempts=[
-    {url:rss2jsonUrl('1d'), validate:d=>d?.status==='ok'&&Array.isArray(d.items)&&d.items.length>0, map:mapRss2json},
-    {url:gdeltUrl('1d',8),  validate:d=>Array.isArray(d?.articles)&&d.articles.length>0,             map:mapGdelt},
     {url:rss2jsonUrl('3d'), validate:d=>d?.status==='ok'&&Array.isArray(d.items)&&d.items.length>0, map:mapRss2json},
-    {url:rss2jsonUrl('7d'), validate:d=>d?.status==='ok'&&Array.isArray(d.items)&&d.items.length>0, map:mapRss2json},
     {url:gdeltUrl('3d',8),  validate:d=>Array.isArray(d?.articles)&&d.articles.length>0,             map:mapGdelt},
-    {url:gdeltUrl('7d',10), validate:d=>Array.isArray(d?.articles)&&d.articles.length>0,             map:mapGdelt},
   ];
   let lastErr='no attempts';
   for(const a of attempts){
+    if(a===attempts[1]){const refreshed=await fetchStoredNews(sym);if(refreshed){feedError.news=null;return refreshed;}}
     await throttleFeedCall();
     const {data,error}=await fetchJsonRobust([a.url],{timeoutMs:8000,validate:a.validate});
     if(data){feedError.news=null;return a.map(data);}
@@ -5752,8 +5816,8 @@ function calendarReady(now=Date.now()){
 }
 function renderCalendarHealth(){
   const box=document.getElementById('calendarHealth');if(!box)return;
-  box.hidden=!currentUser;if(box.hidden)return;
   const ready=calendarReady(),now=Date.now();
+  box.hidden=!currentUser||ready&&!feedError.calendar;if(box.hidden)return;
   const age=calendarCacheAt?Math.max(0,Math.floor((now-calendarCacheAt)/60000)):null;
   const text=ready?'News protection ready · schedule checked '+age+' min ago'+(feedError.calendar?' · refresh delayed; using the still-valid schedule':''):
     'News schedule unavailable · technical signals enabled. News risk is unchecked; price, trigger, spread and risk checks still apply.';
@@ -5950,11 +6014,11 @@ function renderAnalysis(){
 
   html+=`<div class="ic"><div class="it">📰 Recent News${news&&news.length?'':''}</div><div class="ib" id="newsBody">`;
   if(analysisLoading[sym])html+=`<span style="color:var(--dim)">Loading news...</span>`;
-  else if(news===null)html+=`<span style="color:var(--dim)">Auto news unavailable on this network right now.${feedError.news?`<br><span style="font-size:8.5px">(${feedError.news})</span>`:''}</span>`;
+  else if(news===null)html+=`<span style="color:var(--dim)">Headlines are temporarily unavailable. The app retries automatically; signals do not depend on headlines.${feedError.news?`<br><span style="font-size:8.5px">(${basketTxt(String(feedError.news))})</span>`:''}</span>`;
   else if(news&&news.length){
     news.forEach(n=>{
       const sentLbl=n.sent==='pos'?'BULLISH TONE':n.sent==='neg'?'BEARISH TONE':'NEUTRAL';
-      html+=`<div class="news-item"><div class="news-hdl">${basketTxt(n.title||'')}</div><div class="news-meta"><span class="sent-tag ${n.sent}">${sentLbl}</span><span>${basketTxt(n.domain||'')}</span></div></div>`;
+      html+=`<div class="news-item"><div class="news-hdl">${basketTxt(n.title||'')}</div><div class="news-meta"><span class="sent-tag ${n.sent}">${sentLbl}</span><span>${basketTxt(n.domain||'')}</span>${newsAge(n.seen)?`<span>${newsAge(n.seen)}</span>`:''}</div></div>`;
     });
     html+=`<div style="font-size:9.5px;color:var(--dim);margin-top:4px">Tone is auto-tagged from headline keywords — a rough signal, not verified sentiment analysis.</div>`;
   }else html+=`<span style="color:var(--dim)">No recent headlines found.</span>`;
@@ -6290,7 +6354,7 @@ async function bootApp(){
     if(document.getElementById('tpn').style.display!=='none')renderPnl();
     const t=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
     const ok=SYMS.filter(freshQuote).length;
-    setSbar(`✓ ${t} IST · ${ok}/3 fresh quotes · ${signalHistory.length+scalpHist.length} accepted entries`);
+    setSbar(`✓ ${t} IST · ${ok}/3 fresh quotes · news check ${calendarReady()?'ready':'unavailable'} · ${signalHistory.length+scalpHist.length} accepted entries`);
     if(document.getElementById('ts').style.display!=='none')renderSignals();
     if(document.getElementById('th').style.display!=='none')renderHistory();
     if(document.getElementById('tan').style.display!=='none')renderAnalysis();
@@ -6639,6 +6703,6 @@ initAuth();
 
 <button id="riyanSyncBtn" type="button" onclick="riyanConnect()" style="position:fixed;bottom:8px;right:8px;z-index:9999;padding:7px 11px;border-radius:15px;background:#284f72;color:white;border:1px solid #8ac8e7;font-size:11px">☁ DB Sync</button>
 <script src="orbital-ui.js?v=20261020-volume-details" defer></script>
-<script src="/background-client.js?v=20261028-active-basket2"></script>
+<script src="/background-client.js?v=20261113-settings-adopt"></script>
 </body>
 </html>

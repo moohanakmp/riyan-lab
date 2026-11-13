@@ -124,7 +124,9 @@ public class BackgroundScanner {
     public Map<String,Object> status(String user){
         var out=new LinkedHashMap<String,Object>();out.put("available",enabled);out.put("phase",phase);out.put("busy",busy.get());out.put("cycleStartedAt",cycleStartedAt);out.put("cycleFinishedAt",cycleFinishedAt);out.put("cycleError",cycleError);out.put("hosting","Render free services may sleep without incoming traffic; an always-on host is needed for uninterrupted scans.");out.put("intervalSeconds",20);
         var health=new LinkedHashMap<>(feeds.calendarStatus());health.remove("calendar");out.put("calendarHealth",health);
-        var settings=jdbc.queryForList("SELECT enabled FROM background_scanner_settings WHERE username=?",user);out.put("enabled",settings.isEmpty()||Boolean.TRUE.equals(settings.getFirst().get("enabled")));
+        var settings=jdbc.queryForList("SELECT enabled,config::text AS config FROM background_scanner_settings WHERE username=?",user);out.put("enabled",settings.isEmpty()||Boolean.TRUE.equals(settings.getFirst().get("enabled")));
+        // The saved server settings are authoritative; a browser adopts them instead of overwriting them on open.
+        if(!settings.isEmpty())try{out.put("settings",json.readTree((String)settings.getFirst().get("config")));}catch(Exception ignored){}
         var rows=jdbc.queryForList("SELECT state,checked_at,details::text AS details FROM background_scanner_status WHERE username=?",user);
         if(!rows.isEmpty())out.putAll(rows.getFirst());
         var leases=jdbc.queryForList("SELECT owner,expires_at FROM paper_engine_leases WHERE username=? AND expires_at>now()",user);
