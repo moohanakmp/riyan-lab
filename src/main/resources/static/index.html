@@ -5807,7 +5807,7 @@ async function fetchNews(sym){
   return null;
 }
 let calendarCache=null,calendarCacheAt=0,calendarHealth=null;
-let calendarDisplay=null;
+let calendarDisplay=null,calendarNextWeek=null;
 let calendarFailedAt=0,calendarLastCheckAt=0,calendarPromise=null;
 const CALENDAR_RETRY_COOLDOWN_MS=30000;
 function calendarReady(now=Date.now()){
@@ -5839,6 +5839,8 @@ async function fetchEconCalendarImpl(force){
     calendarLastCheckAt=Date.now();
     if(!data||typeof data.ready!=='boolean')throw Error('Invalid calendar status');
     calendarHealth=data;
+    // Display-only next-week preview (weekend); never used for news-risk checks.
+    calendarNextWeek=Array.isArray(data.nextWeekCalendar)&&data.nextWeekCalendar.every(e=>Number.isFinite(Date.parse(e.date))&&e.title&&e.country&&e.impact)?data.nextWeekCalendar:calendarNextWeek;
     calendarDisplay=Array.isArray(data.displayCalendar)&&data.fetchedAt>0&&data.fetchedAt<=Date.now()&&data.displayCalendar.every(e=>Number.isFinite(Date.parse(e.date))&&e.title&&e.country)?data.displayCalendar:null;
     if(!data.ready){calendarCache=null;calendarCacheAt=0;calendarFailedAt=Date.now();feedError.calendar=data.calendarError||'Calendar unavailable';renderCalendarHealth();return null;}
     if(!Array.isArray(data.calendar)||!data.calendar.length||!Number.isFinite(data.calendarAt)||data.calendarAt>Date.now()||Date.now()-data.calendarAt>=30*60e3||!Number.isFinite(data.expiresAt)||Date.now()>=data.expiresAt||data.calendar.some(e=>!Number.isFinite(Date.parse(e.date))||!['High','Medium','Low','Holiday','Non-Economic'].includes(e.impact)||!e.title||!e.country))throw Error('Invalid or stale calendar schedule');
@@ -5868,6 +5870,13 @@ function eventBiasHint(title){
 // Note: the underlying feed is Fair Economy's "this week" calendar export — if today is
 // late in the week, there may genuinely be fewer than 7 days of events actually available
 // in it yet (the file itself only covers the current calendar week), not a bug here.
+function nextWeekImpactEvents(){
+  if(!Array.isArray(calendarNextWeek))return [];
+  const now=Date.now();
+  return calendarNextWeek.map(ev=>({...ev,ts:Date.parse(ev.date)}))
+    .filter(ev=>Number.isFinite(ev.ts)&&ev.ts>=now&&/high|medium/i.test(ev.impact||'')&&(ev.country==='USD'||ev.country==='All'||/high/i.test(ev.impact)))
+    .sort((a,b)=>a.ts-b.ts).slice(0,25);
+}
 function upcomingImpactEvents(){
   const displayed=calendarCache||calendarDisplay;
   if(!displayed)return null;
@@ -6039,7 +6048,18 @@ function renderAnalysis(){
       html+=`<div class="impact-row" style="flex-wrap:wrap"><span class="impact-dot ${dot}"></span><span style="flex:1;min-width:120px">${ev.title||ev.event||'Event'} <span style="color:var(--dim)">(${ev.country||''})</span></span><span style="color:var(--dim)">${when}</span>${hintChip}</div>`;
     });
     html+=`<div style="font-size:9.5px;color:var(--dim);margin-top:4px">Bias hint = general historical tendency for that indicator's own currency if it beats forecast — the event hasn't happened yet, so this isn't a live reading. XAU/XAG usually move opposite to USD strength.</div>`;
-  }else html+=`<span style="color:var(--dim)">No more high/medium impact events this calendar week. The provider publishes next week's schedule on Sunday.</span>`;
+  }else{
+    const preview=nextWeekImpactEvents();
+    if(preview.length){
+      html+=`<span style="color:var(--dim)">No more high/medium impact events this week. Next week's published schedule:</span>`;
+      preview.forEach(ev=>{
+        const dot=/high/i.test(ev.impact)?'high':'med';
+        const when=new Date(ev.ts).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',weekday:'short',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+        html+=`<div class="impact-row" style="flex-wrap:wrap"><span class="impact-dot ${dot}"></span><span style="flex:1;min-width:120px">${basketTxt(ev.title)} <span style="color:var(--dim)">(${basketTxt(ev.country)})</span></span><span style="color:var(--dim)">${when} IST</span></div>`;
+      });
+      html+=`<div style="font-size:9.5px;color:var(--dim);margin-top:4px">Preview only: times and forecasts can change before the week starts. News-risk checks switch to it when the new week begins.</div>`;
+    }else html+=`<span style="color:var(--dim)">No more high/medium impact events this week. Next week's schedule appears here once the provider publishes it (usually by the weekend).</span>`;
+  }
   // Always-works fallback: opens forexfactory.com's own calendar directly, regardless of
   // whether the auto-fetch above succeeded — this link never depends on any of the feeds.
   html+=`<div style="margin-top:8px"><a href="https://www.forexfactory.com/calendar" target="_blank" rel="noopener" style="color:var(--acc2,#4fc3f7);font-size:11px;text-decoration:none">↗ Open full calendar on Forex Factory</a></div>`;
