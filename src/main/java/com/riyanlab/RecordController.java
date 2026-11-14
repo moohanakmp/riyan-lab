@@ -37,8 +37,9 @@ public class RecordController {
     private final JdbcTemplate jdbc;
     private final AuthService auth;
     private final PaperTradingService paper;
-    public RecordController(JdbcTemplate jdbc,AuthService auth,PaperTradingService paper) {
-        this.jdbc=jdbc;this.auth=auth;this.paper=paper;
+    private final BrokerMirrorService broker;
+    public RecordController(JdbcTemplate jdbc,AuthService auth,PaperTradingService paper,BrokerMirrorService broker) {
+        this.jdbc=jdbc;this.auth=auth;this.paper=paper;this.broker=broker;
     }
     private String table(String type) {
         String mapped=TABLES.get(type);
@@ -187,6 +188,8 @@ public class RecordController {
             previous.isEmpty()?null:previous.get(0),raw);
         auth.activity(identity.username(),previous.isEmpty()?"RECORD_CREATED":"RECORD_UPDATED",type,sourceId,
             "{\"role\":\""+identity.role()+"\"}");
+        // Admin-linked broker mirror (Broker tab). Runs after commit; never blocks or alters the paper ledger.
+        broker.afterSignalSaved(identity.username(),type,sourceId,previous.isEmpty()?null:previous.get(0),raw);
         return ResponseEntity.ok(Map.of("saved",true,"sourceId",sourceId));
     }
 
