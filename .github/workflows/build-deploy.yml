@@ -1,12 +1,34 @@
 name: Build and deploy Riyan Lab
 on:
   push:
-    branches: [main]
+    branches: [main, 'staging/backend-auth-20261016']
   pull_request:
-    branches: [main]
+    branches: [main, 'staging/backend-auth-20261016']
 jobs:
   build:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: neondb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d neondb"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: jdbc:postgresql://localhost:5432/neondb
+      DB_SCHEMA: riyan_lab_staging
+      APP_ENV: staging
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      RIYAN_BOOTSTRAP_ADMIN_USER: testadmin
+      RIYAN_BOOTSTRAP_ADMIN_PASSWORD: unit-test-password-1234
+      RIYAN_INTEGRATION_TEST: 'true'
+      BACKGROUND_SCANNER_ENABLED: 'false'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -18,6 +40,34 @@ jobs:
         run: mvn -B verify
       - name: Check frontend syntax
         run: node scripts/check-frontend.cjs
+      - name: Check sync IDs and Low Profit fallback
+        run: node scripts/check-sync-scalp.cjs
+      - name: Verify paper basket and replay
+        run: |
+          node --check src/main/resources/static/basket-demo.js
+          node --check src/main/resources/static/basket-replay.js
+          node scripts/check-basket.cjs
+          node scripts/check-trading.cjs
+          node scripts/check-btc-feed.cjs
+          node scripts/check-reference-feed.cjs
+          node scripts/check-public-market-fetch.cjs
+          node scripts/check-performance.cjs
+          node scripts/check-orbital-ui.cjs
+          node scripts/check-background.cjs
+          node scripts/check-engine-recovery.cjs
+          node scripts/check-app-regression.cjs
+          node scripts/check-calendar.cjs
+          node scripts/check-volume-trap.cjs
+          node scripts/check-structure.cjs
+          node scripts/check-break-retest.cjs
+          node scripts/check-setup-selection.cjs
+          node scripts/check-active-entry-state.cjs
+          node scripts/check-market-context.cjs
+          node scripts/check-entry-approval.cjs
+          node scripts/check-triggered-signals.cjs
+          node scripts/check-telegram.cjs
+          node --check src/main/resources/static/live-volume.js
+          node scripts/check-live-ux.cjs
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build
