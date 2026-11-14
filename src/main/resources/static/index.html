@@ -6027,7 +6027,7 @@ function renderAnalysis(){
   html+=`</div></div>`;
 
   html+=`<div class="ic"><div class="it">🚨 High-Impact Events (current calendar week)</div><div class="ib" id="calBody">`;
-  if(calendarHealth?.displayStale)html+=`<p class="sc-note">Last saved schedule · checked ${new Date(calendarHealth.fetchedAt).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})} IST. Provider refresh delayed; event times/forecasts may change. Low Profit operates independently.</p>`;
+  if(calendarHealth?.displayStale)html+=`<p class="sc-note">Last saved schedule · checked ${new Date(calendarHealth.fetchedAt).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})} IST. Refreshing now (the server was asleep or the provider is briefly unavailable); this updates automatically. Low Profit operates independently.</p>`;
   if(analysisLoading[sym])html+=`<span style="color:var(--dim)">Loading calendar...</span>`;
   else if(events===null)html+=`<span style="color:var(--dim)">Auto calendar unavailable on this network right now.${feedError.calendar?`<br><span style="font-size:8.5px">(${feedError.calendar})</span>`:''}</span>`;
   else if(events.length){
@@ -6039,7 +6039,7 @@ function renderAnalysis(){
       html+=`<div class="impact-row" style="flex-wrap:wrap"><span class="impact-dot ${dot}"></span><span style="flex:1;min-width:120px">${ev.title||ev.event||'Event'} <span style="color:var(--dim)">(${ev.country||''})</span></span><span style="color:var(--dim)">${when}</span>${hintChip}</div>`;
     });
     html+=`<div style="font-size:9.5px;color:var(--dim);margin-top:4px">Bias hint = general historical tendency for that indicator's own currency if it beats forecast — the event hasn't happened yet, so this isn't a live reading. XAU/XAG usually move opposite to USD strength.</div>`;
-  }else html+=`<span style="color:var(--dim)">No high/medium impact events in the next 7 days.</span>`;
+  }else html+=`<span style="color:var(--dim)">No more high/medium impact events this calendar week. The provider publishes next week's schedule on Sunday.</span>`;
   // Always-works fallback: opens forexfactory.com's own calendar directly, regardless of
   // whether the auto-fetch above succeeded — this link never depends on any of the feeds.
   html+=`<div style="margin-top:8px"><a href="https://www.forexfactory.com/calendar" target="_blank" rel="noopener" style="color:var(--acc2,#4fc3f7);font-size:11px;text-decoration:none">↗ Open full calendar on Forex Factory</a></div>`;
