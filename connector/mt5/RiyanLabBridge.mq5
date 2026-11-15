@@ -14,7 +14,7 @@
 //| Caps every order at MaxLotHardCap and checks slippage first.     |
 //+------------------------------------------------------------------+
 #property copyright "Riyan Lab"
-#property version   "1.00"
+#property version   "1.10"
 #property strict
 
 #include <Trade/Trade.mqh>
@@ -30,7 +30,7 @@ input long   MagicNumber      = 260301;  // Identifies Riyan Lab positions
 input int    HttpTimeoutMs    = 8000;    // Render free tier may need a cold start; failed polls simply retry
 
 CTrade trade;
-const string EA_VERSION = "RiyanLabBridge/1.00";
+const string EA_VERSION = "RiyanLabBridge/1.10";
 datetime lastHaltLog = 0;
 
 //+------------------------------------------------------------------+
@@ -211,6 +211,21 @@ ulong FindPositionByComment(string clientId)
    return 0;
 }
 
+// One symbol's readiness for the link test: exists, trading enabled, live price, volume limits.
+string RiyanSymbolCheck(string sym)
+{
+   if(!SymbolSelect(sym, true)) return sym + "=MISSING(check name/suffix in Broker tab)";
+   long tm = SymbolInfoInteger(sym, SYMBOL_TRADE_MODE);
+   if(tm == SYMBOL_TRADE_MODE_DISABLED) return sym + "=TRADING_DISABLED";
+   if(tm == SYMBOL_TRADE_MODE_CLOSEONLY) return sym + "=CLOSE_ONLY";
+   MqlTick tick;
+   if(!SymbolInfoTick(sym, tick) || tick.bid <= 0) return sym + "=NO_PRICE";
+   int digits = (int)SymbolInfoInteger(sym, SYMBOL_DIGITS);
+   string age = TimeCurrent() - tick.time > 300 ? "(stale/market closed)" : "";
+   return StringFormat("%s=OK%s bid=%s ask=%s minLot=%.2f", sym, age, DoubleToString(tick.bid, digits), DoubleToString(tick.ask, digits),
+          SymbolInfoDouble(sym, SYMBOL_VOLUME_MIN));
+}
+
 // f: CMD|id|clientId|action|symbol|side|volume|sl|tp|entryRef|maxSlipPct|parentTicket|END
 void Execute(string &f[])
 {
@@ -221,9 +236,17 @@ void Execute(string &f[])
 
    if(action == "PING")
    {
-      Report(clientId, "DONE", "", 0, 0, 0, StringFormat("login=%I64d server=%s mode=%s balance=%.2f equity=%.2f %s",
+      string msg = StringFormat("login=%I64d server=%s mode=%s balance=%.2f equity=%.2f %s",
              AccountInfoInteger(ACCOUNT_LOGIN), AccountInfoString(ACCOUNT_SERVER), AccountMode(),
-             AccountInfoDouble(ACCOUNT_BALANCE), AccountInfoDouble(ACCOUNT_EQUITY), AccountInfoString(ACCOUNT_CURRENCY)));
+             AccountInfoDouble(ACCOUNT_BALANCE), AccountInfoDouble(ACCOUNT_EQUITY), AccountInfoString(ACCOUNT_CURRENCY));
+      bool allOk = true;
+      if(StringLen(symbol) > 0)
+      {
+         string syms[]; int ns = StringSplit(symbol, ',', syms);
+         for(int i = 0; i < ns; i++) { string r = RiyanSymbolCheck(syms[i]); if(StringFind(r, "=OK") < 0) allOk = false; msg += " " + r; }
+      }
+      // DONE means the terminal answered; the symbol results are in the message.
+      Report(clientId, "DONE", "", 0, 0, 0, (allOk ? "ALL SYMBOLS OK " : "SYMBOL PROBLEM ") + msg);
       return;
    }
    if(!SafeAccount(false)) { Report(clientId, "REJECTED", "", 0, 0, 0, "EA safety refused this account"); return; }

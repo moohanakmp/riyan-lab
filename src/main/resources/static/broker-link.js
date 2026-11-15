@@ -48,7 +48,7 @@
         Last seen ${when(a.connector_last_seen)} · Today closed P&amp;L ${num(view.todayClosedUsd)} USD · Orders today ${num(view.ordersToday)}
       </div>
       <button class="login-btn" style="margin-top:10px;background:${a.kill_switch?'var(--grn)':'var(--red)'}" onclick="brokerKill(${!a.kill_switch})">${a.kill_switch?'Release kill switch':'⛔ Kill switch: stop new entries'}</button>
-      <button class="login-btn" style="margin-top:8px;background:var(--sur);color:var(--txt);border:1px solid var(--bdr);box-shadow:none" onclick="brokerPing()">Test link (EA echoes account details)</button>
+      <button class="login-btn" style="margin-top:8px;background:var(--sur);color:var(--txt);border:1px solid var(--bdr);box-shadow:none" onclick="brokerPing()">Test link (account + all 3 symbols)</button>
     </div>`;
     // Settings
     html+=`<div class="ic"><div class="it">⚙️ Account &amp; limits</div>
@@ -148,7 +148,7 @@
   };
   window.brokerCopy=()=>{try{navigator.clipboard.writeText(brokerToken);toast('Token copied','var(--grn)');}catch(e){toast('Copy failed; select the text manually','var(--red)');}};
   window.brokerKill=on=>act(()=>api('/api/v1/broker/kill-switch',{method:'POST',body:JSON.stringify({on})}),on?'Kill switch ON':'Kill switch released');
-  window.brokerPing=()=>act(()=>api('/api/v1/broker/ping',{method:'POST'}),'Link test queued; the EA answers on its next poll');
+  window.brokerPing=()=>act(()=>api('/api/v1/broker/ping',{method:'POST'}),'Link test queued; the EA checks the account and each symbol on its next poll');
   window.brokerLive=confirm=>act(()=>api('/api/v1/broker/live-confirmation',{method:'POST',body:JSON.stringify({confirm,accountLogin:val('bkLiveLogin')})}),
     confirm?'Real-money mirroring confirmed':'Live confirmation revoked');
   window.brokerEvents=id=>{brokerSelected=brokerSelected===id?null:id;const box=document.getElementById('bkEv'+id);if(box&&!brokerSelected){box.innerHTML='';return;}loadEvents(id);};
