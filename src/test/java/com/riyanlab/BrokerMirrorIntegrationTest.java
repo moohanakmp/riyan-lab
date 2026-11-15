@@ -104,6 +104,13 @@ class BrokerMirrorIntegrationTest {
         String idle=poll(token,demo);
         assertTrue(idle.startsWith("IDLE|"),idle);
         assertFalse(idle.contains("CMD|"));
+        // Link test carries every mapped symbol so the EA checks all three in one tap (also works in dry-run).
+        String ping=mapper.readTree(mvc.perform(post("/api/v1/broker/ping").cookie(admin.cookies).header("X-CSRF-Token",admin.csrf))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("clientOrderId").asText();
+        String pingCmd=poll(token,demo);
+        assertTrue(pingCmd.contains("|"+ping+"|PING|XAUUSD,XAGUSD,BTCUSD|"),pingCmd);
+        report(token,Map.of("clientId",ping,"status","DONE","message","ALL SYMBOLS OK XAUUSD=OK bid=1 XAGUSD=OK bid=1 BTCUSD=OK bid=1"));
+        assertEquals("DONE",jdbc.queryForObject("SELECT state FROM broker_orders WHERE client_order_id=?",String.class,ping));
 
         // 2) Execute on demo: queued, dispatched only to the matching terminal.
         mvc.perform(put("/api/v1/broker/account").cookie(admin.cookies).header("X-CSRF-Token",admin.csrf).contentType(MediaType.APPLICATION_JSON)

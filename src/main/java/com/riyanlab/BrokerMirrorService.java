@@ -283,7 +283,7 @@ public class BrokerMirrorService {
             var o=rows.getFirst();long oid=num(o,"id").longValue();String action=(String)o.get("action"),state=(String)o.get("state");
             var raw=new LinkedHashMap<String,Object>();
             for(String k:List.of("status","ticket","price","volume","retcode","message","time","login","balance","equity"))
-                if(p.containsKey(k))raw.put(k,clip(p.get(k),200));
+                if(p.containsKey(k))raw.put(k,clip(p.get(k),"message".equals(k)?500:200));
             event(oid,accountId,"BROKER_REPORT","connector",raw);
             if(!Set.of("DISPATCHED","UNKNOWN").contains(state))return "OK|ignored "+state+"\n";
             String retcode=clip(p.get("retcode"),20),message=clip(p.get("message"),500);
@@ -422,9 +422,15 @@ public class BrokerMirrorService {
     public Map<String,Object> ping(String owner) {
         return tx.execute(s->{
             long id=accountId(owner);
+            var acct=jdbc.queryForList("SELECT * FROM broker_accounts WHERE id=?",id).getFirst();
+            // The EA checks each mapped symbol (exists, tradable, live price) and echoes the result.
+            List<String> symbols=new ArrayList<>();
+            for(String sym:List.of("XAUUSD","XAGUSD","BTCUSD"))if(allowedSymbols(acct).contains(sym))symbols.add(mapSymbol(acct,sym));
+            String list=String.join(",",symbols);
             long oid=jdbc.queryForObject("SELECT nextval(pg_get_serial_sequence('broker_orders','id'))",Long.class);
-            jdbc.update("INSERT INTO broker_orders(id,account_id,client_order_id,action,state,state_reason) VALUES(?,?,?,'PING','QUEUED','Link test requested')",oid,id,"RL-"+oid);
-            event(oid,id,"PING_QUEUED",owner,Map.of());
+            jdbc.update("INSERT INTO broker_orders(id,account_id,client_order_id,action,broker_symbol,state,state_reason) VALUES(?,?,?,'PING',?,'QUEUED','Link test requested')",
+                oid,id,"RL-"+oid,list.isEmpty()?null:list);
+            event(oid,id,"PING_QUEUED",owner,Map.of("symbols",list));
             return Map.of("clientOrderId","RL-"+oid);
         });
     }

@@ -57,7 +57,10 @@ The broker-side SL and final TP stay on the position as a backstop if the app is
    3. Log in to the demo account, open any chart, drag **RiyanLabBridge** onto it. Inputs: `ServerUrl`,
       `ConnectorToken`, `ExpectedLogin`; leave `AllowRealAccount=false`, `MaxLotHardCap=0.01`.
 4. Broker tab should show **EA online** and the demo account details. Tap **Test link**; the order list shows a
-   PING with state DONE and the account echo in its events.
+   PING with state DONE. Its message starts with `ALL SYMBOLS OK` or `SYMBOL PROBLEM` and lists each symbol:
+   `XAUUSD=OK bid=… ask=… minLot=…`, or `MISSING` (wrong name/suffix: fix the broker symbol box), `TRADING_DISABLED`,
+   `CLOSE_ONLY`, `NO_PRICE`, or `OK(stale/market closed)` at weekends.
+   Run **one** EA on **one** chart; it trades all three symbols. Do not attach it to each symbol's chart.
 5. Watch dry-run rows appear as the app gives entries. When satisfied, switch Mode to **Execute** (still demo).
    Each filled order shows the broker ticket and fill price; check them against the MT5 Trade/History tab.
 
