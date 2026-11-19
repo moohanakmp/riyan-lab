@@ -4,13 +4,14 @@
 // Gold/silver: OKX XAU/XAG-USDT perpetual (public WebSocket, no key).
 // Bitcoin: Coinbase Exchange BTC-USD matches (public WebSocket, no key).
 var LiveVolume = (() => {
+  const OF=typeof OrderFlow!=='undefined'?OrderFlow:require('./order-flow.js');
   const OKX_INST={XAUUSD:'XAU-USDT-SWAP',XAGUSD:'XAG-USDT-SWAP'};
   const STALE_MS=20000,FLOW_WINDOW_MS=5*60000,MAX_TRADES=4000;
   let socket=null,businessSocket=null,current=null,retryTimer=null,retries=0,pingTimer=null;
   const states=new Map();
   function blank(sym){
     return {sym,status:'idle',error:'',source:sym==='BTCUSD'?'Coinbase BTC/USD trades (live)':'OKX '+sym.slice(0,3)+'/USDT perp (live)',
-      forming:null,closed:[],trades:[],updatedAt:0,connectedAt:0};
+      forming:null,closed:[],trades:[],updatedAt:0,connectedAt:0,fp:OF.book(),ctVal:sym==='BTCUSD'?1:null};
   }
   function state(sym){if(!states.has(sym))states.set(sym,blank(sym));return states.get(sym);}
   function num(v){const n=Number(v);return Number.isFinite(n)?n:NaN;}
@@ -19,11 +20,14 @@ var LiveVolume = (() => {
     if(!Array.isArray(row)||row.length<9)return null;
     const k={t:num(row[0]),ms:60000,o:num(row[1]),h:num(row[2]),l:num(row[3]),c:num(row[4]),v:num(row[6]),complete:String(row[8])==='1'};
     if(![k.t,k.o,k.h,k.l,k.c,k.v].every(Number.isFinite)||k.t%60000!==0||k.l<=0||k.h<k.l||k.o<k.l||k.o>k.h||k.c<k.l||k.c>k.h||k.v<0)return null;
+    // Contract size = base units / contracts; trades arrive in contracts.
+    const contracts=num(row[5]);if(contracts>0&&k.v>0)k.ctVal=Number((k.v/contracts).toPrecision(6));
     return k;
   }
   // Taker side gives real buy/sell aggression for these venues (not an estimate from candle shape).
-  function addTrade(s,t,size,takerBuy){
+  function addTrade(s,t,size,takerBuy,price){
     if(!Number.isFinite(t)||!Number.isFinite(size)||size<=0)return;
+    if(price>0)OF.add(s.fp,t,price,size,!!takerBuy);
     s.trades.push({t,size,buy:!!takerBuy});
     if(s.trades.length>MAX_TRADES)s.trades.splice(0,s.trades.length-MAX_TRADES);
   }
@@ -31,7 +35,7 @@ var LiveVolume = (() => {
     const t=Date.parse(m.time),price=num(m.price),size=num(m.size);
     if(!Number.isFinite(t)||!(price>0)||!(size>0))return;
     // Coinbase "side" is the maker order side; a sell maker means the taker bought.
-    addTrade(s,t,size,m.side==='sell');
+    addTrade(s,t,size,m.side==='sell',price);
     const start=Math.floor(t/60000)*60000;
     if(!s.forming||s.forming.t!==start){
       if(s.forming&&s.forming.t<start){s.closed.push({...s.forming,complete:true,partial:s.forming.partial});if(s.closed.length>60)s.closed.shift();}
@@ -48,6 +52,7 @@ var LiveVolume = (() => {
     return total>0?{buyPct:buy/total*100,sellPct:100-buy/total*100,count:recent.length,windowMs:covered}:null;
   }
   function stopSockets(){
+    if(current)OF.offline(state(current).fp,Date.now());
     clearTimeout(retryTimer);clearInterval(pingTimer);retryTimer=null;pingTimer=null;
     for(const ws of [socket,businessSocket])if(ws){ws.onclose=null;ws.onerror=null;ws.onmessage=null;try{ws.close();}catch(e){}}
     socket=null;businessSocket=null;
@@ -72,20 +77,21 @@ var LiveVolume = (() => {
     try{
       if(sym==='BTCUSD'){
         socket=open('wss://ws-feed.exchange.coinbase.com',sym,ws=>ws.send(JSON.stringify({type:'subscribe',product_ids:['BTC-USD'],channels:['matches']})),
-          msg=>{if(msg.type==='match'&&msg.product_id==='BTC-USD')addMatch(s,msg);else if(msg.type==='error'){s.error=String(msg.message||'Stream error').slice(0,120);}});
+          msg=>{if(msg.type==='subscriptions')OF.online(s.fp,Date.now());if(msg.type==='match'&&msg.product_id==='BTC-USD')addMatch(s,msg);else if(msg.type==='error'){s.error=String(msg.message||'Stream error').slice(0,120);}});
       }else{
         const inst=OKX_INST[sym];
         businessSocket=open('wss://ws.okx.com:8443/ws/v5/business',sym,ws=>ws.send(JSON.stringify({op:'subscribe',args:[{channel:'candle1m',instId:inst}]})),
           msg=>{
             if(msg.event==='error'){s.error=String(msg.msg||'Stream error').slice(0,120);return;}
             if(msg.arg?.channel!=='candle1m'||!Array.isArray(msg.data))return;
-            for(const row of msg.data){const k=okxCandle(row);if(!k)continue;
+            for(const row of msg.data){const k=okxCandle(row);if(!k)continue;if(k.ctVal>0)s.ctVal=k.ctVal;
               if(k.complete){if(!s.closed.length||s.closed.at(-1).t<k.t){s.closed.push(k);if(s.closed.length>60)s.closed.shift();}if(s.forming?.t===k.t)s.forming=null;}
               else s.forming=k;
               s.updatedAt=Date.now();}
           });
         socket=open('wss://ws.okx.com:8443/ws/v5/public',sym,ws=>ws.send(JSON.stringify({op:'subscribe',args:[{channel:'trades',instId:inst}]})),
-          msg=>{if(msg.arg?.channel!=='trades'||!Array.isArray(msg.data))return;for(const x of msg.data)addTrade(s,num(x.ts),num(x.sz),x.side==='buy');s.updatedAt=Date.now();});
+          msg=>{if(msg.event==='subscribe'&&msg.arg?.channel==='trades'){OF.online(s.fp,Date.now());return;}
+            if(msg.arg?.channel!=='trades'||!Array.isArray(msg.data))return;for(const x of msg.data)addTrade(s,num(x.ts),num(x.sz),x.side==='buy',num(x.px));s.updatedAt=Date.now();});
         // OKX closes idle connections after 30s without traffic.
         pingTimer=setInterval(()=>{for(const ws of [socket,businessSocket])try{if(ws?.readyState===1)ws.send('ping');}catch(e){}},20000);
       }
@@ -96,12 +102,18 @@ var LiveVolume = (() => {
     if(current===sym&&(socket||businessSocket||retryTimer))return;
     current=sym;retries=0;connect(sym);
   }
-  function stop(){current=null;stopSockets();}
+  function stop(){stopSockets();current=null;}
+  // Footprint candles in display units (base units once the contract size is known).
+  function footprint(sym,tfMs=60000,now=Date.now(),limit=12){
+    const s=state(sym),rows=OF.candles(s.fp,tfMs,now,limit),scale=s.ctVal>0?s.ctVal:1;
+    const unit=sym==='BTCUSD'?'BTC':s.ctVal>0?sym.slice(0,3)+' units':'contracts';
+    return {rows,scale,unit,status:s.status,since:s.connectedAt};
+  }
   function snapshot(sym,now=Date.now()){
     const s=state(sym),fresh=s.updatedAt>0&&now-s.updatedAt<STALE_MS;
     return {sym,status:s.status==='live'&&!fresh&&s.updatedAt>0?'quiet':s.status,error:s.error,source:s.source,
-      forming:s.forming&&now-s.forming.t<120000?{...s.forming}:null,closed:s.closed.slice(-30),flow:flow(sym,now),updatedAt:s.updatedAt,fresh};
+      forming:s.forming&&now-s.forming.t<120000?{...s.forming}:null,closed:s.closed.slice(-30).map(k=>sym==='BTCUSD'?{...k,partial:!!k.partial||OF.partial(s.fp,k.t,60000)}:k),flow:flow(sym,now),updatedAt:s.updatedAt,fresh};
   }
-  return {start,stop,snapshot,_test:{okxCandle,addMatch,addTrade,flow,state,blank,states}};
+  return {start,stop,snapshot,footprint,_test:{okxCandle,addMatch,addTrade,flow,state,blank,states}};
 })();
 if(typeof module!=='undefined')module.exports=LiveVolume;
