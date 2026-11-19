@@ -253,7 +253,7 @@ body[data-workspace-tab=chart] #orbitalWorkspace{display:none}
 .fp-card{border-color:#2f6db5!important}
 .fp-tf{display:flex;gap:4px}.fp-tf .qa{padding:3px 10px;font-size:11px}
 .fp-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:8px 0;padding-bottom:4px}
-.fp-scroll svg{display:block;max-width:none}
+.fp-scroll svg.fp-svg{display:block;width:auto;max-width:none;min-width:0;height:auto;margin-left:auto}
 .fp-state{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin:8px 0;padding:8px 10px;border-radius:9px;border:1px solid #2a3a55;font-size:12px;line-height:1.45}
 .fp-state>span:not(.fp-badge){flex-basis:100%}
 .fp-badge{font-size:10px;font-weight:800;letter-spacing:.06em;padding:3px 8px;border-radius:6px;background:#334155;color:#fff;text-transform:uppercase}
