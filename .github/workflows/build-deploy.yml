@@ -68,6 +68,7 @@ jobs:
           node scripts/check-telegram.cjs
           node --check src/main/resources/static/live-volume.js
           node scripts/check-live-ux.cjs
+          node scripts/check-order-flow.cjs
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build

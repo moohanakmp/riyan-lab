@@ -58,7 +58,7 @@ function sample(){
  const render=extract('renderVolumeTrap');assert(render.includes('basketTxt(st.feedSource'));assert(!render.includes('scalpOpen('));
  // Display timeframe selection must not mutate or submit entries, and minute requests coalesce.
  let resolveMinute,calls=0,renders=0;
- Object.assign(ctx,{SYMS:['XAUUSD','XAGUSD','BTCUSD'],fetchOkxMetal:async(sym,tf,n)=>{calls++;assert.equal(tf,'1m');assert.equal(n,180);await new Promise(r=>resolveMinute=r);return Array.from({length:60},(_,i)=>({t:Math.floor(Date.now()/60000)*60000-(60-i)*60000,ms:60000,o:100,h:102,l:99,c:101,v:100}));},renderVolumeTrap:()=>renders++});
+ Object.assign(ctx,{SYMS:['XAUUSD','XAGUSD','BTCUSD'],fetchOkxMetal:async(sym,tf,n)=>{calls++;assert.equal(tf,'1m');assert.equal(n,180);await new Promise(r=>resolveMinute=r);return Array.from({length:60},(_,i)=>({t:Math.floor(Date.now()/60000)*60000-(60-i)*60000,ms:60000,o:100,h:102,l:99,c:101,v:100}));},renderVolumeTrap:()=>renders++,renderVolumeTrapFootprint:()=>{}});
  vm.runInContext("let volumeTrapSym='XAUUSD',volumeTrapTf='5m';const volumeTrapMinuteCache=new Map();"+extract('volumeTrapTimeframe')+extract('volumeTrapLoadMinute'),ctx);
  ctx.volumeTrapTimeframe('1m');assert.equal(vm.runInContext('volumeTrapTf',ctx),'1m');ctx.volumeTrapTimeframe('15m');assert.equal(vm.runInContext('volumeTrapTf',ctx),'1m');
  const pending=ctx.volumeTrapLoadMinute('XAUUSD');await ctx.volumeTrapLoadMinute('XAUUSD');assert.equal(calls,1);resolveMinute();await pending;await ctx.volumeTrapLoadMinute('XAUUSD');assert.equal(calls,1);assert.equal(vm.runInContext("volumeTrapMinuteCache.get('XAUUSD').bars.length",ctx),60);
