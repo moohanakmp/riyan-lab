@@ -16,7 +16,7 @@ let q=ctx.signalQuality(btc,'BTCUSD');
 assert.equal(q.score,49);assert.equal(q.setupScore,95);assert.equal(q.label,'BLOCKED · NO CHASE');assert.notEqual(q.label,'A+ CLEAN');
 assert.equal(q.block.reason,'ext label');assert.equal(q.chips.find(c=>c[0]==='NO CHASE')[1],'bad');
 let meter=ctx.qualityMeterHtml(btc,'BTCUSD');
-assert(meter.includes('49/100')&&meter.includes('blocked by NO CHASE')&&meter.includes('score 95/100')&&meter.includes('Waiting for:'));
+assert(meter.includes('49/100')&&meter.includes('blocked by NO CHASE')&&meter.includes('score 95/100')&&meter.includes('Next:'));
 assert.equal(ctx.qualityCountsText(btc,'BTCUSD'),'7/8 setup factors · 11/12 safety gates passed');
 // XAU: 1H BULL vs 4H BEAR, no direction, so no factors and score 0.
 const xau={state:'WAIT',score:9,total:12,smart:{dir:null,score:0,tier:null,gatesOk:false,gates:gates(['htf','value','trigger']),factors:[]}};
@@ -26,7 +26,7 @@ assert.equal(ctx.qualityCountsText(xau,'XAUUSD'),'9/12 safety gates passed · se
 // XAG: quote missing keeps every gate chip and adds LIVE PRICE as a blocker.
 const xag={state:'WAIT',quoteUnavailable:true,score:9,total:12,smart:{dir:null,score:0,tier:null,gatesOk:false,gates:gates(['htf','value','trigger']),factors:[]}};
 q=ctx.signalQuality(xag,'XAGUSD');assert.equal(q.chips.length,14);assert.equal(q.chips.find(c=>c[0]==='LIVE PRICE')[1],'bad');
-assert.match(q.label,/^BLOCKED · LIVE PRICE, HTF/);assert.equal(q.gatesOk,false);
+assert.match(q.label,/^BLOCKED · LIVE PRICE, HTF/);assert.equal(ctx.qualityCountsText(xag,'XAGUSD'),'9/12 safety gates passed · setup not scored (no direction)','live price is a blocker, not a 13th gate');assert.equal(q.gatesOk,false);
 // A fully passed HIGH setup is unchanged.
 const ok={state:'BUY',score:8,total:8,smart:{dir:'BUY',score:88,tier:'HIGH',gatesOk:true,gates:gates([]),factors}};
 q=ctx.signalQuality(ok,'XAUUSD');assert.equal(q.score,88);assert.equal(q.label,'A+ CLEAN');assert.equal(q.block,null);
