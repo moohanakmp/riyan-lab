@@ -38,7 +38,7 @@ public class BackgroundFeeds {
                 ObjectNode instrument=(ObjectNode)out.get(sym);
                 quotes.put(sym,pool.submit(()->refreshQuote(sym,instrument)));
             }
-            quotes.forEach((sym,f)->{try{f.get(12,TimeUnit.SECONDS);}catch(Exception e){f.cancel(true);((ObjectNode)out.get(sym)).put("quoteError","Quote request timed out");}});
+            quotes.forEach((sym,f)->{try{f.get(30,TimeUnit.SECONDS);}catch(Exception e){f.cancel(true);((ObjectNode)out.get(sym)).put("quoteError","Quote request timed out");}});
         }
         return out;
     }
@@ -78,9 +78,26 @@ public class BackgroundFeeds {
     void refreshQuote(String sym,ObjectNode out){
         boolean btc=sym.equals("BTCUSD");
         try{
-            var q=get(btc?"https://api.exchange.coinbase.com/products/BTC-USD/ticker":"https://api.gold-api.com/price/"+(sym.equals("XAUUSD")?"XAU":"XAG"));
-            double price=q.path("price").asDouble(Double.NaN);long now=System.currentTimeMillis();
+            String url=btc?"https://api.exchange.coinbase.com/products/BTC-USD/ticker":"https://api.gold-api.com/price/"+(sym.equals("XAUUSD")?"XAU":"XAG");
+            var q=get(url);
+            double price=q.path("price").asDouble(Double.NaN);long now=clock();
             long at=btc?Instant.parse(q.path("time").asText()).toEpochMilli():metalQuoteTime(q,sym,now);
+            // gold-api publishes a new metal price about every 30 s and quotes are fresh for
+            // <30 s (unchanged). A quote fetched late in that cycle expired before the per-user
+            // scans ran, so the scanner reported "Fresh quote unavailable". When little time is
+            // left, wait for the next publish and fetch once more; keep the newer valid quote.
+            if(!btc&&now-at>=METAL_REFRESH_AFTER_MS){
+                long wait=Math.max(3500,at+31500-now);
+                if(wait<=METAL_MAX_WAIT_MS){
+                    pause(wait);
+                    try{
+                        var next=get(url);double nextPrice=next.path("price").asDouble(Double.NaN);
+                        long nextAt=metalQuoteTime(next,sym,clock());
+                        if(nextAt>at&&Double.isFinite(nextPrice)&&nextPrice>0){q=next;price=nextPrice;at=nextAt;}
+                    }catch(Exception ignored){/* keep the first quote; the 30 s gate below still applies */}
+                    now=clock();
+                }
+            }
             if(!Double.isFinite(price)||price<=0||now-at>=30000||at>now+5000)throw new IllegalStateException("Quote stale or invalid");
             out.put("price",price).put("quoteAt",at);
             if(!btc){
@@ -91,8 +108,11 @@ public class BackgroundFeeds {
                     else for(var k:five)for(String key:List.of("o","h","l","c"))((ObjectNode)k).put(key,k.path(key).asDouble()*ratio);
                 }
             }
-        }catch(Exception e){out.remove(List.of("price","quoteAt"));out.put("quoteError",safeError(e));}
+        }catch(Exception e){if(e instanceof InterruptedException)Thread.currentThread().interrupt();out.remove(List.of("price","quoteAt"));out.put("quoteError",safeError(e));}
     }
+    static final long METAL_REFRESH_AFTER_MS=20000,METAL_MAX_WAIT_MS=12000;
+    long clock(){return System.currentTimeMillis();}
+    void pause(long ms)throws InterruptedException{Thread.sleep(ms);}
     private String safeError(Exception e){return e.getMessage()==null?"Market data unavailable":e.getMessage().substring(0,Math.min(240,e.getMessage().length()));}
     static long metalQuoteTime(JsonNode quote,String symbol,long now){
         String code=symbol.equals("XAUUSD")?"XAU":"XAG";

@@ -77,4 +77,36 @@ class BackgroundFeedsTest {
   q.put("updatedAt",java.time.Instant.ofEpochMilli(now-30000).toString());assertThrows(RuntimeException.class,()->BackgroundFeeds.metalQuoteTime(q,"XAUUSD",now));
   q.put("updatedAt",java.time.Instant.ofEpochMilli(now+1000).toString());assertThrows(RuntimeException.class,()->BackgroundFeeds.metalQuoteTime(q,"XAUUSD",now));
  }
+
+ private BackgroundFeeds timedFeeds(MarketDataController market,long[] clock,java.util.List<Long> pauses){
+  return new BackgroundFeeds(market,json){
+   @Override long clock(){return clock[0];}
+   @Override void pause(long ms){pauses.add(ms);clock[0]+=ms;}
+  };
+ }
+ private org.springframework.http.ResponseEntity<String> metal(String code,double price,long at){
+  return org.springframework.http.ResponseEntity.ok("{\"symbol\":\""+code+"\",\"currency\":\"USD\",\"price\":"+price+",\"updatedAt\":\""+java.time.Instant.ofEpochMilli(at)+"\"}");
+ }
+ @Test void lateMetalQuoteWaitsForNextPublishAndKeepsTheNewerOne(){
+  long t0=java.time.Instant.parse("2026-11-24T09:23:43Z").toEpochMilli();long[] clock={t0+26000};var pauses=new java.util.ArrayList<Long>();
+  var market=mock(MarketDataController.class);
+  when(market.publicData(anyString())).thenReturn(metal("XAG",41.69,t0),metal("XAG",41.81,t0+30000));
+  var out=json.createObjectNode();timedFeeds(market,clock,pauses).refreshQuote("XAGUSD",out);
+  assertEquals(java.util.List.of(5500L),pauses);assertEquals(41.81,out.path("price").asDouble());assertEquals(t0+30000,out.path("quoteAt").asLong());
+  assertTrue(clock[0]-out.path("quoteAt").asLong()<5000,"new quote has most of its 30 s left");
+ }
+ @Test void earlyMetalQuoteIsUsedWithoutWaiting(){
+  long t0=java.time.Instant.parse("2026-11-24T09:23:43Z").toEpochMilli();long[] clock={t0+4000};var pauses=new java.util.ArrayList<Long>();
+  var market=mock(MarketDataController.class);when(market.publicData(anyString())).thenReturn(metal("XAU",3614.75,t0));
+  var out=json.createObjectNode();timedFeeds(market,clock,pauses).refreshQuote("XAUUSD",out);
+  assertTrue(pauses.isEmpty());assertEquals(3614.75,out.path("price").asDouble());verify(market,times(1)).publicData(anyString());
+ }
+ @Test void latePublishStillHonoursTheThirtySecondGate(){
+  long t0=java.time.Instant.parse("2026-11-24T09:23:43Z").toEpochMilli();long[] clock={t0+28000};var pauses=new java.util.ArrayList<Long>();
+  var market=mock(MarketDataController.class);
+  // Provider did not publish on time: the second fetch returns the same, now expired, quote.
+  when(market.publicData(anyString())).thenReturn(metal("XAG",41.69,t0),metal("XAG",41.69,t0));
+  var out=json.createObjectNode().put("price",1).put("quoteAt",1);timedFeeds(market,clock,pauses).refreshQuote("XAGUSD",out);
+  assertEquals(java.util.List.of(3500L),pauses);assertFalse(out.has("price"));assertTrue(out.has("quoteError"));
+ }
 }
