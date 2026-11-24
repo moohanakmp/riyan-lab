@@ -29,6 +29,7 @@ jobs:
       RIYAN_BOOTSTRAP_ADMIN_PASSWORD: unit-test-password-1234
       RIYAN_INTEGRATION_TEST: 'true'
       BACKGROUND_SCANNER_ENABLED: 'false'
+      ORDER_FLOW_ENABLED: 'false'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
