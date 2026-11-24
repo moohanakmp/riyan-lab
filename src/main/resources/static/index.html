@@ -1164,8 +1164,8 @@ body{background:
 <script src="/btc-feed.js?v=20261019-recovery"></script>
 <script src="/reference-feed.js?v=20261017-2"></script>
 <script src="/market-context.js?v=20261020-context"></script>
-<script src="/order-flow.js?v=20261119-footprint"></script>
-<script src="/live-volume.js?v=20261119-footprint"></script>
+<script src="/order-flow.js?v=20261124-bgflow"></script>
+<script src="/live-volume.js?v=20261124-bgflow"></script>
 <script src="/paper-engine.js?v=20261028-active-basket2"></script>
 <script src="/basket-demo.js?v=20261028-active-basket2"></script>
 
@@ -1862,9 +1862,12 @@ async function fetchMetalOHLC(sym){
   const tries=metalHistorySources(sym);
   for(const t of tries){
     try{
-      const c15=await t.fn('15m',CANDLE_LIMIT);if(!(c15?.length>50))continue;
+      // All three timeframes load together; 15m decides whether this source is usable.
+      const higherJob=Promise.allSettled([t.fn('1h',CANDLE_LIMIT),t.fn('4h',CANDLE_LIMIT)]);
+      let c15;try{c15=await t.fn('15m',CANDLE_LIMIT);}catch(e){await higherJob;throw e;}
+      if(!(c15?.length>50)){await higherJob;continue;}
       let c1h=null,c4h=null;
-      const higher=await Promise.allSettled([t.fn('1h',CANDLE_LIMIT),t.fn('4h',CANDLE_LIMIT)]);
+      const higher=await higherJob;
       if(higher[0].status==='fulfilled')c1h=higher[0].value;
       if(higher[1].status==='fulfilled')c4h=higher[1].value;
       metalRaw[sym]={'15m':c15,'1h':c1h?.length>50?c1h:aggregate15m(c15,1),'4h':c4h?.length>50?c4h:aggregate15m(c15,4),analysisOnly:!!t.reference,at:Date.now()};
@@ -1984,12 +1987,24 @@ async function bootstrapAll(){
   evaluateSignals();
   if(document.getElementById('ts').style.display!=='none')renderSignals();
 }
+// Header refresh: prices first (cards update in a second or two), then candle history reloads
+// in the background while the current charts stay on screen. Repeated taps share one reload.
+let manualRefreshBusy=false;
 async function manualRefresh(){
-  document.getElementById('sicon').classList.add('spinning');
-  SYMS.forEach(k=>{ohlcData[k]['15m']=[];ohlcData[k]['1h']=[];ohlcData[k]['4h']=[];});
-  await bootstrapAll();
+  if(manualRefreshBusy)return;manualRefreshBusy=true;
+  const icon=document.getElementById('sicon');icon?.classList.add('spinning');
+  try{
+    await Promise.race([Promise.allSettled([fetchLiveCrypto(),fetchLiveMetals()]),new Promise(r=>setTimeout(r,8000))]);
+    renderFeedStatus();
+    if(typeof volumeTrapServerSync==='function')volumeTrapServerSync();
+    setSbar(`✓ ${new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'})} IST · ${SYMS.filter(freshQuote).length}/3 fresh quotes · refreshing candles…`);
+  }finally{icon?.classList.remove('spinning');manualRefreshBusy=false;}
+  await resyncOHLC();
+  calibrateMetal('XAUUSD');calibrateMetal('XAGUSD');renderFeedStatus();
+  setSbar(`✓ ${new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'})} IST · ${SYMS.filter(freshQuote).length}/3 fresh quotes · ${signalHistory.length+scalpHist.length} accepted entries loaded`);
+  evaluateSignals();
+  if(document.getElementById('ts').style.display!=='none')renderSignals();
   if(document.getElementById('tc').style.display!=='none')loadTVChart(true);
-  document.getElementById('sicon').classList.remove('spinning');
 }
 
 // ═══ PROFESSIONAL SIGNAL ENGINE ═══════════════════════════════════════════
@@ -4578,7 +4593,7 @@ function tradeVolumeDetailsHtml(e,sym,source){
   return `<div class="ic" style="grid-column:1 / -1"><div class="ib"><h3>Trade volume details · ${step/60000}m</h3><p>${basketTxt(source||'Source unavailable')} · ${basketTxt(unit)} · ${e.entryData?'Recent closed history':'Stale/reference history'}</p><div class="sc-ind"><span>Latest volume <b>${n(last.v)} ${basketTxt(unit)}</b></span><span>Prior 20-bar average <b>${n(avg)}</b></span><span>Relative volume <b>${n(e.relVol)}×</b></span><span>Last ${rows.length} candles total <b>${n(total)}</b></span></div><p><b>Latest interval:</b> ${stamp(last.t)} → ${stamp(last.t+step)}</p><p><b>Paper order reference: 0.01 lot = ${n(.01*a.contractSz)} ${basketTxt(a.lotUnit)}</b> under this app's ${n(a.contractSz)} ${basketTxt(a.lotUnit)}/lot model. This is your paper order size, not the market's executed lot volume. Individual trade lot sizes and trade counts are unavailable from this candle feed.</p><p class="sc-dim">Each row aggregates the named venue's executions during that interval. Buy, sell and delta columns are candle-location estimates. Source units and broker lots are not interchangeable.</p><div class="evidence-table"><table><thead><tr><th>Start (IST)</th><th>End (IST)</th><th>Open</th><th>High</th><th>Low</th><th>Close</th><th>Volume (${basketTxt(unit)})</th><th>Relative volume</th><th>Est. buy</th><th>Est. sell</th><th>Est. delta</th></tr></thead><tbody>${[...rows].reverse().map(k=>{const i=e.rows.indexOf(k),prev=e.rows.slice(Math.max(0,i-20),i),mean=prev.length===20?prev.reduce((v,r)=>v+r.v,0)/20:null;return `<tr><td>${stamp(k.t)}</td><td>${stamp(k.t+step)}</td><td>${fmtP(sym,k.o)}</td><td>${fmtP(sym,k.h)}</td><td>${fmtP(sym,k.l)}</td><td>${fmtP(sym,k.c)}</td><td>${n(k.v)}</td><td>${mean>0?n(k.v/mean)+'×':'Unavailable'}</td><td>${e.volumeReady?n(k.buy):'Unavailable'}</td><td>${e.volumeReady?n(k.sell):'Unavailable'}</td><td>${e.volumeReady?n(k.delta):'Unavailable'}</td></tr>`;}).join('')}</tbody></table></div></div></div>`;
 }
 
-function volumeTrapPick(sym){if(!SYMS.includes(sym))return;volumeTrapSym=sym;volumeTrapLiveSync();renderVolumeTrap();renderVolumeTrapLive();renderVolumeTrapFootprint();}
+function volumeTrapPick(sym){if(!SYMS.includes(sym))return;volumeTrapSym=sym;volumeTrapLiveSync();renderVolumeTrap();renderVolumeTrapLive();renderVolumeTrapFootprint();volumeTrapServerSync();}
 // Closed 1m candles from the live stream are added as soon as they close, so the delta and
 // trade-volume tables do not wait for the next REST poll. Only contiguous, fully covered bars.
 function volumeTrapWithLive(sym,bars){
@@ -4652,18 +4667,24 @@ function renderVolumeTrapFootprint(){
   const badge={BUY:'fa-buy',SELL:'fa-sell',WARN:'fa-warn'}[trend.state]||'fa-flat';
   let h=`<div class="ic fp-card"><div class="ib"><div class="sc-row"><b>Order flow footprint · ${tf}</b><span class="fp-tf"><button class="qa ${tf==='1m'?'active':''}" onclick="volumeTrapTimeframe('1m')">1m</button><button class="qa ${tf==='5m'?'active':''}" onclick="volumeTrapTimeframe('5m')">5m</button></span></div>`;
   h+=`<div class="fp-state ${badge}"><span class="fp-badge">${basketTxt(trend.badge||trend.label)}</span><b>${basketTxt(trend.label)}</b><span>${basketTxt(trend.reason)}</span>${trend.seq?`<span class="sc-dim">Last 3 closed deltas: ${basketTxt(trend.seq)}</span>`:''}</div>`;
-  if(!fp.rows.length)h+=`<p class="sc-dim">${fp.status==='live'?'Waiting for the first trade…':'Connecting to the live trade stream…'} The footprint builds from live trades from the moment this page opens.</p>`;
+  if(!fp.rows.length)h+=`<p class="sc-dim">${fp.server?.at?'No trades in the last 90 minutes (market closed or quiet).':fp.status==='live'?'Waiting for the first trade…':'Loading footprint history from the server…'}</p>`;
   else{
     const k=fp.rows.at(-1);
     h+=`<div class="sc-ind"><span>${k.complete?'Last candle':'Forming candle'} delta <b class="${k.delta>=0?'up':'dn'}">${(k.delta>0?'+':'')+flowFmt(k.delta*fp.scale)}</b></span><span>Volume <b>${flowFmt(k.v*fp.scale)} ${basketTxt(fp.unit)}</b></span><span>Buy / sell <b>${flowFmt(k.buy*fp.scale)} / ${flowFmt(k.sell*fp.scale)}</b></span><span>Trades <b>${k.n}</b></span></div>`;
     h+=footprintSvg(sym,fp,tf);
   }
-  h+=`<p class="sc-dim">Each price row: <span class="dn">SELL (left)</span> | <span class="up">BUY (right)</span> taker volume in ${basketTxt(fp.unit)}; darker = more volume; yellow box = absorption candidate. Built from real exchange trades with the taker side, updated every second. History starts when the stream connects; candles marked partial missed some trades. CVD counts from the first candle shown.</p>`;
+  h+=`<p class="sc-dim">Each price row: <span class="dn">SELL (left)</span> | <span class="up">BUY (right)</span> taker volume in ${basketTxt(fp.unit)}; darker = more volume; yellow box = absorption candidate. Built from real exchange trades with the taker side, updated every second. The server collects gold, silver and bitcoin in the background and rebuilds missed minutes from the exchange's trade history; candles marked partial are still missing some trades. CVD counts from the first candle shown.</p>${footprintServerLine(fp.server)}`;
   h+=`<label class="fp-toggle"><input type="checkbox" ${on?'checked':''} onchange="flowAlertsToggle(this.checked)"> Popup alerts for buy trend / warning / sell trend (keeps the stream on while the app is open)</label>`;
   h+=`<p class="data-src">${basketTxt(LiveVolume.snapshot(sym).source)} · display only. Alerts use closed candles and never place or approve paper entries.</p></div></div>`;
   const sc=el.querySelector('.fp-scroll'),old=sc?{left:sc.scrollLeft,end:sc.scrollWidth-sc.clientWidth-sc.scrollLeft<12}:null;
   el.innerHTML=h;
   const nw=el.querySelector('.fp-scroll');if(nw)nw.scrollLeft=!old||old.end?nw.scrollWidth:old.left;
+}
+function footprintServerLine(sv){
+  if(!sv)return '';
+  if(!sv.at)return `<p class="sc-dim">Server history: ${sv.error?'unavailable ('+basketTxt(sv.error)+')':'loading…'}</p>`;
+  const age=Math.max(0,Math.round((Date.now()-sv.at)/1000)),bf=sv.backfill?.state||'';
+  return `<p class="sc-dim">Server collector: ${sv.live?'streaming':'reconnecting'} · synced ${age}s ago${bf&&bf!=='complete'?' · gap fill '+basketTxt(bf):''}</p>`;
 }
 function flowAlertCheck(){
   if(typeof LiveVolume==='undefined'||!flowAlertsOn()||document.hidden)return;
@@ -4724,7 +4745,16 @@ setInterval(()=>{
   if(document.getElementById('tvt')?.style.display!=='none'){renderVolumeTrapLive();renderVolumeTrapFootprint();}
   flowAlertCheck();
 },1000);
-document.addEventListener('visibilitychange',()=>volumeTrapLiveSync());
+document.addEventListener('visibilitychange',()=>{volumeTrapLiveSync();if(!document.hidden)volumeTrapServerSync();});
+// The server collects gold, silver and bitcoin footprints in the background. While the footprint
+// is on screen (or flow alerts are on) the selected symbol is synced every 5 s; only changed
+// minutes are sent, so this stays light.
+function volumeTrapServerSync(){
+  if(typeof LiveVolume==='undefined'||!LiveVolume.sync||document.hidden||typeof currentUser==='undefined'||!currentUser)return Promise.resolve(false);
+  const sym=volumeTrapSym;
+  return LiveVolume.sync(sym,path=>riyanApi(path)).then(changed=>{if(changed&&sym===volumeTrapSym&&document.getElementById('tvt')?.style.display!=='none')renderVolumeTrapFootprint();return changed;});
+}
+setInterval(()=>{if(document.getElementById('tvt')?.style.display!=='none'||volumeTrapWatching&&flowAlertsOn())volumeTrapServerSync();},5000);
 function volumeTrapChart(values,label,color,volume=false){
   const series=values.slice(-48).filter(Number.isFinite);
   if(series.length<2)return `<div class="sc-dim">${label}: waiting for data</div>`;

@@ -77,6 +77,36 @@ const btc=T.blank('BTCUSD');T.states.set('BTCUSD',btc);OF.online(btc.fp,t0-1000)
 T.addMatch(btc,{time:new Date(t0+1000).toISOString(),price:'90000',size:'0.5',side:'sell'});
 assert.equal(OF.candles(btc.fp,M,t0+M)[0].buy,0.5,'Coinbase maker sell = taker buy');
 
+// ── 2026-11-24: server background collector fills minutes this browser did not stream ──
+{
+  const bk=OF.book();OF.online(bk,t0+3*M+20000);           // page opened mid-minute 3
+  OF.add(bk,t0+3*M+30000,100,1,true);OF.add(bk,t0+4*M+1000,101,2,false);
+  const sm=(t,extra={})=>({t,o:100,h:101,l:99,c:100.5,buy:3,sell:2,n:5,partial:false,final:true,cells:[[100,3,0],[99,0,2]],...extra});
+  for(let i=0;i<4;i++)OF.merge(bk,sm(t0+i*M));             // minutes 0-3 from the server
+  OF.merge(bk,sm(t0+4*M,{buy:99}));                          // browser streamed minute 4 fully: kept
+  let r=OF.candles(bk,M,t0+5*M);
+  assert.deepEqual(r.map(k=>k.t),[0,1,2,3,4].map(i=>t0+i*M),'no missing minutes');
+  assert(r.every(k=>!k.partial),'server-complete minutes replace partial ones; none partial');
+  assert.equal(r[3].v,5,'partial browser minute 3 replaced by the complete server minute');assert.equal(r[4].sell,2,'complete browser minute kept');
+  assert.equal(OF.trend(r).state!=='WAIT',true,'alerts can use server-filled closed candles');
+  assert.equal(OF.add(bk,t0+3*M+59000,100,7,true),false,'late live trade for a closed server minute is not counted twice');
+  // A forming server minute restarts from the live stream instead of being added to.
+  OF.merge(bk,sm(t0+5*M,{final:false}));assert.equal(OF.candles(bk,M,t0+5*M+30000).at(-1).v,5);
+  OF.add(bk,t0+5*M+31000,100,1,true);assert.equal(OF.candles(bk,M,t0+5*M+40000).at(-1).v,1);
+  // Server says partial: stays partial. 5m candle with one partial minute is partial.
+  const p2=OF.book();for(let i=0;i<5;i++)OF.merge(p2,sm(t0+i*M,{partial:i===2}));
+  assert.equal(OF.candles(p2,5*M,t0+5*M)[0].partial,true);
+  assert.equal(OF.candles(p2,M,t0+5*M)[1].partial,false);
+  assert.equal(OF.merge(p2,{t:t0+7,o:1,h:1,l:1,c:1,cells:[]}),false,'misaligned minute rejected');
+  // LiveVolume.applyServer merges into the symbol's book and adopts the contract size.
+  const xs=T.blank('XAGUSD');T.states.set('XAGUSD',xs);
+  T.applyServer('XAGUSD',{boot:'b1',rev:9,scale:0.01,live:true,lastTradeAt:t0,backfill:{state:'complete'},minutes:[sm(t0),sm(t0+M)]},t0+2*M);
+  const fx=LiveVolume.footprint('XAGUSD',M,t0+2*M);
+  assert.equal(fx.rows.length,2);assert.equal(fx.unit,'XAG units');assert.equal(fx.scale,0.01);assert.equal(fx.server.live,true);
+  assert.equal(T.serverInfo('XAGUSD').rev,9);
+  assert.throws(()=>T.applyServer('XAGUSD',{minutes:'x'}));
+}
+
 // ── Display isolation and UI wiring ──
 const src=fs.readFileSync('src/main/resources/static/order-flow.js','utf8');
 assert(!/scalpOpen|riyanApi|paperEngine|signalHistory|scalpHist|fetch\(/.test(src),'order flow must not touch entries, persistence or network');
@@ -92,4 +122,4 @@ const vm=require('node:vm'),ctx=vm.createContext({PaperMath:require('../src/main
 vm.runInContext(extract('volumeTrapWithLive'),ctx);
 const merged=ctx.volumeTrapWithLive('XAUUSD',[{t:t0,ms:M,o:1,h:2,l:1,c:2,v:5,complete:true}]);
 assert.deepEqual(merged.map(x=>x.t),[t0,t0+M],'only contiguous, fully covered live minutes are appended');
-console.log('PASS footprint from taker trades, 1m/5m merge, CVD, partial coverage, healthy/warning/flip states (both directions), closed-candle-only alerts, absorption, OKX contract units, display isolation, live minute merge');
+console.log('PASS server background minutes fill gaps without double counting, footprint from taker trades, 1m/5m merge, CVD, partial coverage, healthy/warning/flip states (both directions), closed-candle-only alerts, absorption, OKX contract units, display isolation, live minute merge');

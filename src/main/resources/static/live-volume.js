@@ -103,17 +103,37 @@ var LiveVolume = (() => {
     current=sym;retries=0;connect(sym);
   }
   function stop(){stopSockets();current=null;}
+  // Background collector on the server: it streams all three symbols whether or not this page
+  // is open and fills missed minutes from exchange trade history. Only changed minutes come back.
+  const server=new Map();
+  function serverInfo(sym){if(!server.has(sym))server.set(sym,{boot:'',rev:0,busy:false,at:0,error:'',live:false,lastTradeAt:0,backfill:null});return server.get(sym);}
+  function applyServer(sym,r,now=Date.now()){
+    if(!r||!Array.isArray(r.minutes)||typeof r.boot!=='string'||!Number.isFinite(r.rev))throw Error('Invalid order flow response');
+    const s=state(sym),sv=serverInfo(sym);
+    for(const k of r.minutes)OF.merge(s.fp,k);
+    if(!(s.ctVal>0)&&r.scale>0)s.ctVal=r.scale;
+    Object.assign(sv,{boot:r.boot,rev:r.rev,at:now,error:'',live:!!r.live,lastTradeAt:+r.lastTradeAt||0,backfill:r.backfill||null});
+    return r.minutes.length;
+  }
+  async function sync(sym,api){ // api = the page's authenticated GET helper
+    if(!['XAUUSD','XAGUSD','BTCUSD'].includes(sym)||!api)return false;
+    const sv=serverInfo(sym);if(sv.busy)return false;sv.busy=true;
+    try{applyServer(sym,await api('/api/v1/market/order-flow?symbol='+sym+'&boot='+encodeURIComponent(sv.boot)+'&rev='+sv.rev));return true;}
+    catch(e){sv.error=String(e.message||e).slice(0,120);return false;}
+    finally{sv.busy=false;}
+  }
   // Footprint candles in display units (base units once the contract size is known).
   function footprint(sym,tfMs=60000,now=Date.now(),limit=12){
     const s=state(sym),rows=OF.candles(s.fp,tfMs,now,limit),scale=s.ctVal>0?s.ctVal:1;
     const unit=sym==='BTCUSD'?'BTC':s.ctVal>0?sym.slice(0,3)+' units':'contracts';
-    return {rows,scale,unit,status:s.status,since:s.connectedAt};
+    const sv=serverInfo(sym);
+    return {rows,scale,unit,status:s.status,since:s.connectedAt,server:{at:sv.at,live:sv.live,error:sv.error,lastTradeAt:sv.lastTradeAt,backfill:sv.backfill}};
   }
   function snapshot(sym,now=Date.now()){
     const s=state(sym),fresh=s.updatedAt>0&&now-s.updatedAt<STALE_MS;
     return {sym,status:s.status==='live'&&!fresh&&s.updatedAt>0?'quiet':s.status,error:s.error,source:s.source,
       forming:s.forming&&now-s.forming.t<120000?{...s.forming}:null,closed:s.closed.slice(-30).map(k=>sym==='BTCUSD'?{...k,partial:!!k.partial||OF.partial(s.fp,k.t,60000)}:k),flow:flow(sym,now),updatedAt:s.updatedAt,fresh};
   }
-  return {start,stop,snapshot,footprint,_test:{okxCandle,addMatch,addTrade,flow,state,blank,states}};
+  return {start,stop,snapshot,footprint,sync,_test:{okxCandle,addMatch,addTrade,flow,state,blank,states,applyServer,serverInfo}};
 })();
 if(typeof module!=='undefined')module.exports=LiveVolume;
