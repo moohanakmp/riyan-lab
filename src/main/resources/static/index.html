@@ -1948,6 +1948,13 @@ async function fetchLiveCrypto(){
   finally{btcQuoteBusy=false;}
 }
 let metalQuotePromise=null;
+// Next metal poll: the normal 8 s cadence, or ~1.5 s after the oldest fresh quote expires,
+// whichever is sooner. If the provider is a little late, retry every 2 s for up to 10 s,
+// then fall back to 8 s (weekends/outages never poll faster than before).
+function metalPollDelay(now){
+  const waits=['XAUUSD','XAGUSD'].map(sym=>{const ms=quoteAt[sym]?quoteAt[sym]+31500-now:-Infinity;return ms>0?ms:ms>-10000?2000:8000;});
+  return Math.max(2000,Math.min(8000,...waits));
+}
 function fetchLiveMetals(){
   if(metalQuotePromise)return metalQuotePromise;
   metalQuotePromise=performMetalQuotes().finally(()=>{metalQuotePromise=null;});
@@ -3154,10 +3161,11 @@ function manualResultBodyHtml(sym,res){
   const sc=res.scan,p=res.plan,conf=res.tradeable!==false&&res.quality==='confirmed',dec=ASSETS[sym].dec;
   const col=res.dir==='BUY'?'var(--grn)':'var(--red)';
   const u1=0.01*ASSETS[sym].contractSz,risk1=(p.risk+(SPREAD[sym]||0))*u1;
-  let h=`<div class="plan-top">${kmrRing(sc?sc.score:0,conf?(res.dir==='BUY'?'#22c55e':'#ef4444'):'#e8a33d',86)}
+  const shownScore=sc?kmrBlockedScore(sc.score,sc.gatesOk):0;
+  let h=`<div class="plan-top">${kmrRing(shownScore,conf?(res.dir==='BUY'?'#22c55e':'#ef4444'):'#e8a33d',86)}
     <div class="plan-hd"><div class="plan-badges"><span class="sig-badge ${res.dir==='BUY'?'sig-buy':'sig-sell'}">${res.dir}</span>${conf?`<span class="badge-high">✓ ${res.tier} · CONFIRMED</span>`:`<span class="badge-med plan-lc">⚠ LOWER CONFIDENCE</span>`}</div>
     <div class="plan-sub">${res.tradeable===false?'PLAN ONLY — new entries paused':p.entryType==='LIMIT'?'⏳ Place a LIMIT order':'⚡ MARKET entry now'} · R:R 1:${res.rr.toFixed(1)}</div>
-    <div class="plan-sub">Engine v3 quality ${sc?sc.score:0}/100</div><div class="plan-sub">Analysis snapshot${res.generatedAt?' · '+new Date(res.generatedAt).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata'})+' IST':''} · Analyze again to refresh conditions</div></div></div>`;
+    <div class="plan-sub">Engine v3 quality ${shownScore}/100${sc&&sc.gatesOk===false&&sc.score>shownScore?` · setup ${sc.score}, capped: a required gate failed`:''}</div><div class="plan-sub">Analysis snapshot${res.generatedAt?' · '+new Date(res.generatedAt).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata'})+' IST':''} · Analyze again to refresh conditions</div></div></div>`;
   if(!conf)h+=`<div class="plan-warn"><b>Why not confirmed:</b> ${res.reason}.<br><b>What a disciplined trader waits for:</b> ${res.wait||'more confluence'}.</div>`;
   const row=(lbl,val,why,cls)=>`<div class="plan-row ${cls||''}"><div><span>${lbl}</span><em>${why}</em></div><b>${fmtP(sym,val)}</b></div>`;
   h+=`<div class="plan-ladder">
@@ -5219,18 +5227,33 @@ function closedMarketCard(sym,a){
     <div style="text-align:center;color:var(--dim);font-size:11.5px;padding:14px 8px 4px">New ${a.sym} entries are paused under the New York session schedule (including its daily break). Broker hours can differ. BTC entries still require fresh quotes and complete candles.</div>
   </div>`;
 }
+// Headline score when a required gate fails: capped below the 55 "watch" band so a
+// blocked setup can never show as A+/A. The uncapped factor score stays visible as text.
+const KMR_BLOCKED_SCORE_CAP=49;
+function kmrBlockedScore(score,gatesOk){return gatesOk===false?Math.min(score||0,KMR_BLOCKED_SCORE_CAP):(score||0);}
 function signalQuality(sig,sym){
-  if(sig?.quoteUnavailable)return {score:sig.smart?.score||0,label:'QUOTE UNAVAILABLE',gatesOk:false,chips:[['WAIT FOR LIVE PRICE','warn']]};
+  // Without a fresh live price there is no entry, but the setup read is still shown with the
+  // same chips/score rules as every other card; the missing quote is added as a blocker.
+  if(sig?.quoteUnavailable&&!sig.smart?.gates)return {score:0,setupScore:sig.smart?.score||0,label:'BLOCKED · LIVE PRICE',gatesOk:false,chips:[['WAIT FOR LIVE PRICE','warn']],block:{names:['LIVE PRICE'],reason:'Fresh live price unavailable',wait:'the next live quote',noDir:true}};
   if(sig?.referenceOnly)return {score:0,label:'DELAYED REFERENCE',gatesOk:false,chips:[['WAIT FOR LIVE CANDLES','warn']]};
   if(!sig||sig.dataUnavailable)return {score:0,label:'DATA UNAVAILABLE',gatesOk:false,chips:[['WAIT FOR DATA','warn']]};
   if(sig.smart||sig.smartScore!=null){
-    const sm=sig.smart,score=sm?sm.score:sig.smartScore;
+    const quoteGate={key:'quote',ok:false,label:'Fresh live price unavailable (quotes older than 30 s are not used for entries)',wait:'the next live quote'};
+    const sm=sig.quoteUnavailable&&sig.smart?{...sig.smart,gatesOk:false,tier:null,gates:[quoteGate,...sig.smart.gates]}:sig.smart,score=sm?sm.score:sig.smartScore;
     const gk=k=>sm?sm.gates.find(g=>g.key===k):null;
     const c=(lbl,g)=>[lbl,g==null||g.advisory?'warn':g.ok?'ok':'bad'];
-    const names={htf:'HTF',adx:'TREND',vol:'VOLATILITY',ext:'NO CHASE',spike:'NO SPIKE',rsi:'RSI',news:'NEWS',roll:'ROLLOVER',volm:'VOLUME',value:'VALUE',trigger:'TRIGGER',struct:'STRUCTURE'};
+    const names={htf:'HTF',adx:'TREND',vol:'VOLATILITY',ext:'NO CHASE',spike:'NO SPIKE',rsi:'RSI',news:'NEWS',roll:'ROLLOVER',volm:'VOLUME',value:'VALUE',trigger:'TRIGGER',struct:'STRUCTURE',quote:'LIVE PRICE'};
     const chips=sm?[[sm.tier?sm.dir:'WAIT',sm.tier?'ok':'warn'],...sm.gates.map(g=>c(names[g.key]||g.key.toUpperCase(),g))]:[[sig.state,'ok'],['ENGINE v3','ok']];
-    const label=score>=84?'A+ CLEAN':score>=70?'A GOOD':score>=55?'B WATCH':score>=40?'C WEAK':'D AVOID';
-    return{score,label,trigger:!sm||sm.gatesOk?'READY':'WAIT',gatesOk:sm?sm.gatesOk:true,chips};
+    // A failed required gate means NO ENTRY, so the headline score must not read like an
+    // A+ trade. The factor score is kept as setupScore and the meter says what blocked it.
+    const failed=sm?sm.gates.filter(g=>!g.ok):[],blocked=!!sm&&sm.gatesOk===false&&failed.length>0;
+    const cap=49; // KMR_BLOCKED_SCORE_CAP; kept local so this function stays self-contained
+    const shown=blocked?Math.min(score||0,cap):score;
+    const label=blocked?'BLOCKED · '+failed.map(g=>names[g.key]||g.key.toUpperCase()).join(', '):shown>=84?'A+ CLEAN':shown>=70?'A GOOD':shown>=55?'B WATCH':shown>=40?'C WEAK':'D AVOID';
+    return{score:shown,setupScore:score,cap,label,trigger:!sm||sm.gatesOk?'READY':'WAIT',gatesOk:sm?sm.gatesOk:true,chips,
+      block:blocked?{names:failed.map(g=>names[g.key]||g.key.toUpperCase()),reason:failed[0].label,wait:failed[0].wait||'',noDir:!sm.dir}:null,
+      gatesPassed:sm?sm.gates.filter(g=>g.ok).length:null,gatesTotal:sm?sm.gates.length:null,
+      factorsPassed:sm?.factors?.length?sm.factors.filter(f=>f.pass).length:null,factorsTotal:sm?.factors?.length||null};
   }
   const tune=SIG_TUNE[sym]||SIG_TUNE.XAUUSD, passed=(sig.conditions||[]).filter(c=>c.pass).length;
   let score=Math.round((passed/(sig.total||6))*60); const mtf=sig.mtf||{},h1=mtf['1h'],h4=mtf['4h'];
@@ -5241,9 +5264,17 @@ function signalQuality(sig,sym){
   score=Math.max(0,Math.min(100,score));const label=score>=85?'A+ CLEAN':score>=75?'A GOOD':score>=65?'B WATCH':score>=50?'C WEAK':'D AVOID';
   return{score,label,trigger,chips:[[sig.state==='WAIT'?'WAIT':sig.state,sig.state==='WAIT'?'warn':'ok'],[`${passed}/6 SETUP`,passed>=5?'ok':passed>=4?'warn':'bad'],['1H',h1?(h1===desired?'ok':'bad'):'bad'],['4H',h4?(h4===desired?'ok':'bad'):'bad'],['VOL',volOk?'ok':'bad'],['TRIGGER',trigger==='READY'?'ok':trigger==='MOVED'?'bad':'warn']]};
 }
+// One wording for the bar under the meter: setup factors (only exist once 1H+4H agree on a
+// direction) and required safety gates are different lists, so they are named separately.
+function qualityCountsText(sig,sym){
+  const q=signalQuality(sig,sym);
+  if(q.gatesTotal==null)return `${sig.score}/${sig.total} supporting factors`;
+  const gates=`${q.gatesPassed}/${q.gatesTotal} safety gates passed`;
+  return q.factorsTotal?`${q.factorsPassed}/${q.factorsTotal} setup factors · ${gates}`:`${gates} · setup not scored (no direction)`;
+}
 function qualityMeterHtml(sig,sym){
   const q=signalQuality(sig,sym),state=q.gatesOk===false?'STAND ASIDE':q.score>=70?'TECHNICAL SETUP':q.score>=55?'WAIT / WATCH':'AVOID',chips=q.chips.map(x=>`<div class="quality-chip ${x[1]}">${x[0]}</div>`).join('');
-  return `<div class="quality-card"><div class="quality-head"><span class="quality-title">KMR SIGNAL QUALITY · ENGINE v3</span><span class="quality-score">${q.score}/100</span></div><div class="quality-track"><div class="quality-fill" style="width:${q.score}%"></div></div><div class="quality-foot"><span class="quality-state">${state}</span><span>${q.label}</span></div><div class="quality-grid">${chips}</div><div style="margin-top:10px;font-size:11px;color:var(--mut)">Setup quality, not win probability. ${q.gatesOk===false?'Entry blocked: required gates have not all passed.':'Entry also requires current data, engine ownership and account risk approval.'}</div></div>`;
+  return `<div class="quality-card"><div class="quality-head"><span class="quality-title">KMR SIGNAL QUALITY · ENGINE v3</span><span class="quality-score">${q.score}/100</span></div><div class="quality-track"><div class="quality-fill" style="width:${q.score}%"></div></div><div class="quality-foot"><span class="quality-state">${state}</span><span>${q.label}</span></div><div class="quality-grid">${chips}</div>${q.block?`<div class="quality-block" style="margin-top:10px;padding:8px 10px;border-radius:8px;border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.08);font-size:11.5px;line-height:1.45"><b style="color:var(--red)">⛔ No signal: blocked by ${q.block.names.join(', ')}</b><br>${q.block.reason}.${q.block.wait?`<br><b>Waiting for:</b> ${q.block.wait}.`:''}<br><span style="color:var(--mut)">${q.block.noDir?'There is no trade direction yet, so the setup is not scored.':q.setupScore>q.score?`The setup factors score ${q.setupScore}/100, but the headline score is capped at ${q.cap} until every required gate passes.`:'The score counts only once every required gate passes.'}</span></div>`:''}<div style="margin-top:10px;font-size:11px;color:var(--mut)">Setup quality, not win probability. ${q.gatesOk===false?'Entry blocked: required gates have not all passed.':'Entry also requires current data, engine ownership and account risk approval.'}</div></div>`;
 }
 // One line per asset so the answer to "is there a trade?" is visible without scrolling.
 // It reads the same computeSignal/autoEntryCheck results as the cards below; no new rules.
@@ -5277,7 +5308,7 @@ function waitCard(sym,a,sig,isAdmin){
     const ch=(!sig.conditions||sig.conditions.length===0)
       ?`<div class="cond cond-no" style="grid-column:1/-1"><div class="cond-lbl">${sig.reason||'Loading...'}</div></div>`
       :sig.conditions.map(c=>`<div class="cond ${c.pass?'cond-yes':'cond-no'}"><div class="cond-icon">${c.pass?'✓':'·'}</div><div class="cond-lbl">${c.label}</div></div>`).join('');
-    body=(entryReason?`<div class="notice"><b>Entry status:</b> ${basketTxt(entryReason)}</div>`:'')+qualityMeterHtml(sig,sym)+`<div class="conf-row"><div class="conf-bar-wrap"><div class="conf-bar" style="width:${sig.total?sig.score/sig.total*100:0}%;background:${barCol}"></div></div><div class="conf-lbl">${sig.score}/${sig.total} supporting factors</div></div>
+    body=(entryReason?`<div class="notice"><b>Entry status:</b> ${basketTxt(entryReason)}</div>`:'')+qualityMeterHtml(sig,sym)+`<div class="conf-row"><div class="conf-bar-wrap"><div class="conf-bar" style="width:${sig.total?sig.score/sig.total*100:0}%;background:${barCol}"></div></div><div class="conf-lbl">${qualityCountsText(sig,sym)}</div></div>
       <div class="cond-grid">${ch}</div>
       <div style="text-align:center;font-size:9.5px;color:var(--dim);padding:2px 0">${coolTxt||sig.reason||'Waiting for confluence'}</div>
       <div class="data-src">${metalSrcNote(sym)} · closed candles only</div>`;
@@ -6547,13 +6578,22 @@ async function bootApp(){
   setInterval(evwBackgroundNews,30*60e3);
   setInterval(()=>evwTick(false),30000);
   setTimeout(scalpLoop,2500);setInterval(scalpLoop,5000);
-  setInterval(async()=>{
-    await fetchLiveMetals();
-    evaluateSignals();
-    renderTrendStrip();
-    await checkTrendFlips(); // metals get their own fast-loop reversal check too, not just crypto's 5s cycle
-    if(document.getElementById('ts').style.display!=='none')renderSignals();
-  },8000);
+  // gold-api publishes a new metal price every ~30 s and a quote counts as fresh for <30 s
+  // (unchanged gate). With a fixed 8 s poll the quote expired for up to 8 s each cycle,
+  // flashing "Fresh quote unavailable" on XAG/XAU. The next poll is now also pulled in to
+  // land just after the current quote would expire, so a published price is picked up
+  // straight away. The freshness gate itself is not relaxed.
+  const metalLoop=async()=>{
+    try{
+      await fetchLiveMetals();
+      evaluateSignals();
+      renderTrendStrip();
+      await checkTrendFlips(); // metals get their own fast-loop reversal check too, not just crypto's 5s cycle
+      if(document.getElementById('ts').style.display!=='none')renderSignals();
+    }catch(e){}
+    finally{setTimeout(metalLoop,metalPollDelay(Date.now()));}
+  };
+  setTimeout(metalLoop,8000);
 }
 
 // ── FOREGROUND CATCH-UP — close the gap when the app was backgrounded/phone locked ──

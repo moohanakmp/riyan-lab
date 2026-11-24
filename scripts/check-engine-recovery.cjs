@@ -26,10 +26,10 @@ const P=require('../src/main/resources/static/trading-core.js');
  const quality=vm.createContext({});
  vm.runInContext(qualityHtml.slice(qualityHtml.indexOf('function signalQuality('),qualityHtml.indexOf('function waitCard(')),quality);
  const high={smart:{score:81,gatesOk:false,tier:null,dir:'SELL',gates:[{key:'trigger',ok:false}]}};
- const result=quality.signalQuality(high,'XAUUSD');assert.equal(result.score,81);assert.equal(result.gatesOk,false);
+ const result=quality.signalQuality(high,'XAUUSD');assert.equal(result.score,49,'blocked setup headline is capped');assert.equal(result.setupScore,81);assert.equal(result.gatesOk,false);assert.match(result.label,/^BLOCKED · TRIGGER/);
  const meter=quality.qualityMeterHtml(high,'XAUUSD');
  assert(meter.includes('STAND ASIDE'));assert(meter.includes('not win probability'));assert(meter.includes('Entry blocked'));
- assert(!meter.includes('TRADE-READY'));
+ assert(!meter.includes('TRADE-READY'));assert(meter.includes('blocked by TRIGGER'));assert(meter.includes('49/100'));assert(!meter.includes('A+ CLEAN'));
  // Complete paginated owner snapshot is shared by signal and basket restoration.
  let calls=0;ctx.riyanApi=async()=>{calls++;return[{record_type:'low-profit',source_id:'one',payload:'{}'}];};
  ctx.paperLedgerCache=null;const [one,two]=await Promise.all([ctx.paperReadLedger(),ctx.paperReadLedger()]);assert.equal(calls,1);assert.equal(one,two);assert.equal(one['low-profit'].length,1);
