@@ -101,16 +101,41 @@ public class BackgroundFeeds {
             if(!Double.isFinite(price)||price<=0||now-at>=30000||at>now+5000)throw new IllegalStateException("Quote stale or invalid");
             out.put("price",price).put("quoteAt",at);
             if(!btc){
-                // Same spot scaling used by the existing browser Low Profit feed.
-                var five=out.path("five");if(!five.isEmpty()){
-                    double ratio=price/five.path(five.size()-1).path("c").asDouble();
-                    if(ratio<=.9||ratio>=1.1){out.remove("five");out.put("scalpError","Quote / candle mismatch exceeds 10%");out.put("error","Quote / candle mismatch exceeds 10%");}
-                    else for(var k:five)for(String key:List.of("o","h","l","c"))((ObjectNode)k).put(key,k.path(key).asDouble()*ratio);
+                // Perp bars are re-based to the spot quote (same rule as the browser's calibrateMetal and Low Profit feed).
+                // The ratio comes from the 1m perp bar that closed next to the quote time, so up to 15 min of real
+                // movement is no longer mistaken for basis. All frames get the same factor, so server Auto signals
+                // see the same prices as the browser (2026-11-25 review 1.2/1.3).
+                var five=out.path("five");
+                double ratio=metalBasis(sym,price,at,five,now);
+                if(!(ratio>.9&&ratio<1.1)){out.remove("five");out.put("scalpError","Quote / candle mismatch exceeds 10%");out.put("error","Quote / candle mismatch exceeds 10%");}
+                else{
+                    out.put("basis",ratio);
+                    for(var k:five)scale((ObjectNode)k,ratio);
+                    for(String tf:List.of("15m","1h","4h"))for(var k:out.path("bars").path(tf))scale((ObjectNode)k,ratio);
                 }
             }
         }catch(Exception e){if(e instanceof InterruptedException)Thread.currentThread().interrupt();out.remove(List.of("price","quoteAt"));out.put("quoteError",safeError(e));}
     }
     static final long METAL_REFRESH_AFTER_MS=20000,METAL_MAX_WAIT_MS=12000;
+    private final Map<String,double[]> lastBasis=new ConcurrentHashMap<>(); // sym -> {factor, at}
+    private static void scale(ObjectNode k,double f){for(String key:List.of("o","h","l","c"))k.put(key,k.path(key).asDouble()*f);}
+    /** Spot / perp factor measured at (nearly) the same moment, lightly smoothed. Falls back to the last 5m close. */
+    double metalBasis(String sym,double spot,long quoteAt,JsonNode five,long now){
+        double nf=Double.NaN;
+        try{
+            JsonNode one=metals.candles(sym,"1m",3);JsonNode last=one.path(one.size()-1);
+            long end=last.path("t").asLong()+60_000L;
+            if(Math.abs(quoteAt-end)<=120_000L&&last.path("c").asDouble()>0)nf=spot/last.path("c").asDouble();
+        }catch(Exception ignored){/* 1m bar unavailable: use the fallback below */}
+        double[] prev=lastBasis.get(sym);
+        if(!Double.isFinite(nf)){
+            if(prev!=null&&now-prev[1]<10*60_000L)return prev[0];
+            return five.isEmpty()?Double.NaN:spot/five.path(five.size()-1).path("c").asDouble();
+        }
+        double f=prev!=null&&now-prev[1]<10*60_000L&&Math.abs(nf/prev[0]-1)<0.003?prev[0]*0.7+nf*0.3:nf;
+        lastBasis.put(sym,new double[]{f,now});
+        return f;
+    }
     long clock(){return System.currentTimeMillis();}
     void pause(long ms)throws InterruptedException{Thread.sleep(ms);}
     private String safeError(Exception e){return e.getMessage()==null?"Market data unavailable":e.getMessage().substring(0,Math.min(240,e.getMessage().length()));}

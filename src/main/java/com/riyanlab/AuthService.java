@@ -51,7 +51,11 @@ public class AuthService {
         Integer count = jdbc.queryForObject("SELECT count(*) FROM auth_users", Integer.class);
         // Recovery is deliberately staging-only and explicit. NEVER auto-reset live credentials.
         if (count != null && count > 0) {
-            if (!stagingAdminReset) return;
+            if (!stagingAdminReset) {
+                if (bootstrapPassword != null && !bootstrapPassword.isEmpty())
+                    System.err.println("Riyan Lab: RIYAN_BOOTSTRAP_ADMIN_PASSWORD is still set but accounts already exist. Remove it from the Render environment.");
+                return;
+            }
             if (!"staging".equalsIgnoreCase(appEnvironment)) {
                 throw new IllegalStateException("RIYAN_BOOTSTRAP_ADMIN_RESET is permitted in staging only");
             }

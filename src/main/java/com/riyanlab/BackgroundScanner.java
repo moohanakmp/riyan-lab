@@ -132,7 +132,7 @@ public class BackgroundScanner {
         var health=new LinkedHashMap<>(feeds.calendarStatus());health.remove("calendar");out.put("calendarHealth",health);
         var settings=jdbc.queryForList("SELECT enabled,config::text AS config FROM background_scanner_settings WHERE username=?",user);out.put("enabled",settings.isEmpty()||Boolean.TRUE.equals(settings.getFirst().get("enabled")));
         // The saved server settings are authoritative; a browser adopts them instead of overwriting them on open.
-        if(!settings.isEmpty())try{out.put("settings",json.readTree((String)settings.getFirst().get("config")));}catch(Exception ignored){}
+        if(!settings.isEmpty())try{out.put("settings",json.readTree((String)settings.getFirst().get("config")));}catch(com.fasterxml.jackson.core.JsonProcessingException ignored){/* corrupt saved settings: browser keeps its own */}
         var rows=jdbc.queryForList("SELECT state,checked_at,details::text AS details FROM background_scanner_status WHERE username=?",user);
         if(!rows.isEmpty())out.putAll(rows.getFirst());
         var leases=jdbc.queryForList("SELECT owner,expires_at FROM paper_engine_leases WHERE username=? AND expires_at>now()",user);
@@ -140,5 +140,5 @@ public class BackgroundScanner {
         return out;
     }
     static String clipText(String s,int max){return s.length()>max?s.substring(0,max):s;}
-    @PreDestroy public synchronized void cleanup(){if(runtime!=null)try(var files=Files.walk(runtime)){files.sorted(Comparator.reverseOrder()).forEach(p->{try{Files.deleteIfExists(p);}catch(Exception ignored){}});}catch(Exception ignored){}}
+    @PreDestroy public synchronized void cleanup(){if(runtime!=null)try(var files=Files.walk(runtime)){files.sorted(Comparator.reverseOrder()).forEach(p->{try{Files.deleteIfExists(p);}catch(java.io.IOException ignored){/* best-effort temp cleanup */}});}catch(java.io.IOException|RuntimeException ignored){/* best-effort temp cleanup */}}
 }

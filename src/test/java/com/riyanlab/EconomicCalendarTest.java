@@ -113,4 +113,20 @@ class EconomicCalendarTest {
   ((ObjectNode)input.get(0)).put("forecast","<img src=x onerror=alert(1)>");assertThrows(RuntimeException.class,()->EconomicCalendar.validate(input,start,json));
  }
 
+ @Test @SuppressWarnings({"unchecked","rawtypes"}) void slowRefreshDoesNotBlockOtherReaders()throws Exception{
+  var now=new AtomicLong(start);var client=mock(HttpClient.class);
+  var entered=new java.util.concurrent.CountDownLatch(1);var release=new java.util.concurrent.CountDownLatch(1);
+  when(client.send(any(HttpRequest.class),any(HttpResponse.BodyHandler.class))).thenReturn(response(200,events(start).toString(),Map.of()))
+   .thenAnswer(a->{entered.countDown();release.await(5,java.util.concurrent.TimeUnit.SECONDS);return response(304,"",Map.of());});
+  var feed=new EconomicCalendar(null,json,client,now::get);
+  assertEquals(true,feed.view().get("ready"));
+  now.addAndGet(EconomicCalendar.REFRESH);
+  var slow=new Thread(feed::view);slow.start();
+  assertTrue(entered.await(5,java.util.concurrent.TimeUnit.SECONDS));
+  long t0=System.nanoTime();var other=feed.view();var status=feed.peek();
+  assertTrue(System.nanoTime()-t0<1_000_000_000L,"reader waited for the network call");
+  assertEquals(true,other.get("ready"));assertEquals(start,status.get("calendarAt"));
+  release.countDown();slow.join(5000);
+  verify(client,times(2)).send(any(HttpRequest.class),any(HttpResponse.BodyHandler.class));
+ }
 }

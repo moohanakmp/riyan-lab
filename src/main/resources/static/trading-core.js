@@ -67,6 +67,15 @@ var PaperMath = (() => {
     if(crossed(r.tp)) {fill(r,r.tp,r.remFrac==null?1:r.remFrac,'TP3',at);changed=true;}
     return changed;
   }
-  return {positive,valid,closed,aggregate,stopFill,outcome,fill,ladder};
+  // One closed bar against an open trade, adverse path first: a wick through the stop counts even when
+  // no spot sample landed there. Stop fills at the stop, or at the open when the bar gapped through it.
+  function candle(r,k,at=Date.now()) {
+    if(r.outcome!=='OPEN'||!valid(k)) return false;
+    const buy=r.dir==='BUY', sl=r.slNow==null?r.sl:r.slNow;
+    if(positive(sl)&&(buy?k.o<=sl:k.o>=sl)) return ladder(r,k.o,at);
+    if(positive(sl)&&(buy?k.l<=sl:k.h>=sl)) return ladder(r,sl,at);
+    return ladder(r,buy?k.h:k.l,at);
+  }
+  return {positive,valid,closed,aggregate,stopFill,outcome,fill,ladder,candle};
 })();
 if(typeof module!=='undefined')module.exports=PaperMath;

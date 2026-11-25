@@ -1166,10 +1166,12 @@ body{background:
 <script src="/market-context.js?v=20261020-context"></script>
 <script src="/order-flow.js?v=20261124-bgflow"></script>
 <script src="/live-volume.js?v=20261125-review"></script>
-<script src="/paper-engine.js?v=20261028-active-basket2"></script>
+<script src="/paper-engine.js?v=20261125-server-clock"></script>
 <script src="/basket-demo.js?v=20261028-active-basket2"></script>
 
 <script>
+// NOTE: background/scanner.cjs extracts many functions/consts below by name for server scanning.
+// Before renaming one, see "Names the server scanner reads" in docs/background-scanner.md.
 // Init EmailJS lazily once public key is set (see saveNotifSettings)
 let emailJsInited=false;
 
@@ -1521,6 +1523,8 @@ async function loadAuthState(){
 
 // Typical spreads (USD) per asset
 const SPREAD={XAUUSD:0.35,XAGUSD:0.03,BTCUSD:5};
+// Account-wide paper limits. Must equal PaperTradingService.RISK_USD / DAY_LOSS_USD / MAX_OPEN (scripts/check-paper-limits.cjs).
+const PAPER_LIMITS={riskUsd:4,dayLossUsd:8,maxOpen:5};
 
 // ═══ STATE ════════════════════════════════════════════════════════════════
 const ohlcData={XAUUSD:{},XAGUSD:{},BTCUSD:{}};
@@ -1826,6 +1830,21 @@ async function fetchFapiKlines(sym,iv,lim,endTime){
   if(bars.some((k,i)=>!PaperMath.valid(k)||(i>0&&k.t<=bars[i-1].t)||k.t>Date.now()+5000))throw Error('Invalid candle values or timestamps');
   return bars;
 }
+// 2026-11-25 (review 1.2): the spot/perp basis is measured against the 1m perp bar that closed next to the
+// spot quote, not the last closed 15m bar, so up to 15 min of real movement is no longer treated as basis.
+// The server scanner applies the same rule (BackgroundFeeds.metalBasis).
+let metalRef={XAUUSD:null,XAGUSD:null},metalRefBusy={};
+async function refreshMetalRef(sym){
+  if(metalRefBusy[sym])return false;metalRefBusy[sym]=true;
+  try{const k=(await fetchOkxMetal(sym,'1m',3)).at(-1);const changed=!metalRef[sym]||metalRef[sym].t!==k.t;metalRef[sym]={t:k.t,c:k.c};return changed;}
+  catch(e){return false;}finally{metalRefBusy[sym]=false;}
+}
+function metalBasisFactor(sym,now=Date.now()){
+  const spot=prices[sym],ref=metalRef[sym],prev=metalBasis[sym],at=quoteAt[sym]||now;
+  if(!(spot>0)||!ref||!(ref.c>0)||Math.abs(at-(ref.t+60000))>120000)return null;
+  const nf=spot/ref.c;
+  return prev?.src==='1m'&&now-prev.at<600000&&Math.abs(nf/prev.f-1)<0.003?prev.f*0.7+nf*0.3:nf;
+}
 function calibrateMetal(sym){
   const r=metalRaw[sym];if(!r||!r['15m']?.length)return;
   if(r.analysisOnly){
@@ -1834,9 +1853,13 @@ function calibrateMetal(sym){
     return; // Preserve actual futures prices; never rescale delayed bars to a live spot tick.
   }
   const spot=prices[sym],last=r['15m'][r['15m'].length-1].c;
-  let f=metalBasis[sym]?.f||1;
-  if(spot&&last){const nf=spot/last;if(nf>0.9&&nf<1.1)f=nf;}
-  metalBasis[sym]={f,spot,proxy:last,at:Date.now()};
+  let f=metalBasis[sym]?.f||1,src=metalBasis[sym]?.src||'';
+  const bf=metalBasisFactor(sym);
+  if(bf&&bf>0.9&&bf<1.1){f=bf;src='1m';}
+  else if(src!=='1m'&&spot&&last){const nf=spot/last;if(nf>0.9&&nf<1.1){f=nf;src='15m';}} // first load only
+  metalBasis[sym]={f,spot,proxy:last,at:Date.now(),src};
+  if(typeof fetchOkxMetal==='function'&&(!metalRef[sym]||Date.now()-(metalRef[sym].t+60000)>60000))
+    refreshMetalRef(sym).then(changed=>{if(changed)calibrateMetal(sym);});
   const sc=a=>(a||[]).map(k=>({...k,o:k.o*f,h:k.h*f,l:k.l*f,c:k.c*f}));
   ohlcData[sym]['15m']=sc(r['15m']);ohlcData[sym]['1h']=sc(r['1h']);ohlcData[sym]['4h']=sc(r['4h']);
   if(spot)appendLiveTick(sym,spot);
@@ -1969,7 +1992,7 @@ async function performMetalQuotes(){
       const code=sym==='XAUUSD'?'XAU':'XAG',response=await liveFetch('https://api.gold-api.com/price/'+code);
       if(!response.ok)throw Error('Metal quote HTTP '+response.status);
       quoteResponse=true;
-      const q=await response.json(),now=Date.now(),at=Date.parse(q?.updatedAt),p=q?.price;
+      const q=await response.json(),now=marketNow(),at=Date.parse(q?.updatedAt),p=q?.price;
       if(q?.symbol!==code||(q.currency&&q.currency!=='USD')||!PaperMath.positive(p)||!Number.isFinite(at)||at>now||now-at>=30000)throw Error('Metal quote stale or invalid');
       if(dayOpen[sym]===undefined)dayOpen[sym]=p;
       prev[sym]=prices[sym];prices[sym]=p;quoteAt[sym]=at;
@@ -3983,7 +4006,8 @@ async function scalpFetch(sym,lim){
     return null;
   }
   if(sym!=='BTCUSD'&&!reference&&prices[sym]){
-    const f=prices[sym]/c[c.length-1].c;
+    const b=metalBasis[sym];
+    const f=b?.src==='1m'&&Date.now()-b.at<120000?b.f:prices[sym]/c[c.length-1].c;
     if(!(f>0.9&&f<1.1)){
       state.feedError='Market quote and 5m feed differ by over 10%; scalp signal paused';
       state.feedSource=source;
@@ -4972,10 +4996,11 @@ function paperAccountRisk(sym,dir,entry,sl,units,now=Date.now()){
   }
   const planned=((entry-sl)*(dir==='BUY'?1:-1)+(SPREAD[sym]||0))*units,total=planned+open.reduce((a,b)=>a+b,0);
   if(!['BUY','SELL'].includes(dir)||!Number.isFinite(entry)||entry<=0||!Number.isFinite(sl)||sl<=0||!Number.isFinite(units)||units<=0||!Number.isFinite(planned)||planned<=0||(entry-sl)*(dir==='BUY'?1:-1)<=0)return{ok:false,reason:'Invalid structural stop or risk inputs'};
-  if(planned>4.000001)return{ok:false,reason:`Structural stop needs $${planned.toFixed(2)} risk at 0.01 lot; account limit is $4.00. Wait for a closer entry; stop is not tightened to force a trade.`};
-  if(open.length>=5)return{ok:false,reason:'Five paper positions already open'};
-  if(dayNet<=-8||total>8+dayNet)return{ok:false,reason:'Account daily loss budget would be exceeded'};
-  if(total>4.000001)return{ok:false,reason:`Combined open risk $${total.toFixed(2)} exceeds $4.00 account limit`};
+  const L=PAPER_LIMITS;
+  if(planned>L.riskUsd+1e-6)return{ok:false,reason:`Structural stop needs $${planned.toFixed(2)} risk at 0.01 lot; account limit is $${L.riskUsd.toFixed(2)}. Wait for a closer entry; stop is not tightened to force a trade.`};
+  if(open.length>=L.maxOpen)return{ok:false,reason:'Five paper positions already open'.replace('Five',String(L.maxOpen))};
+  if(dayNet<=-L.dayLossUsd||total>L.dayLossUsd+dayNet)return{ok:false,reason:'Account daily loss budget would be exceeded'};
+  if(total>L.riskUsd+1e-6)return{ok:false,reason:`Combined open risk $${total.toFixed(2)} exceeds $${L.riskUsd.toFixed(2)} account limit`};
   return{ok:true,planned,total,dayNet,positions:open.length};
 }
 function autoEntryCheck(sym,sig,manual=false){
@@ -5569,11 +5594,26 @@ async function recordSignal(sym,sig,pos,manual){
 }
 
 // ═══ P&L OUTCOME ══════════════════════════════════════════════════════════
+// 2026-11-25: Auto/manual signal stops and targets are also checked against closed 5m bars
+// (spot-scaled for metals), so a wick between ~30 s spot samples is not missed. Low Profit already does this.
+function autoWickCheck(r,now=Date.now()){
+  if(r.outcome!=='OPEN')return false;
+  const from=Math.max(r.wickCheckedTo||0,Math.ceil((r.ts||now)/300e3)*300e3);
+  let changed=false;
+  for(const k of (scalpData[r.sym]||[])){
+    if(r.outcome!=='OPEN')break;
+    if(k.analysisOnly||k.complete===false||k.t<from||k.t+300e3>now||!PaperMath.valid(k))continue;
+    PaperMath.candle(r,k,now);r.wickCheckedTo=k.t+300e3;changed=true;
+  }
+  return changed;
+}
 async function checkOutcome(sym,cur){
   if(!paperReady()||!freshQuote(sym))return;
   let changed=false;
   for(const r of signalHistory){
-    if(r.sym!==sym||!PaperMath.ladder(r,cur))continue;
+    if(r.sym!==sym)continue;
+    const wick=autoWickCheck(r);
+    if(!PaperMath.ladder(r,cur)&&!wick)continue;
     changed=true;r.pnlPct=(r.pnlUsd||0)/CAPITAL*100;
     if(r.outcome!=='OPEN'){
       r.exitTimeStr=new Date(r.closedAt).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata'});

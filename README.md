@@ -9,7 +9,7 @@ Paper-trading signal app for XAUUSD, XAGUSD and BTCUSD. **Java 21 / Spring Boot 
 | Strategy engine (Auto signals, Low Profit, Analysis) | `static/index.html` (inline JS) + `static/trading-core.js` | Runs in the browser. |
 | Background scanner | `BackgroundScanner.java` + `background/scanner.cjs` | Runs the *same* engine in Node when no browser holds the lease. `scanner.cjs` pulls named functions/consts out of `index.html` with regex: renaming them breaks server scanning (`scripts/check-background.cjs` catches it). See `docs/background-scanner.md`. |
 | Paper ledger + risk checks | `RecordController.java`, `PaperTradingService.java` | Server re-validates every paper entry. |
-| Volume Trap / order flow | `OrderFlowCollector.java`, `static/order-flow.js`, `static/live-volume.js` | Display only. See `docs/order-flow-footprint-20261119.md`. |
+| Volume Trap / order flow | `OrderFlowCollector.java`, `static/order-flow.js`, `static/live-volume.js` | Display only. See `docs/history/order-flow-footprint-20261119.md`. |
 | Broker mirror (MT5 EA bridge) | `BrokerMirrorService.java`, `connector/mt5/RiyanLabBridge.mq5` | Admin Broker tab. DRY_RUN by default. See `docs/broker-bridge.md`. |
 | Telegram alerts | `TelegramDelivery.java` | Server-side delivery. |
 | Market data proxy | `MarketDataController.java` | Fixed host/path allowlist. |
@@ -53,6 +53,13 @@ Set in Render (never commit values). Defaults in brackets.
 | `RENDER_EXTERNAL_URL` | `KeepAwake` | Set by Render; staging self-ping target. |
 | `SCANNER_STATIC` | `background/scanner.cjs` | Optional path to the static folder (tests). |
 | `RIYAN_INTEGRATION_TEST` | tests | `true` enables the PostgreSQL integration tests. |
+| `RIYAN_TOKEN_KEY` [unset] | `TelegramDelivery` (`TokenCipher`) | Passphrase for AES-256-GCM encryption of Telegram bot tokens at rest. When set, plain tokens are encrypted at startup. Keep it stable: if it is removed or changed, saved tokens cannot be read and users must re-enter them. |
+
+## Security headers
+
+`SecurityHeadersFilter` sets `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`, HSTS (on HTTPS) and a Content-Security-Policy. Scripts may load only from this site, `cdn.jsdelivr.net` (EmailJS, pinned with integrity) and `s3.tradingview.com`. `'unsafe-inline'` stays until the inline engine and `onclick` handlers in `index.html` move into files. Request bodies are capped at 16 KB for `/api/v1/auth/` and 2 MB elsewhere (413). Logged-in users get at most 180 upstream market-data fetches per minute (cached answers are free).
+
+Dated audit and design notes live in `docs/history/` and may be out of date.
 
 ## Run tests locally
 

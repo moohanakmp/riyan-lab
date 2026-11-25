@@ -15,11 +15,11 @@ function extract(name,kind='function'){
   }
   throw Error('Cannot parse shared strategy '+name);
 }
-const names=['ema','rsi','atr','swingLevels','emaSeries','macd','kmrAdx','kmrPivots','kmrStructure','kmrVolumePressure','kmrSweep','kmrTfBias','kmrSmartScan','ev2txt','kmrTradePlan','kmrClosed','kmrIstHour','kmrNewsEvents','calendarReady','kmrScan','getCandles','computeSignal','orderBlocks','calcPos','computeVolSpike','marketEvidenceSnapshot','paperAccountRisk','autoEntryCheck','evaluateSignals','recordSignal','checkOutcome','isMetalsMarketOpen','istDayKey','scalpToday','bbAt','aggMinutes','scalpClosed15m','kmrLevelZones','kmrLevelSetup','kmrOrderBlockSetup','kmrBreakRetestSetup','kmrLevelPlan','scalpScan','scalpLevels','scalpCtx','scalpEvaluate','scalpOpen','scalpClose','scalpCheckRange','scalpCandleCheck','scalpManageAll','fmtP','freshQuote'];
+const names=['ema','rsi','atr','swingLevels','emaSeries','macd','kmrAdx','kmrPivots','kmrStructure','kmrVolumePressure','kmrSweep','kmrTfBias','kmrSmartScan','ev2txt','kmrTradePlan','kmrClosed','kmrIstHour','kmrNewsEvents','calendarReady','kmrScan','getCandles','computeSignal','orderBlocks','calcPos','computeVolSpike','marketEvidenceSnapshot','paperAccountRisk','autoEntryCheck','evaluateSignals','recordSignal','autoWickCheck','checkOutcome','isMetalsMarketOpen','istDayKey','scalpToday','bbAt','aggMinutes','scalpClosed15m','kmrLevelZones','kmrLevelSetup','kmrOrderBlockSetup','kmrBreakRetestSetup','kmrLevelPlan','scalpScan','scalpLevels','scalpCtx','scalpEvaluate','scalpOpen','scalpClose','scalpCheckRange','scalpCandleCheck','scalpManageAll','fmtP','freshQuote'];
 const paper=fs.readFileSync(path.join(root,'paper-engine.js'),'utf8');
 const source=fs.readFileSync(path.join(root,'trading-core.js'),'utf8')+'\n'+
  fs.readFileSync(path.join(root,'market-context.js'),'utf8')+'\n'+
- ['ASSETS','ICONS','SIG_TUNE','SPREAD','SCALP_DEF'].map(n=>extract(n,'const')).join('\n')+'\n'+
+ ['ASSETS','ICONS','SIG_TUNE','SPREAD','PAPER_LIMITS','SCALP_DEF'].map(n=>extract(n,'const')).join('\n')+'\n'+
  names.filter(n=>n!=='freshQuote').map(n=>extract(n)).join('\n')+'\n'+paper.match(/function freshQuote\([^\n]+/)[0];
 function normalize(raw,ms,now,coinbase){
   if(!Array.isArray(raw))return [];
@@ -39,7 +39,7 @@ async function scan(job){
  const context=vm.createContext({Date:FixedDate,Intl,console:{warn:()=>{}},job,diagnostics,errors,
   document:{getElementById:()=>({style:{display:'none'}})},
   showToast:()=>{},fireAlert:()=>{},fireOutcome:()=>{},scalpNotify:()=>{},recordHourSample:()=>{},saveSigMeta:()=>{},renderSignals:()=>{},renderHistory:()=>{},sendTelegram:()=>{},sendEmailAlert:()=>{},claimAlertOnce:async()=>false,
-  paperReady:()=>true,
+  paperReady:()=>true,marketNow:()=>now,
   dbPut:async(_,r)=>save(r.manual?'manual-signals':'auto-signals',r.id,r),
   saveSignal:async r=>save(r.manual?'manual-signals':'auto-signals',r.id,r),
   saveScalpHist:()=>{},

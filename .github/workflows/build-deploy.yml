@@ -71,6 +71,10 @@ jobs:
           node scripts/check-live-ux.cjs
           node scripts/check-order-flow.cjs
           node scripts/check-quality-consistency.cjs
+          node scripts/check-wick-basis.cjs
+          node scripts/check-paper-limits.cjs
+          node scripts/check-server-clock.cjs
+          node scripts/check-scanner-names.cjs
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build

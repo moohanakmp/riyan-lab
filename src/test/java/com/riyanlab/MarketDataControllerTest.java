@@ -2,6 +2,28 @@ package com.riyanlab;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 class MarketDataControllerTest {
+    static AuthService signedIn(){
+        var auth=org.mockito.Mockito.mock(AuthService.class);
+        org.mockito.Mockito.when(auth.require(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(new AuthService.Identity(1,"tester","user"));
+        return auth;
+    }
+    @Test @SuppressWarnings({"unchecked","rawtypes"})
+    void oneUserCannotDriveUnlimitedUpstreamTrafficButCachedAnswersStayFree() throws Exception {
+        var client=org.mockito.Mockito.mock(java.net.http.HttpClient.class);
+        var upstream=org.mockito.Mockito.mock(java.net.http.HttpResponse.class);
+        org.mockito.Mockito.when(upstream.statusCode()).thenReturn(200);
+        org.mockito.Mockito.when(upstream.body()).thenReturn("{}");
+        org.mockito.Mockito.when(client.send(org.mockito.ArgumentMatchers.any(java.net.http.HttpRequest.class),org.mockito.ArgumentMatchers.any(java.net.http.HttpResponse.BodyHandler.class))).thenReturn(upstream);
+        var controller=new MarketDataController(signedIn(),client);
+        long now=System.currentTimeMillis();
+        for(int i=0;i<MarketDataController.USER_UPSTREAM_PER_MINUTE;i++)assertTrue(controller.underBudget("tester",now));
+        assertFalse(controller.underBudget("tester",now),"budget spent");
+        assertTrue(controller.underBudget("other",now),"other users unaffected");
+        assertTrue(controller.underBudget("tester",now+60_000),"budget refills after a minute");
+        for(int i=0;i<MarketDataController.USER_UPSTREAM_PER_MINUTE;i++)controller.underBudget("tester",now+60_000);
+        var ex=assertThrows(org.springframework.web.server.ResponseStatusException.class,()->controller.data("https://api.gold-api.com/price/XAU",new org.springframework.mock.web.MockHttpServletRequest()));
+        assertEquals(429,ex.getStatusCode().value());
+    }
     @Test @SuppressWarnings({"unchecked","rawtypes"})
     void rateLimitPausesOtherTimeframesWithoutBlockingOtherProviders() throws Exception {
         var client=org.mockito.Mockito.mock(java.net.http.HttpClient.class);
@@ -9,7 +31,7 @@ class MarketDataControllerTest {
         org.mockito.Mockito.when(upstream.statusCode()).thenReturn(429);
         org.mockito.Mockito.when(upstream.headers()).thenReturn(java.net.http.HttpHeaders.of(java.util.Map.of(),(a,b)->true));
         org.mockito.Mockito.when(client.send(org.mockito.ArgumentMatchers.any(java.net.http.HttpRequest.class),org.mockito.ArgumentMatchers.any(java.net.http.HttpResponse.BodyHandler.class))).thenReturn(upstream);
-        var controller=new MarketDataController(org.mockito.Mockito.mock(AuthService.class),client);
+        var controller=new MarketDataController(signedIn(),client);
         var req=new org.springframework.mock.web.MockHttpServletRequest();
         assertEquals(503,controller.data("https://query1.finance.yahoo.com/v8/finance/chart/GC%3DF?interval=15m&range=1mo",req).getStatusCode().value());
         assertEquals(503,controller.data("https://query1.finance.yahoo.com/v8/finance/chart/SI%3DF?interval=5m&range=1mo",req).getStatusCode().value());
@@ -29,7 +51,7 @@ class MarketDataControllerTest {
         org.mockito.Mockito.when(client.send(org.mockito.ArgumentMatchers.any(java.net.http.HttpRequest.class),org.mockito.ArgumentMatchers.any(java.net.http.HttpResponse.BodyHandler.class))).thenAnswer(call->{
             entered.countDown();assertTrue(release.await(5,java.util.concurrent.TimeUnit.SECONDS));return upstream;
         });
-        var controller=new MarketDataController(org.mockito.Mockito.mock(AuthService.class),client);
+        var controller=new MarketDataController(signedIn(),client);
         try(var pool=java.util.concurrent.Executors.newFixedThreadPool(2)) {
             java.util.concurrent.Callable<Integer> fetch=()->controller.data("https://query1.finance.yahoo.com/v8/finance/chart/GC%3DF?interval=15m&range=1mo",new org.springframework.mock.web.MockHttpServletRequest()).getStatusCode().value();
             var first=pool.submit(fetch);assertTrue(entered.await(5,java.util.concurrent.TimeUnit.SECONDS));

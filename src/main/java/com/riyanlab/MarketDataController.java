@@ -16,7 +16,18 @@ public class MarketDataController {
     private final AuthService auth;
     private final HttpClient client;
     private record Cached(String body,int status,long until) {}
-    private final Map<String,Cached> cache=new ConcurrentHashMap<>();
+    // Least-recently-used eviction (was: clear everything past 256 entries, which dropped every hot entry at once).
+    private final Map<String,Cached> cache=Collections.synchronizedMap(new LinkedHashMap<>(300,0.75f,true){
+        @Override protected boolean removeEldestEntry(Map.Entry<String,Cached> e){return size()>256;}
+    });
+    // Per-user budget for requests that miss the cache and reach the provider, so one account cannot
+    // exhaust the shared Render IP's rate limit with distinct URLs.
+    static final int USER_UPSTREAM_PER_MINUTE=180;
+    private final Map<String,long[]> userBudget=new ConcurrentHashMap<>(); // user -> {windowStart, count}
+    boolean underBudget(String user,long now){
+        long[] b=userBudget.compute(user,(k,v)->v==null||now-v[0]>=60_000L?new long[]{now,0}:v);
+        synchronized(b){return ++b[1]<=USER_UPSTREAM_PER_MINUTE;}
+    }
     private final Semaphore permits=new Semaphore(6);
     private final Map<String,Long> providerCooldown=new ConcurrentHashMap<>();
     private final Object[] requestLocks=new Object[32];
@@ -102,7 +113,14 @@ public class MarketDataController {
     }
     @GetMapping("/data")
     ResponseEntity<String> data(@RequestParam String url,HttpServletRequest request) {
-        auth.require(request,false);
+        var identity=auth.require(request,false);
+        URI uri=allowed(url);
+        long now=System.currentTimeMillis();
+        Cached saved=cache.get(uri.toString());
+        if(saved!=null&&saved.until>now)return response(saved);
+        if(!underBudget(identity.username(),now))
+            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,"Too many market requests; retry in a minute");
+        if(userBudget.size()>1000)userBudget.entrySet().removeIf(e->now-e.getValue()[0]>=60_000L);
         return publicData(url);
     }
     // Fixed allowlist and shared provider cooldowns also apply to the background scanner.
@@ -129,7 +147,7 @@ public class MarketDataController {
             String body=status==200?upstream.body():"{\"error\":\"Market provider unavailable\",\"upstreamStatus\":"+status+"}";
             if(body.length()>2_000_000)throw new IllegalStateException("Oversized market response");
             Cached result=new Cached(body,status==200?200:503,now+ttl);
-            if(cache.size()>256)cache.clear();cache.put(uri.toString(),result);
+            cache.put(uri.toString(),result);
             return response(result);
         }catch(InterruptedException e){Thread.currentThread().interrupt();throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"Market request interrupted");}
         catch(Exception e){throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"Market feed timed out or unavailable");}

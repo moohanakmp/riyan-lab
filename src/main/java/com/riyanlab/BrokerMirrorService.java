@@ -232,7 +232,7 @@ public class BrokerMirrorService {
             String ticket=clip(r[0],40);
             var ids=jdbc.queryForList("""
                 UPDATE broker_orders SET state='CLOSED',broker_ticket=COALESCE(broker_ticket,?),close_price=?,profit_usd=?,
-                    closed_at=COALESCE(to_timestamp(?::bigint),now()),updated_at=now()
+                    closed_at=LEAST(COALESCE(to_timestamp(?::bigint),now()),now()),updated_at=now()
                 WHERE account_id=? AND action='OPEN' AND state IN ('DISPATCHED','UNKNOWN','FILLED')
                   AND (client_order_id=? OR (broker_ticket IS NOT NULL AND broker_ticket=?)) RETURNING id
                 """,ticket,decOrNull(r[2]),decOrNull(r[3]),longOrNull(r[4]),accountId,r[1],ticket);

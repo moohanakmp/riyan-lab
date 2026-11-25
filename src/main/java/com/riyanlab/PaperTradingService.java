@@ -15,6 +15,8 @@ import java.util.*;
 public class PaperTradingService {
     private static final Set<String> TRADES=Set.of("auto-signals","manual-signals","low-profit","basket-positions");
     private static final Map<String,Double> CONTRACT=Map.of("XAUUSD",100d,"XAGUSD",100d,"BTCUSD",1d);
+    // Must equal PAPER_LIMITS in index.html (scripts/check-paper-limits.cjs).
+    static final double RISK_USD=4,DAY_LOSS_USD=8;static final int MAX_OPEN=5;
     private static final Map<String,Double> SPREAD=Map.of("XAUUSD",.35,"XAGUSD",.03,"BTCUSD",5d);
     private final JdbcTemplate jdbc;
     private final ObjectMapper json;
@@ -149,7 +151,7 @@ public class PaperTradingService {
                 }
             }
         }
-        if(count>=5||total>4.000001||dayNet<=-8||total>8+dayNet)reject("Account paper risk or daily loss limit reached");
+        if(count>=MAX_OPEN||total>RISK_USD+1e-6||dayNet<=-DAY_LOSS_USD||total>DAY_LOSS_USD+dayNet)reject("Account paper risk or daily loss limit reached");
         if(jdbc.update("INSERT INTO paper_signal_keys(username,signal_key,record_type,source_id) VALUES(?,?,?,?) ON CONFLICT DO NOTHING",user,key,type,id)==0)
             reject("This confirmed candle already has an entry");
     }
@@ -169,6 +171,6 @@ class PaperTradingController {
     @PostMapping("/lease")
     Map<String,Object> lease(HttpServletRequest request){
         var identity=auth.require(request,true);auth.mayWrite(identity,"low-profit");
-        return Map.of("owned",paper.lease(identity.username(),request.getHeader("X-Paper-Engine")));
+        return Map.of("owned",paper.lease(identity.username(),request.getHeader("X-Paper-Engine")),"serverTime",System.currentTimeMillis());
     }
 }

@@ -36,7 +36,7 @@ MT5 terminal + RiyanLabBridge EA  ──poll──►  /api/v1/broker/connector/
 | Max open positions | 2 | Server |
 | Max orders per day | 10 | Server |
 | Max signal age | 90 s; older queued entries expire, never chased | Server |
-| Max slippage | 0.15 % from the app's entry price | EA |
+| Max slippage | 0.15 % against the app's entry price (better prices accepted up to 5× that), and never more than 25 % of the stop distance (EA input `MaxSlipOfStop`); a price already past the SL is rejected | EA |
 | Account identity | Terminal login/server must match the Broker tab | Server and EA (`ExpectedLogin`) |
 | Real-money account | Refused | Server needs `RIYAN_BROKER_LIVE_ENABLED=true` **and** typed-login confirmation in the tab; EA needs `AllowRealAccount=true` |
 | Duplicate protection | An order without a report becomes `UNKNOWN` and is never re-sent; it is resolved from the positions the terminal reports | Server and EA |
