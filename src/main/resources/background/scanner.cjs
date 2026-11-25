@@ -39,7 +39,7 @@ async function scan(job){
  const context=vm.createContext({Date:FixedDate,Intl,console:{warn:()=>{}},job,diagnostics,errors,
   document:{getElementById:()=>({style:{display:'none'}})},
   showToast:()=>{},fireAlert:()=>{},fireOutcome:()=>{},scalpNotify:()=>{},recordHourSample:()=>{},saveSigMeta:()=>{},renderSignals:()=>{},renderHistory:()=>{},sendTelegram:()=>{},sendEmailAlert:()=>{},claimAlertOnce:async()=>false,
-  paperReady:()=>true,marketNow:()=>Date.now(),
+  paperReady:()=>true,marketNow:()=>now,
   dbPut:async(_,r)=>save(r.manual?'manual-signals':'auto-signals',r.id,r),
   saveSignal:async r=>save(r.manual?'manual-signals':'auto-signals',r.id,r),
   saveScalpHist:()=>{},
