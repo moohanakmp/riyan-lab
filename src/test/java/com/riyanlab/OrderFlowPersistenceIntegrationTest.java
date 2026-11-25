@@ -12,6 +12,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class OrderFlowPersistenceIntegrationTest {
  @Autowired JdbcTemplate jdbc;@Autowired ObjectMapper json;
  @Test void closedMinutesSurviveARestart(){
+  jdbc.update("DELETE FROM order_flow_minutes WHERE symbol='XAGUSD'"); // repeatable on a reused database
   long now=System.currentTimeMillis(),t=Math.floorDiv(now,60_000L)*60_000L-5*60_000L;
   var a=new OrderFlowCollector(jdbc,json,url->{throw new IllegalStateException("offline");});var b=a.books.get("XAGUSD");
   synchronized(b){a.connected(b,t-1000);}

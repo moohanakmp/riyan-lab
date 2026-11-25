@@ -100,6 +100,8 @@ var LiveVolume = (() => {
   function start(sym){
     if(!['XAUUSD','XAGUSD','BTCUSD'].includes(sym))return;
     if(current===sym&&(socket||businessSocket||retryTimer))return;
+    // Close the old stream while `current` still names it, so the symbol being left is marked offline (not the new one).
+    if(current&&current!==sym)stopSockets();
     current=sym;retries=0;connect(sym);
   }
   function stop(){stopSockets();current=null;}

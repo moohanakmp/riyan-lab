@@ -21,6 +21,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class AuthPersistenceIntegrationTest {
     @Autowired private MockMvc mvc;
     @Autowired private ObjectMapper mapper;
+    @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     private String paperJson(String key) throws Exception {
         var n=mapper.createObjectNode();
@@ -35,6 +36,54 @@ class AuthPersistenceIntegrationTest {
             .header("X-Paper-Engine","integration-engine"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.owned").value(true));
     }
+    private MockHttpServletResponse loginAs(String user,String pw,Cookie... cookies) throws Exception {
+        var req=post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsString(java.util.Map.of("username",user,"password",pw)));
+        if(cookies.length>0)req=req.cookie(cookies);
+        return mvc.perform(req).andReturn().getResponse();
+    }
+    private void ensureUser(String user,String pw) throws Exception {
+        if(jdbc.queryForObject("SELECT count(*) FROM auth_users WHERE username=?",Integer.class,user)>0)return;
+        var admin=loginAs("testadmin","unit-test-password-1234");
+        String csrf=mapper.readTree(admin.getContentAsString()).path("csrf").asText();
+        mvc.perform(post("/api/v1/auth/users").cookie(admin.getCookies()).header("X-CSRF-Token",csrf).contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsString(java.util.Map.of("username",user,"role","user","password",pw)))).andExpect(status().isOk());
+    }
+
+    @Test
+    void strangerCannotLockOwnerOutAndCannotOverwriteOthersRecords() throws Exception {
+        ensureUser("lockowner","lock-owner-pass-123");ensureUser("otheruser","other-user-pass-123");
+        var first=loginAs("lockowner","lock-owner-pass-123");
+        assertEquals(200,first.getStatus());
+        Cookie device=first.getCookie("RIYAN_DEVICE");
+        assertNotNull(device,"trusted-device cookie issued");assertTrue(device.isHttpOnly());
+        assertFalse(first.getContentAsString().contains("device"),"device token never in the JSON body");
+        for(int i=0;i<6;i++)assertEquals(401,loginAs("lockowner","wrong-password").getStatus());
+        assertEquals(401,loginAs("lockowner","lock-owner-pass-123").getStatus(),"locked for a new browser");
+        assertEquals(200,loginAs("lockowner","lock-owner-pass-123",device).getStatus(),"owner's own browser still gets in");
+        assertEquals(401,loginAs("lockowner","wrong-password",device).getStatus());
+
+        // Shared record keys: the creator keeps their row; another user's write is a no-op, not an overwrite.
+        var owner=loginAs("lockowner","lock-owner-pass-123",device);
+        String oc=mapper.readTree(owner.getContentAsString()).path("csrf").asText();
+        mvc.perform(put("/api/v1/records/pnl/review-shared-1").cookie(owner.getCookies()).header("X-CSRF-Token",oc)
+            .contentType(MediaType.APPLICATION_JSON).content("{\"total\":10}")).andExpect(status().isOk());
+        var other=loginAs("otheruser","other-user-pass-123");
+        String xc=mapper.readTree(other.getContentAsString()).path("csrf").asText();
+        mvc.perform(put("/api/v1/records/pnl/review-shared-1").cookie(other.getCookies()).header("X-CSRF-Token",xc)
+            .contentType(MediaType.APPLICATION_JSON).content("{\"total\":-999}")).andExpect(status().isOk())
+            .andExpect(jsonPath("$.saved").value(false));
+        assertEquals("10",jdbc.queryForObject("SELECT payload->>'total' FROM pnl_reports WHERE source_id='review-shared-1'",String.class));
+    }
+
+    @Test
+    void oversizedLoginBodyIsRejectedBeforeParsing() throws Exception {
+        mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON).content("{\"username\":\""+"a".repeat(40_000)+"\"}"))
+            .andExpect(status().isPayloadTooLarge());
+        mvc.perform(get("/api/v1/health")).andExpect(header().string("X-Content-Type-Options","nosniff"))
+            .andExpect(header().string("X-Frame-Options","DENY"));
+    }
+
     @Test
     void loginAndAuditRequireServerSession() throws Exception {
         mvc.perform(get("/api/v1/paper/background/calendar-status")).andExpect(status().isUnauthorized());

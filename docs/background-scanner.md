@@ -10,7 +10,7 @@ A server cycle waits 20 seconds after the preceding cycle finishes. Feed loading
 
 ## Hosting requirement
 
-Render free web services stop after 15 minutes without incoming traffic. An in-process scheduler cannot run while its host is stopped. This implementation does not install fake keep-alive traffic or claim continuous service on that plan. Use an always-on Render service or another genuinely always-on Java/Node host for uninterrupted background operation. No billing or hosting plan was changed.
+Render free web services stop after 15 minutes without incoming traffic. An in-process scheduler cannot run while its host is stopped. Since 2026-11-24 the staging service pings its own `/api/v1/health` every 10 minutes on weekdays 06:00-21:00 UTC (`KeepAwake.java`, approved by the owner); it cannot wake a service that is already asleep, so gaps outside that window remain. `ops/background-wake.yml` is an inactive copy of the earlier GitHub Actions wake job. Use an always-on Render service or another genuinely always-on Java/Node host for uninterrupted background operation. No billing or hosting plan was changed.
 
 ## Ownership and safety
 

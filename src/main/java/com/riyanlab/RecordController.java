@@ -146,6 +146,13 @@ public class RecordController {
             if(!owners.isEmpty()&&!identity.username().equals(owners.get(0)))
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Paper ledger is user-owned");
         }
+        // Only the creator (or an admin) may change a stored record. Shared keys (e.g. the same news headline seen by
+        // two users) are left as the first writer saved them, so nobody can overwrite another user's rows.
+        if(!"admin".equals(identity.role())){
+            List<String> creator=jdbc.query("SELECT created_by FROM "+target+" WHERE source_id=?",(rs,n)->rs.getString(1),sourceId);
+            if(!creator.isEmpty()&&creator.get(0)!=null&&!identity.username().equals(creator.get(0)))
+                return ResponseEntity.ok(Map.of("saved",false,"readOnly",true,"sourceId",sourceId));
+        }
         List<String> previous=jdbc.query("SELECT payload::text FROM "+target+" WHERE source_id=? FOR UPDATE",
             (rs,rowNum)->rs.getString(1),sourceId);
         if(!previous.isEmpty()) {

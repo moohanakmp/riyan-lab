@@ -122,4 +122,16 @@ const vm=require('node:vm'),ctx=vm.createContext({PaperMath:require('../src/main
 vm.runInContext(extract('volumeTrapWithLive'),ctx);
 const merged=ctx.volumeTrapWithLive('XAUUSD',[{t:t0,ms:M,o:1,h:2,l:1,c:2,v:5,complete:true}]);
 assert.deepEqual(merged.map(x=>x.t),[t0,t0+M],'only contiguous, fully covered live minutes are appended');
+// 2026-11-25: switching symbol must mark the symbol being LEFT offline, so its last minute stays partial.
+{
+  const saved=global.WebSocket;class FakeWS{constructor(u){this.u=u;this.readyState=1;FakeWS.all.push(this);}send(){}close(){}}FakeWS.all=[];
+  global.WebSocket=FakeWS;
+  LiveVolume.start('XAUUSD');const xau=T.state('XAUUSD');
+  const pub=FakeWS.all.find(w=>w.u.includes('/public'));pub.onopen();pub.onmessage({data:JSON.stringify({event:'subscribe',arg:{channel:'trades'}})});
+  const before=xau.fp.gaps.length;
+  LiveVolume.start('XAGUSD');
+  assert.equal(xau.fp.gaps.length,before+1,'leaving XAU opens a new gap on XAU');
+  assert.equal(xau.fp.gaps.at(-1)[1],Infinity,'XAU gap stays open while another symbol is shown');
+  LiveVolume.stop();global.WebSocket=saved;
+}
 console.log('PASS server background minutes fill gaps without double counting, footprint from taker trades, 1m/5m merge, CVD, partial coverage, healthy/warning/flip states (both directions), closed-candle-only alerts, absorption, OKX contract units, display isolation, live minute merge');

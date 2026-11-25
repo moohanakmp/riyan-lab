@@ -24,6 +24,7 @@ class BrokerMirrorIntegrationTest {
     @Autowired private MockMvc mvc;
     @Autowired private ObjectMapper mapper;
     @Autowired private JdbcTemplate jdbc;
+    @Autowired private BrokerMirrorService broker;
     private static final String ENGINE="broker-it-engine";
 
     private record Session(Cookie[] cookies,String csrf){}
@@ -148,6 +149,38 @@ class BrokerMirrorIntegrationTest {
         o=order("broker-it-live");
         assertEquals("CLOSED",o.get("state"));
         assertEquals(0,new java.math.BigDecimal("1.46").compareTo((java.math.BigDecimal)o.get("profit_usd")));
+
+        // 3b) Safety rules (2026-11-25 review).
+        // Low Profit and Basket are paper-only and must never reach the broker, even in EXECUTE mode.
+        broker.afterSignalSaved("brokeradmin","low-profit","broker-it-lp",null,signal("broker-it-lp").toString());
+        broker.afterSignalSaved("brokeradmin","basket-sessions","broker-it-basket",null,signal("broker-it-basket").toString());
+        assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM broker_orders WHERE signal_source_id IN ('broker-it-lp','broker-it-basket')",Integer.class));
+        // Signal age is measured from the signal's own time, not from when it was queued.
+        broker.afterSignalSaved("brokeradmin","auto-signals","broker-it-stale",null,signal("broker-it-stale").put("ts",System.currentTimeMillis()-3_600_000L).toString());
+        assertEquals("BLOCKED",order("broker-it-stale").get("state"));
+        assertTrue(((String)order("broker-it-stale").get("state_reason")).contains("old"));
+        // App closes a signal while the broker fill is still unconfirmed: the CLOSE waits for the fill instead of being dropped.
+        var late=signal("broker-it-late");
+        broker.afterSignalSaved("brokeradmin","auto-signals","broker-it-late",null,late.toString());
+        String lateId=(String)order("broker-it-late").get("client_order_id");
+        assertTrue(poll(token,demo).contains("|"+lateId+"|OPEN|"));
+        var lateClosed=late.deepCopy().put("status","CLOSED");
+        broker.afterSignalSaved("brokeradmin","auto-signals","broker-it-late",late.toString(),lateClosed.toString());
+        assertFalse(poll(token,demo).contains("|CLOSE|"),"no CLOSE without a broker ticket");
+        assertEquals("QUEUED",jdbc.queryForObject("SELECT state FROM broker_orders WHERE parent_id=? AND action='CLOSE'",String.class,order("broker-it-late").get("id")));
+        report(token,Map.of("clientId",lateId,"status","FILLED","ticket","5550002","price","100.01","volume","0.01"));
+        assertTrue(poll(token,demo).contains("|CLOSE|"),"CLOSE sent once the fill is confirmed");
+        // A pending report with price 0 is never stored as a fill price.
+        assertNotEquals(0,java.math.BigDecimal.ZERO.compareTo((java.math.BigDecimal)order("broker-it-late").get("fill_price")));
+        // A dispatched OPEN with no position or close for 10 minutes releases its slot instead of blocking all entries.
+        broker.afterSignalSaved("brokeradmin","auto-signals","broker-it-lost",null,signal("broker-it-lost").toString());
+        poll(token,demo);
+        jdbc.update("UPDATE broker_orders SET dispatched_at=now()-interval '11 minutes' WHERE signal_source_id='broker-it-lost' AND action='OPEN'");
+        poll(token,demo);
+        assertEquals("CANCELLED",order("broker-it-lost").get("state"));
+        // A terminal that is not the linked account cannot change order state.
+        poll(token,Map.of("login","11111111","server","OctaFX-Demo","mode","demo","closes","5550002|"+lateId+"|90|-99|"+System.currentTimeMillis()/1000));
+        assertEquals("FILLED",order("broker-it-late").get("state"));
 
         // 4) Kill switch blocks new entries; audit trail holds every step.
         mvc.perform(post("/api/v1/broker/kill-switch").cookie(admin.cookies).header("X-CSRF-Token",admin.csrf).contentType(MediaType.APPLICATION_JSON)

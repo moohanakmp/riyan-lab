@@ -1,28 +1,76 @@
-# Riyan Lab — KMR v28 Migration (work in progress)
+# Riyan Lab / KMR Market
 
-Target: **Java 21 / Spring Boot / Maven**, **Neon PostgreSQL** in schema `riyan_lab`, original **JavaScript** frontend, and **Render** deployment.
+Paper-trading signal app for XAUUSD, XAGUSD and BTCUSD. **Java 21 / Spring Boot 3.5 / Maven**, **Neon PostgreSQL** (Flyway), a single-page **JavaScript** frontend (`src/main/resources/static/index.html`), hosted on **Render free tier**.
 
-This is an initial persistence migration, **not a verified zero-error or complete server-side rewrite**. The original browser-based signal engine is retained; server-side signal scanning when the browser is closed remains unimplemented.
+## How it fits together
 
-## API persistence
+| Part | Where | Notes |
+| --- | --- | --- |
+| Strategy engine (Auto signals, Low Profit, Analysis) | `static/index.html` (inline JS) + `static/trading-core.js` | Runs in the browser. |
+| Background scanner | `BackgroundScanner.java` + `background/scanner.cjs` | Runs the *same* engine in Node when no browser holds the lease. `scanner.cjs` pulls named functions/consts out of `index.html` with regex: renaming them breaks server scanning (`scripts/check-background.cjs` catches it). See `docs/background-scanner.md`. |
+| Paper ledger + risk checks | `RecordController.java`, `PaperTradingService.java` | Server re-validates every paper entry. |
+| Volume Trap / order flow | `OrderFlowCollector.java`, `static/order-flow.js`, `static/live-volume.js` | Display only. See `docs/order-flow-footprint-20261119.md`. |
+| Broker mirror (MT5 EA bridge) | `BrokerMirrorService.java`, `connector/mt5/RiyanLabBridge.mq5` | Admin Broker tab. DRY_RUN by default. See `docs/broker-bridge.md`. |
+| Telegram alerts | `TelegramDelivery.java` | Server-side delivery. |
+| Market data proxy | `MarketDataController.java` | Fixed host/path allowlist. |
 
-The Flyway V1 migration creates: `auto_signals`, `manual_signals`, `low_profit_signals`, `analysis_reports`, `seven_day_predictions`, `pnl_reports`, `gold_predictions_actuals`, `research_reports`, `tab_states` and `audit_events`. Each record contains the original JSON payload, and a separate audit event is appended when written.
+## Safety rules (do not break)
 
-## Local run
+| Rule | Enforced in | Guarded by |
+| --- | --- | --- |
+| Live (real-money) broker trading is OFF by default | `RIYAN_BROKER_LIVE_ENABLED` (default `false`) + typed login confirmation + EA `AllowRealAccount` | `BrokerMirrorIntegrationTest` (step 5, HALT on real account) |
+| Low Profit and Basket are paper-only, never mirrored to a broker | `BrokerMirrorService.MIRRORED_TYPES` | `BrokerMirrorIntegrationTest` (step 3b) |
+| Low Profit has no news/calendar dependency | `scalpScan` in `index.html` | `scripts/check-sync-scalp.cjs` |
+| Auto analysis, Low Profit and Volume Trap UI stay | `index.html` tabs `signals`, `analysis`, `scalp`, `flow` | `scripts/check-app-regression.cjs`, `scripts/check-volume-trap.cjs` |
+| Staging never touches the production schema | `RiyanLabApplication.java` refuses `APP_ENV=staging` with schema `riyan_lab` | startup check |
+| Metal quote freshness gate stays < 30 s | `static/paper-engine.js`, `BackgroundFeeds.java` | `scripts/check-quality-consistency.cjs` |
+| Never commit secrets (the repo is public) | | |
 
-Configure `DATABASE_URL`, `DB_USER`, `DB_PASSWORD`, `RIYAN_API_TOKEN` (no secrets in git). Run `mvn -B verify`, then `mvn spring-boot:run`. A database user with CREATE permission is required for Flyway's `riyan_lab` schema.
+## Branches and environments
 
-## Deployment
+| Branch | Render service | `APP_ENV` / `DB_SCHEMA` | Deploys when |
+| --- | --- | --- | --- |
+| `staging/backend-auth-20261016` | `riyan-lab-staging` (https://riyan-lab-staging.onrender.com) | `staging` / `riyan_lab_staging` | Render auto-deploys every push to this branch (Docker build runs the unit tests). |
+| `main` | `riyan-lab` (https://riyan-lab.onrender.com) | `production` / `riyan_lab` | Render auto-deploys every push to `main`; GitHub Actions also calls `RENDER_DEPLOY_HOOK` after a green build. |
 
-Use Render's Blueprint or GitHub integration with `render.yaml`. The GitHub Actions workflow first compiles/tests, then calls Render only on successful `main` builds and only if `RENDER_DEPLOY_HOOK` is configured in GitHub Actions secrets.
+`render.yaml` describes only the staging service; the production service is configured by hand in Render. Work goes to a feature branch, then a pull request into the staging branch. CI (`.github/workflows/build-deploy.yml`) runs `mvn verify` against PostgreSQL 17 plus every `scripts/check-*.cjs` on pushes and PRs to both branches.
 
-## Known limitations
+## Environment variables
 
-- Legacy frontend sign-in is not a substitute for production backend user authentication; the initial API uses a shared token.
-- Existing Netlify IndexedDB history cannot migrate automatically across browser origins; it must be exported or migrated separately.
-- UI modules, DB synchronization, and MT5 actions require regression testing before production cutover.
-- Neon connectivity, Render runtime, and complete trading correctness are **not verified** in this environment.
+Set in Render (never commit values). Defaults in brackets.
 
+| Name | Used by | Purpose |
+| --- | --- | --- |
+| `DATABASE_URL`, `DB_USER`, `DB_PASSWORD` | `application.properties` | Neon connection (JDBC URL). |
+| `DB_SCHEMA` [`riyan_lab`] | Flyway, Hikari | `riyan_lab_staging` on staging. |
+| `APP_ENV` [`production`] | `RiyanLabApplication`, `AuthService`, `KeepAwake` | `staging` enables the staging-only guards and keep-awake. |
+| `PORT` [`8080`] | Spring | Set by Render. |
+| `RIYAN_BOOTSTRAP_ADMIN_USER`, `RIYAN_BOOTSTRAP_ADMIN_PASSWORD` | `AuthService` | First admin, only when `auth_users` is empty. Remove after first login. |
+| `RIYAN_BOOTSTRAP_ADMIN_RESET` [`false`] | `AuthService` | Staging only: reset the bootstrap admin password on boot. Turn off again after use. |
+| `RIYAN_BROKER_LIVE_ENABLED` [`false`] | `BrokerMirrorService` | Server gate for real-money accounts. Leave off. |
+| `BACKGROUND_SCANNER_ENABLED` [`true`] | `BackgroundScanner` | Server-side scanning when no browser owns the lease. |
+| `ORDER_FLOW_ENABLED` [`true`], `ORDER_FLOW_BACKFILL_HOURS` [`6`] | `OrderFlowCollector` | Volume Trap footprint collector and gap-fill window (1-12 h). |
+| `RENDER_EXTERNAL_URL` | `KeepAwake` | Set by Render; staging self-ping target. |
+| `SCANNER_STATIC` | `background/scanner.cjs` | Optional path to the static folder (tests). |
+| `RIYAN_INTEGRATION_TEST` | tests | `true` enables the PostgreSQL integration tests. |
+
+## Run tests locally
+
+```bash
+# PostgreSQL 17 with database neondb, user/password postgres
+export DATABASE_URL=jdbc:postgresql://localhost:5432/neondb DB_SCHEMA=riyan_lab_staging APP_ENV=staging \
+  DB_USER=postgres DB_PASSWORD=postgres RIYAN_BOOTSTRAP_ADMIN_USER=testadmin \
+  RIYAN_BOOTSTRAP_ADMIN_PASSWORD=unit-test-password-1234 RIYAN_INTEGRATION_TEST=true \
+  BACKGROUND_SCANNER_ENABLED=false ORDER_FLOW_ENABLED=false
+mvn -B verify                                   # without RIYAN_INTEGRATION_TEST the DB tests are skipped silently
+for f in scripts/check-*.cjs; do node "$f" || echo "FAIL $f"; done
+```
+
+Tests must not depend on today's date: inject a clock (see `OrderFlowCollector.clock`, `EconomicCalendar`).
+
+## History
+
+The sections below are the original migration notes, kept for context. Where they disagree with the sections above, the sections above are current.
 
 ## Stage 2: server identity, data integrity, news checks (PR #2)
 

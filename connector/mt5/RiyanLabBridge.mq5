@@ -26,6 +26,7 @@ input bool   AllowRealAccount = false;   // Keep false for demo. Real money also
 input double MaxLotHardCap    = 0.01;    // Absolute per-order cap enforced in the terminal
 input int    PollSeconds      = 5;       // Poll interval
 input int    SlippagePoints   = 50;      // Max deviation passed to the broker on market orders
+input double MaxSlipOfStop    = 0.25;    // Reject if price moved against the entry by more than this share of the stop distance
 input long   MagicNumber      = 260301;  // Identifies Riyan Lab positions
 input int    HttpTimeoutMs    = 8000;    // Render free tier may need a cold start; failed polls simply retry
 
@@ -268,6 +269,12 @@ void Execute(string &f[])
       double price = side == "BUY" ? tick.ask : tick.bid;
       if(entryRef > 0 && maxSlip > 0 && MathAbs(price - entryRef) / entryRef * 100.0 > maxSlip)
       { Report(clientId, "REJECTED", "", price, 0, 0, StringFormat("Price moved %.3f%% from app entry; limit %.3f%%", MathAbs(price - entryRef) / entryRef * 100.0, maxSlip)); return; }
+      // Risk check in price terms: a % limit alone can exceed a tight gold stop and double the planned loss.
+      if(sl > 0 && ((side == "BUY" && price <= sl) || (side == "SELL" && price >= sl)))
+      { Report(clientId, "REJECTED", "", price, 0, 0, StringFormat("Price %.5f already past stop %.5f", price, sl)); return; }
+      double adverse = side == "BUY" ? price - entryRef : entryRef - price, stopDist = MathAbs(entryRef - sl);
+      if(entryRef > 0 && sl > 0 && MaxSlipOfStop > 0 && adverse > MaxSlipOfStop * stopDist)
+      { Report(clientId, "REJECTED", "", price, 0, 0, StringFormat("Price moved %.5f against entry; limit %.0f%% of %.5f stop", adverse, MaxSlipOfStop * 100.0, stopDist)); return; }
       int digits = (int)SymbolInfoInteger(symbol, SYMBOL_DIGITS);
       sl = sl > 0 ? NormalizeDouble(sl, digits) : 0; tp = tp > 0 ? NormalizeDouble(tp, digits) : 0;
       trade.SetTypeFillingBySymbol(symbol);

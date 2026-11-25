@@ -21,7 +21,7 @@ class OrderFlowCollectorTest {
     }
 
     @Test void streamBuildsFootprintWithTakerSide()throws Exception{
-        var c=new OrderFlowCollector(null,json,url->{throw new IllegalStateException("offline");});
+        var c=new OrderFlowCollector(null,json,url->{throw new IllegalStateException("offline");});c.clock=()->T0+M;
         c.onOkx("{\"event\":\"subscribe\",\"arg\":{\"channel\":\"trades\",\"instId\":\"XAU-USDT-SWAP\"}}");
         c.onOkx("{\"arg\":{\"channel\":\"trades\",\"instId\":\"XAU-USDT-SWAP\"},\"data\":[{\"tradeId\":\"10\",\"px\":\"4000.12\",\"sz\":\"3\",\"side\":\"buy\",\"ts\":\""+(T0+1000)+"\"},{\"tradeId\":\"11\",\"px\":\"4000.10\",\"sz\":\"2\",\"side\":\"sell\",\"ts\":\""+(T0+2000)+"\"}]}");
         c.onOkx("{\"arg\":{\"channel\":\"trades\",\"instId\":\"XAU-USDT-SWAP\"},\"data\":[{\"tradeId\":\"12\",\"px\":\"4001\",\"sz\":\"5\",\"side\":\"buy\",\"ts\":\""+(T0+M+500)+"\"}]}");
@@ -50,7 +50,7 @@ class OrderFlowCollectorTest {
         // Exchange history: one trade every 10 s for 10 minutes, ids 1..60.
         var history=new ArrayList<long[]>();
         for(int i=0;i<60;i++)history.add(new long[]{i+1,T0+i*10_000L+1,400000+i,1,i%2});
-        var c=new OrderFlowCollector(null,json,url->okxHistory(history,url));c.pageDelayMs=0;
+        var c=new OrderFlowCollector(null,json,url->okxHistory(history,url));c.pageDelayMs=0;c.clock=()->T0+10*M;
         var b=c.books.get("XAUUSD");
         long now=T0+10*M;
         // Streamed minutes 0-2, then the stream dropped (service asleep), reconnected in minute 7.
@@ -76,7 +76,7 @@ class OrderFlowCollectorTest {
     }
 
     @Test void failedHistoryKeepsMinutesPartialAndRetries(){
-        var c=new OrderFlowCollector(null,json,url->{throw new IllegalStateException("HTTP 429");});
+        var c=new OrderFlowCollector(null,json,url->{throw new IllegalStateException("HTTP 429");});c.clock=()->T0+M;
         var b=c.books.get("XAUUSD");
         synchronized(b){c.connected(b,T0);}
         c.onTrade(b,100,100,T0+30_000,4000,1,true);
@@ -84,6 +84,21 @@ class OrderFlowCollectorTest {
         assertTrue(b.needBackfill);assertTrue(b.backfill.startsWith("retrying"));
         @SuppressWarnings("unchecked") var rows=(List<Map<String,Object>>)c.view("XAUUSD","",0,T0+M).get("minutes");
         assertEquals(true,rows.get(0).get("partial"));
+    }
+
+    @Test void closedMinuteIsResentAsFinalWithoutAnotherTrade(){
+        long[] now={T0+30_000};
+        var c=new OrderFlowCollector(null,json,url->{throw new IllegalStateException("offline");});c.clock=()->now[0];
+        var b=c.books.get("XAUUSD");
+        synchronized(b){c.connected(b,T0);}
+        c.onTrade(b,1,1,T0+20_000,4000,1,true);
+        var first=c.view("XAUUSD","",0,now[0]);
+        long rev=((Number)first.get("rev")).longValue();
+        @SuppressWarnings("unchecked") var rows=(List<Map<String,Object>>)first.get("minutes");
+        assertEquals(false,rows.get(0).get("final"));
+        now[0]=T0+M+5_000;c.tick();
+        @SuppressWarnings("unchecked") var delta=(List<Map<String,Object>>)c.view("XAUUSD",c.boot,rev,now[0]).get("minutes");
+        assertEquals(1,delta.size(),"closed minute is sent again");assertEquals(true,delta.get(0).get("final"));
     }
 
     @Test void keepAwakeOnlyInApprovedWeekdayWindow(){

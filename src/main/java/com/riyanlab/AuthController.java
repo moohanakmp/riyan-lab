@@ -24,10 +24,10 @@ public class AuthController {
         Map<String,Object> session=auth.login(body.get("username"),body.get("password"),request);
         String token=(String)session.get("token"),csrf=(String)session.get("csrf");
         Map<String,Object> result=new LinkedHashMap<>(session);
-        result.remove("token");
+        result.remove("token");result.remove("device");
         return ResponseEntity.ok()
             .header(HttpHeaders.SET_COOKIE,auth.sessionCookie(token,request.isSecure()),
-                auth.csrfCookie(csrf,request.isSecure()))
+                auth.csrfCookie(csrf,request.isSecure()),auth.deviceCookie((String)session.get("device"),request.isSecure()))
             .header(HttpHeaders.CACHE_CONTROL,"no-store")
             .body(result);
     }
