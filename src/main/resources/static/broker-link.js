@@ -86,10 +86,10 @@
         :view.liveEnabledByServer?`${row('Type the MT5 login to confirm','',input('bkLiveLogin','','text','autocomplete="off"'))}<button class="login-btn" style="margin-top:8px;background:var(--red)" onclick="brokerLive(true)">Confirm real-money mirroring</button>`:''}
     </div>`;
     // Orders
-    html+=`<div class="ic"><div class="it">📒 Mirrored orders</div><div class="ib" style="margin-bottom:6px">Every entry and broker response is stored in the database with a full event trail. Tap an order for its history.</div>`;
+    html+=`<div class="ic"><div class="it">📒 Mirrored orders</div><div class="ib" style="margin-bottom:6px">Every entry and broker response is stored in the database with a full event trail. Tap an order for its history.</div><div class="ib" style="margin-bottom:6px"><b>Broker P&amp;L is separate from paper P&amp;L.</b> Paper books 50% at TP1 and 30% at TP2; the 0.01-lot broker order cannot be split, so it only moves its stop to break-even at TP1 and runs to TP3. The two results will differ.</div>`;
     if(!orders.length)html+=`<div class="ib">No mirrored orders yet.</div>`;
     for(const o of orders){
-      const pl=o.profit_usd!=null?` · P&amp;L <b style="color:${Number(o.profit_usd)>=0?'var(--grn)':'var(--red)'}">${num(o.profit_usd)}</b>`:'';
+      const pl=o.profit_usd!=null?` · Broker P&amp;L <b style="color:${Number(o.profit_usd)>=0?'var(--grn)':'var(--red)'}">${num(o.profit_usd)}</b>`:'';
       html+=`<div onclick="brokerEvents(${Number(o.id)})" style="cursor:pointer;padding:9px 4px;border-bottom:1px solid var(--bdr)">
         <div style="display:flex;justify-content:space-between;gap:6px;align-items:center"><div style="font-size:12.5px;font-weight:700">${esc(o.action)} ${esc(o.side||'')} ${esc(o.symbol||'')} ${o.volume!=null?num(o.volume):''}</div>${chip(o.state,stateColor[o.state]||'var(--dim)')}</div>
         <div class="perm-sub">${esc(o.client_order_id)} · ${when(o.created_at)}${o.signal_type?' · '+esc(o.signal_type)+' #'+esc(o.signal_source_id):''}</div>

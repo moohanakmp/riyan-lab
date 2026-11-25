@@ -47,6 +47,23 @@ class BackgroundFeedsTest {
   var result=feeds.snapshot();assertFalse(early.get());
   for(String sym:java.util.List.of("XAUUSD","XAGUSD","BTCUSD"))assertEquals(100,result.path(sym).path("price").asInt());
  }
+ @Test void metalBasisUsesTheOneMinuteBarNextToTheQuote(){
+  long now=System.currentTimeMillis(),t=now/60000*60000-60000;
+  var market=mock(MarketDataController.class);
+  when(market.publicData(anyString())).thenAnswer(call->{
+   String url=call.getArgument(0);
+   if(!url.contains("bar=1m"))return org.springframework.http.ResponseEntity.status(503).body("x");
+   return org.springframework.http.ResponseEntity.ok("{\"code\":\"0\",\"data\":[[\""+t+"\",\"4010\",\"4013\",\"4009\",\"4012\",\"5\",\"5\",\"5\",\"1\"],[\""+(t-60000)+"\",\"4008\",\"4011\",\"4007\",\"4010\",\"5\",\"5\",\"5\",\"1\"]]}");
+  });
+  var five=json.createArrayNode();five.addObject().put("t",t-14*60000).put("c",4000.0); // 15 min stale: must NOT set the basis
+  var feeds=new BackgroundFeeds(market,json);
+  assertEquals(4010.0/4012.0,feeds.metalBasis("XAUUSD",4010,now,five,now),1e-12);
+  // 1m bar unavailable: keep the recent factor instead of absorbing drift from the stale 5m close.
+  when(market.publicData(anyString())).thenReturn(org.springframework.http.ResponseEntity.status(503).body("down"));
+  assertEquals(4010.0/4012.0,feeds.metalBasis("XAUUSD",4020,now+5000,five,now+5000),1e-12);
+  // No recent factor at all (fresh start): fall back to the last 5m close.
+  assertEquals(4020.0/4000.0,new BackgroundFeeds(market,json).metalBasis("XAGUSD",4020,now,five,now),1e-12);
+ }
  @Test void failedQuoteDoesNotLeaveAnOldPriceAvailable(){
   var market=mock(MarketDataController.class);
   when(market.publicData(anyString())).thenReturn(org.springframework.http.ResponseEntity.status(503).body("unavailable"));
@@ -99,7 +116,7 @@ class BackgroundFeedsTest {
   long t0=java.time.Instant.parse("2026-11-24T09:23:43Z").toEpochMilli();long[] clock={t0+4000};var pauses=new java.util.ArrayList<Long>();
   var market=mock(MarketDataController.class);when(market.publicData(anyString())).thenReturn(metal("XAU",3614.75,t0));
   var out=json.createObjectNode();timedFeeds(market,clock,pauses).refreshQuote("XAUUSD",out);
-  assertTrue(pauses.isEmpty());assertEquals(3614.75,out.path("price").asDouble());verify(market,times(1)).publicData(anyString());
+  assertTrue(pauses.isEmpty());assertEquals(3614.75,out.path("price").asDouble());verify(market,times(1)).publicData(contains("gold-api"));
  }
  @Test void latePublishStillHonoursTheThirtySecondGate(){
   long t0=java.time.Instant.parse("2026-11-24T09:23:43Z").toEpochMilli();long[] clock={t0+28000};var pauses=new java.util.ArrayList<Long>();

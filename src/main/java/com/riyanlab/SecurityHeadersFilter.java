@@ -21,12 +21,16 @@ import java.nio.charset.StandardCharsets;
  * Baseline HTTP hardening for every response, plus a request body size cap that runs before
  * JSON parsing (so an anonymous client cannot fill the small Render heap with one huge login body).
  *
- * The CSP here only restricts framing, plugins and base URLs. Script sources are not restricted
- * because index.html still carries its engine inline; tightening script-src needs that moved out first.
+ * The CSP restricts framing, plugins, base URLs, form targets and script hosts. 'unsafe-inline' stays until the
+ * inline engine in index.html (and its onclick handlers) is moved into files; see README "Security headers".
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 10)
 public class SecurityHeadersFilter extends OncePerRequestFilter {
+    // Scripts only from this site and the two CDNs the page uses (EmailJS, TradingView widgets). Inline scripts are
+    // still allowed because the engine lives inline in index.html; external script hosts are not.
+    static final String CSP = "frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'; "
+        + "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://s3.tradingview.com";
     static final long AUTH_LIMIT = 16 * 1024;          // login / user admin bodies are tiny
     static final long DEFAULT_LIMIT = 2 * 1024 * 1024; // records are capped at 1 MB of JSON after parsing
 
@@ -40,7 +44,7 @@ public class SecurityHeadersFilter extends OncePerRequestFilter {
         res.setHeader("X-Content-Type-Options", "nosniff");
         res.setHeader("X-Frame-Options", "DENY");
         res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-        res.setHeader("Content-Security-Policy", "frame-ancestors 'none'; object-src 'none'; base-uri 'self'");
+        res.setHeader("Content-Security-Policy", CSP);
         res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
         if (req.isSecure()) res.setHeader("Strict-Transport-Security", "max-age=15552000");
 

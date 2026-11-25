@@ -103,6 +103,8 @@ bool Post(string path, string body, string &response)
 }
 
 // Broker server time -> UTC unix seconds (offset rounded to 30 minutes).
+// Uses today's server offset. A close is reported on the first poll after it happens, so the stored time is
+// right unless the EA was offline across a DST switch; the server also never stores a close time in the future.
 long ToUtc(datetime serverTime)
 {
    long offset = (long)(TimeTradeServer() - TimeGMT());
@@ -131,7 +133,7 @@ string PositionsField()
 // (brokers often rewrite the closing deal comment, e.g. "[sl 2345.10]").
 string ClosesField()
 {
-   if(!HistorySelect(TimeCurrent() - 2 * 86400, TimeCurrent() + 60)) return "";
+   if(!HistorySelect(TimeCurrent() - 7 * 86400, TimeCurrent() + 60)) return ""; // 7 days so the entry deal of a 2-day-old close is included
    int total = HistoryDealsTotal();
    ulong ids[]; string comments[]; int n = 0;
    for(int i = 0; i < total; i++)
@@ -141,7 +143,7 @@ string ClosesField()
       ArrayResize(ids, n + 1); ArrayResize(comments, n + 1);
       ids[n] = (ulong)HistoryDealGetInteger(d, DEAL_POSITION_ID); comments[n] = HistoryDealGetString(d, DEAL_COMMENT); n++;
    }
-   string out = ""; int sent = 0;
+   string out = ""; int sent = 0; ulong done[]; int nd = 0;
    for(int i = total - 1; i >= 0 && sent < 50; i--)
    {
       ulong d = HistoryDealGetTicket(i);
@@ -150,9 +152,21 @@ string ClosesField()
       if(entry != DEAL_ENTRY_OUT && entry != DEAL_ENTRY_OUT_BY) continue;
       ulong pos = (ulong)HistoryDealGetInteger(d, DEAL_POSITION_ID);
       if(PositionSelectByTicket(pos)) continue; // partially closed, still open
+      bool seen = false;
+      for(int k = 0; k < nd; k++) if(done[k] == pos) { seen = true; break; }
+      if(seen) continue; // the newest OUT deal already reported this position
+      ArrayResize(done, nd + 1); done[nd++] = pos;
       string comment = "";
       for(int k = 0; k < n; k++) if(ids[k] == pos) { comment = comments[k]; break; }
-      double profit = HistoryDealGetDouble(d, DEAL_PROFIT) + HistoryDealGetDouble(d, DEAL_SWAP) + HistoryDealGetDouble(d, DEAL_COMMISSION);
+      // Net result of the whole position: every deal (entry commission, partial closes, swap, fees), not only the last exit.
+      double profit = 0;
+      for(int j = 0; j < total; j++)
+      {
+         ulong x = HistoryDealGetTicket(j);
+         if(x == 0 || (ulong)HistoryDealGetInteger(x, DEAL_POSITION_ID) != pos) continue;
+         profit += HistoryDealGetDouble(x, DEAL_PROFIT) + HistoryDealGetDouble(x, DEAL_SWAP)
+                 + HistoryDealGetDouble(x, DEAL_COMMISSION) + HistoryDealGetDouble(x, DEAL_FEE);
+      }
       out += StringFormat("%I64u|%s|%s|%.2f|%I64d;", pos, Clean(comment), DoubleToString(HistoryDealGetDouble(d, DEAL_PRICE), 8),
              profit, ToUtc((datetime)HistoryDealGetInteger(d, DEAL_TIME)));
       sent++;
@@ -267,8 +281,11 @@ void Execute(string &f[])
       if(volume < vmin) { Report(clientId, "REJECTED", "", 0, 0, 0, "Volume below symbol minimum"); return; }
       MqlTick tick; if(!SymbolInfoTick(symbol, tick)) { Report(clientId, "REJECTED", "", 0, 0, 0, "No price for " + symbol); return; }
       double price = side == "BUY" ? tick.ask : tick.bid;
-      if(entryRef > 0 && maxSlip > 0 && MathAbs(price - entryRef) / entryRef * 100.0 > maxSlip)
-      { Report(clientId, "REJECTED", "", price, 0, 0, StringFormat("Price moved %.3f%% from app entry; limit %.3f%%", MathAbs(price - entryRef) / entryRef * 100.0, maxSlip)); return; }
+      // Slippage limit applies to adverse moves only; a better price is accepted unless it is so far off
+      // (over 5x the limit) that the broker and app prices probably do not match.
+      double movePct = entryRef > 0 ? (side == "BUY" ? price - entryRef : entryRef - price) / entryRef * 100.0 : 0;
+      if(entryRef > 0 && maxSlip > 0 && (movePct > maxSlip || -movePct > 5 * maxSlip))
+      { Report(clientId, "REJECTED", "", price, 0, 0, StringFormat("Price moved %.3f%% %s app entry; limit %.3f%%", MathAbs(movePct), movePct > 0 ? "against" : "in favour of", maxSlip)); return; }
       // Risk check in price terms: a % limit alone can exceed a tight gold stop and double the planned loss.
       if(sl > 0 && ((side == "BUY" && price <= sl) || (side == "SELL" && price >= sl)))
       { Report(clientId, "REJECTED", "", price, 0, 0, StringFormat("Price %.5f already past stop %.5f", price, sl)); return; }

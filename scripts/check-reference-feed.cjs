@@ -61,7 +61,7 @@ const F=feed(()=>{throw Error('Unexpected network')});
  console.log('PASS request coalescing, isolated cache, HTTP errors and recovery');
  // Actual app data paths: all live providers fail; both metals must recover for all frames.
  const sourceBars=F.normalize(data(),'XAUUSD','15m',now+1001);
- const ctx=vm.createContext({PaperMath,Date,Math,console,ReferenceFeed:{info:sym=>({source:sym+' delayed futures'}),candles:async(sym,iv)=>sourceBars.map(k=>({...k,ms:iv==='5m'?300000:900000}))},
+ const ctx=vm.createContext({PaperMath,Date,Math,console,quoteAt:{},ReferenceFeed:{info:sym=>({source:sym+' delayed futures'}),candles:async(sym,iv)=>sourceBars.map(k=>({...k,ms:iv==='5m'?300000:900000}))},
   ASSETS:{XAUUSD:{},XAGUSD:{},BTCUSD:{isCrypto:true}},CANDLE_LIMIT:700,
   ohlcData:{XAUUSD:{},XAGUSD:{},BTCUSD:{}},prices:{XAUUSD:4000,XAGUSD:50},dayOpen:{},
   scalpState:{XAUUSD:{},XAGUSD:{},BTCUSD:{}},BtcFeed:{candles:async()=>[{btc:true}]},
@@ -120,7 +120,7 @@ const F=feed(()=>{throw Error('Unexpected network')});
  ctx.prices={XAUUSD:101,XAGUSD:101};
  ctx.riyanApi=async path=>{
   liveCalls.push(path);const q=new URL('https://app.test'+path).searchParams;
-  const ms={'5m':300000,'15m':900000,'1h':3600000,'4h':14400000,'1d':86400000}[q.get('interval')];
+  const ms={'1m':60000,'5m':300000,'15m':900000,'1h':3600000,'4h':14400000,'1d':86400000}[q.get('interval')];
   const end=Math.floor(Date.now()/ms)*ms;
   return Array.from({length:100},(_,i)=>({t:end-(100-i)*ms,ms,o:100,h:102,l:99,c:101,v:12,complete:true,source:'OKX metal perp'}));
  };

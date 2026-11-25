@@ -1826,6 +1826,21 @@ async function fetchFapiKlines(sym,iv,lim,endTime){
   if(bars.some((k,i)=>!PaperMath.valid(k)||(i>0&&k.t<=bars[i-1].t)||k.t>Date.now()+5000))throw Error('Invalid candle values or timestamps');
   return bars;
 }
+// 2026-11-25 (review 1.2): the spot/perp basis is measured against the 1m perp bar that closed next to the
+// spot quote, not the last closed 15m bar, so up to 15 min of real movement is no longer treated as basis.
+// The server scanner applies the same rule (BackgroundFeeds.metalBasis).
+let metalRef={XAUUSD:null,XAGUSD:null},metalRefBusy={};
+async function refreshMetalRef(sym){
+  if(metalRefBusy[sym])return false;metalRefBusy[sym]=true;
+  try{const k=(await fetchOkxMetal(sym,'1m',3)).at(-1);const changed=!metalRef[sym]||metalRef[sym].t!==k.t;metalRef[sym]={t:k.t,c:k.c};return changed;}
+  catch(e){return false;}finally{metalRefBusy[sym]=false;}
+}
+function metalBasisFactor(sym,now=Date.now()){
+  const spot=prices[sym],ref=metalRef[sym],prev=metalBasis[sym],at=quoteAt[sym]||now;
+  if(!(spot>0)||!ref||!(ref.c>0)||Math.abs(at-(ref.t+60000))>120000)return null;
+  const nf=spot/ref.c;
+  return prev?.src==='1m'&&now-prev.at<600000&&Math.abs(nf/prev.f-1)<0.003?prev.f*0.7+nf*0.3:nf;
+}
 function calibrateMetal(sym){
   const r=metalRaw[sym];if(!r||!r['15m']?.length)return;
   if(r.analysisOnly){
@@ -1834,9 +1849,13 @@ function calibrateMetal(sym){
     return; // Preserve actual futures prices; never rescale delayed bars to a live spot tick.
   }
   const spot=prices[sym],last=r['15m'][r['15m'].length-1].c;
-  let f=metalBasis[sym]?.f||1;
-  if(spot&&last){const nf=spot/last;if(nf>0.9&&nf<1.1)f=nf;}
-  metalBasis[sym]={f,spot,proxy:last,at:Date.now()};
+  let f=metalBasis[sym]?.f||1,src=metalBasis[sym]?.src||'';
+  const bf=metalBasisFactor(sym);
+  if(bf&&bf>0.9&&bf<1.1){f=bf;src='1m';}
+  else if(src!=='1m'&&spot&&last){const nf=spot/last;if(nf>0.9&&nf<1.1){f=nf;src='15m';}} // first load only
+  metalBasis[sym]={f,spot,proxy:last,at:Date.now(),src};
+  if(typeof fetchOkxMetal==='function'&&(!metalRef[sym]||Date.now()-(metalRef[sym].t+60000)>60000))
+    refreshMetalRef(sym).then(changed=>{if(changed)calibrateMetal(sym);});
   const sc=a=>(a||[]).map(k=>({...k,o:k.o*f,h:k.h*f,l:k.l*f,c:k.c*f}));
   ohlcData[sym]['15m']=sc(r['15m']);ohlcData[sym]['1h']=sc(r['1h']);ohlcData[sym]['4h']=sc(r['4h']);
   if(spot)appendLiveTick(sym,spot);
@@ -3983,7 +4002,8 @@ async function scalpFetch(sym,lim){
     return null;
   }
   if(sym!=='BTCUSD'&&!reference&&prices[sym]){
-    const f=prices[sym]/c[c.length-1].c;
+    const b=metalBasis[sym];
+    const f=b?.src==='1m'&&Date.now()-b.at<120000?b.f:prices[sym]/c[c.length-1].c;
     if(!(f>0.9&&f<1.1)){
       state.feedError='Market quote and 5m feed differ by over 10%; scalp signal paused';
       state.feedSource=source;
@@ -5569,11 +5589,26 @@ async function recordSignal(sym,sig,pos,manual){
 }
 
 // ═══ P&L OUTCOME ══════════════════════════════════════════════════════════
+// 2026-11-25: Auto/manual signal stops and targets are also checked against closed 5m bars
+// (spot-scaled for metals), so a wick between ~30 s spot samples is not missed. Low Profit already does this.
+function autoWickCheck(r,now=Date.now()){
+  if(r.outcome!=='OPEN')return false;
+  const from=Math.max(r.wickCheckedTo||0,Math.ceil((r.ts||now)/300e3)*300e3);
+  let changed=false;
+  for(const k of (scalpData[r.sym]||[])){
+    if(r.outcome!=='OPEN')break;
+    if(k.analysisOnly||k.complete===false||k.t<from||k.t+300e3>now||!PaperMath.valid(k))continue;
+    PaperMath.candle(r,k,now);r.wickCheckedTo=k.t+300e3;changed=true;
+  }
+  return changed;
+}
 async function checkOutcome(sym,cur){
   if(!paperReady()||!freshQuote(sym))return;
   let changed=false;
   for(const r of signalHistory){
-    if(r.sym!==sym||!PaperMath.ladder(r,cur))continue;
+    if(r.sym!==sym)continue;
+    const wick=autoWickCheck(r);
+    if(!PaperMath.ladder(r,cur)&&!wick)continue;
     changed=true;r.pnlPct=(r.pnlUsd||0)/CAPITAL*100;
     if(r.outcome!=='OPEN'){
       r.exitTimeStr=new Date(r.closedAt).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata'});
