@@ -1,7 +1,16 @@
 'use strict';
 var quoteAt={};
 var paperEngine={id:crypto.randomUUID(),user:null,until:0,leaseUntil:0,busy:false,lastCheck:0,reason:'Connecting to paper engine'};
-function freshQuote(sym){return PaperMath.positive(prices[sym])&&Date.now()-(quoteAt[sym]||0)<30000&&Date.now()>=(quoteAt[sym]||0);}
+// Quote age is measured on the server's clock, so a phone clock that is minutes off cannot pause (or extend) the
+// 30 s gate. The offset comes from the paper lease reply (round-trip midpoint); it stays 0 until measured.
+var serverClock={offset:0,rtt:Infinity,at:0};
+function marketNow(){return Date.now()+serverClock.offset;}
+function noteServerTime(serverTime,sentAt,receivedAt){
+  const rtt=receivedAt-sentAt;if(!Number.isFinite(serverTime)||!(rtt>=0)||rtt>5000)return;
+  // Prefer the tightest recent sample; re-measure at least every 10 minutes.
+  if(rtt<=serverClock.rtt||receivedAt-serverClock.at>600000)Object.assign(serverClock,{offset:Math.round(serverTime-(sentAt+receivedAt)/2),rtt,at:receivedAt});
+}
+function freshQuote(sym){const now=marketNow();return PaperMath.positive(prices[sym])&&now-(quoteAt[sym]||0)<30000&&now>=(quoteAt[sym]||0);}
 function paperReady(){return !!currentUser&&currentUser.role!=='guest'&&paperEngine.user===currentUser.username&&Date.now()<paperEngine.until;}
 // Lease renewal is independent of slow queue/ledger restoration.
 async function paperRenewLease(){
@@ -12,7 +21,8 @@ async function paperRenewLease(){
   if(Date.now()-(paperEngine.lastLeaseAttempt||0)<10000&&Date.now()<paperEngine.leaseUntil)return true;
   paperEngine.leaseBusy=true;paperEngine.lastLeaseAttempt=Date.now();
   try{
-    const result=await riyanApi('/api/v1/paper/lease',{method:'POST'});
+    const sentAt=Date.now(),result=await riyanApi('/api/v1/paper/lease',{method:'POST'});
+    noteServerTime(+result.serverTime,sentAt,Date.now());
     if(currentUser?.username!==user)return false;
     if(!result.owned){paperEngine.until=0;paperEngine.leaseUntil=0;paperEngine.reason='Another engine owns this account';return false;}
     paperEngine.user=user;paperEngine.leaseUntil=Date.now()+30000;return true;

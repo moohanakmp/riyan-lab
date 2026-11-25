@@ -19,6 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class TelegramDelivery {
     private final JdbcTemplate jdbc;private final ObjectMapper json;private final AuthService auth;private final HttpClient client;
     private final AtomicBoolean busy=new AtomicBoolean();
+    static TokenCipher cipher=TokenCipher.fromEnv();
     @org.springframework.beans.factory.annotation.Autowired
     public TelegramDelivery(JdbcTemplate jdbc,ObjectMapper json,AuthService auth){this(jdbc,json,auth,HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(4)).build());}
     TelegramDelivery(JdbcTemplate jdbc,ObjectMapper json,AuthService auth,HttpClient client){this.jdbc=jdbc;this.json=json;this.auth=auth;this.client=client;}
@@ -33,7 +34,7 @@ public class TelegramDelivery {
         boolean enabled=input.path("enabled").asBoolean();
         var old=jdbc.queryForList("SELECT bot_token,chat_id FROM telegram_settings WHERE username=?",u.username());
         String token=input.path("token").asText("").trim(),chat=input.path("chatId").asText("").trim();
-        if(token.isEmpty()&&!old.isEmpty())token=(String)old.get(0).get("bot_token");
+        if(token.isEmpty()&&!old.isEmpty())token=Objects.toString(cipher.open((String)old.get(0).get("bot_token")),"");
         if(chat.isEmpty()&&!old.isEmpty())chat=(String)old.get(0).get("chat_id");
         if(enabled&&(!token.matches("[0-9]{5,20}:[A-Za-z0-9_-]{20,100}")||!chat.matches("-?[0-9]{1,25}|@[A-Za-z0-9_]{5,100}")))
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Enter a valid bot token and Telegram chat ID");
@@ -42,7 +43,7 @@ public class TelegramDelivery {
             INSERT INTO telegram_settings(username,enabled,bot_token,chat_id) VALUES(?,?,?,?)
             ON CONFLICT(username) DO UPDATE SET enabled=EXCLUDED.enabled,bot_token=EXCLUDED.bot_token,chat_id=EXCLUDED.chat_id,
             enabled_since=CASE WHEN NOT telegram_settings.enabled AND EXCLUDED.enabled THEN now() ELSE telegram_settings.enabled_since END,updated_at=now()
-            """,u.username(),enabled,token,chat);
+            """,u.username(),enabled,cipher.seal(token),chat);
         return Map.of("saved",true,"enabled",enabled);
     }
     @GetMapping("/status") public Map<String,Object> status(HttpServletRequest request){
@@ -54,7 +55,7 @@ public class TelegramDelivery {
     @PostMapping("/test") public Map<String,Object> test(HttpServletRequest request){
         var u=user(request,true);var settings=jdbc.queryForList("SELECT bot_token,chat_id FROM telegram_settings WHERE username=? AND enabled",u.username());
         if(settings.isEmpty())throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Enable and save Telegram first");
-        var c=settings.get(0);return send((String)c.get("bot_token"),(String)c.get("chat_id"),"Kalai Markets — server Telegram alerts connected. Confirmed paper entries will include their original trigger time.").view();
+        var c=settings.get(0);return send(cipher.open((String)c.get("bot_token")),(String)c.get("chat_id"),"Kalai Markets — server Telegram alerts connected. Confirmed paper entries will include their original trigger time.").view();
     }
     @PostMapping("/retry") public Map<String,Object> retry(HttpServletRequest request){
         var u=user(request,true);
@@ -65,6 +66,7 @@ public class TelegramDelivery {
         Map<String,Object> view(){return Map.of("ok",ok,"error",error,"messageId",messageId);}
     }
     Result send(String token,String chat,String message){
+        if(token==null||token.isEmpty())return new Result(false,0,"Telegram token cannot be read (check RIYAN_TOKEN_KEY)",300);
         try{
             var body=json.createObjectNode().put("chat_id",chat).put("text",message);
             var request=HttpRequest.newBuilder(URI.create("https://api.telegram.org/bot"+token+"/sendMessage")).timeout(Duration.ofSeconds(10)).header("Content-Type","application/json").POST(HttpRequest.BodyPublishers.ofString(body.toString())).build();
@@ -75,6 +77,17 @@ public class TelegramDelivery {
             String error=data.path("description").asText("Telegram rejected the message (HTTP "+response.statusCode()+")").replace(token,"[redacted]");
             return new Result(false,0,error.substring(0,Math.min(280,error.length())),Math.min(86400,Math.max(30,data.path("parameters").path("retry_after").asInt(30))));
         }catch(Exception e){if(e instanceof InterruptedException)Thread.currentThread().interrupt();return new Result(false,0,"Telegram network request failed; delivery will retry",60);}
+    }
+    /** With RIYAN_TOKEN_KEY set, encrypt any bot tokens still stored as plain text. */
+    @org.springframework.context.event.EventListener(org.springframework.boot.context.event.ApplicationReadyEvent.class)
+    public void sealStoredTokens(){
+        try{
+            var rows=jdbc.queryForList("SELECT username,bot_token FROM telegram_settings WHERE bot_token NOT LIKE 'enc:v1:%'");
+            if(rows.isEmpty())return;
+            if(!cipher.enabled()){System.err.println("Riyan Lab: "+rows.size()+" Telegram token(s) stored as plain text. Set RIYAN_TOKEN_KEY to encrypt them.");return;}
+            for(var r:rows)jdbc.update("UPDATE telegram_settings SET bot_token=? WHERE username=? AND bot_token=?",cipher.seal((String)r.get("bot_token")),r.get("username"),r.get("bot_token"));
+            System.out.println("Riyan Lab: encrypted "+rows.size()+" Telegram token(s).");
+        }catch(RuntimeException e){System.err.println("Riyan Lab: Telegram token encryption pass failed: "+e.getClass().getSimpleName());}
     }
     @Scheduled(initialDelay=15000,fixedDelay=15000) public void deliver(){
         if(!busy.compareAndSet(false,true))return;
@@ -113,7 +126,7 @@ public class TelegramDelivery {
             """,claim,id);
         if(rows.isEmpty())return;
         var row=rows.get(0);Result result;
-        try{result=send((String)row.get("bot_token"),(String)row.get("chat_id"),message((String)row.get("record_type"),json.readTree((String)row.get("payload"))));}
+        try{result=send(cipher.open((String)row.get("bot_token")),(String)row.get("chat_id"),message((String)row.get("record_type"),json.readTree((String)row.get("payload"))));}
         catch(Exception ignored){result=new Result(false,0,"Invalid signal alert data",60);}
         int attempts=((Number)row.get("attempts")).intValue();
         if(result.ok())jdbc.update("UPDATE telegram_deliveries SET state='SENT',message_id=?,sent_at=now(),last_error='',claim_id=NULL WHERE id=? AND claim_id=?",result.messageId(),id,claim);

@@ -53,7 +53,7 @@ const P=require('../src/main/resources/static/trading-core.js');
  const quotes=vm.createContext({PaperMath:P,Date,prices:{},prev:{},quoteAt:{},dayOpen:{},metalTicks:{XAUUSD:[],XAGUSD:[]},
   appendLiveTick(){},updateCard(){},checkOutcome(sym){quoteCalls.push(sym);},
   liveFetch:async url=>{const code=url.endsWith('XAU')?'XAU':'XAG';return{ok:code==='XAU'?!goldFails:true,status:503,json:async()=>({symbol:code,price:code==='XAU'?4100:57,updatedAt:new Date(Date.now()-(code==='XAU'?goldAge:1000)).toISOString()})};}});
- vm.runInContext('function freshQuote(sym){return Date.now()-(quoteAt[sym]||0)<30000;}'+html.slice(html.indexOf('async function performMetalQuotes(){'),html.indexOf('async function bootstrapAll(){')),quotes);
+ vm.runInContext('function marketNow(){return Date.now();}function freshQuote(sym){return Date.now()-(quoteAt[sym]||0)<30000;}'+html.slice(html.indexOf('async function performMetalQuotes(){'),html.indexOf('async function bootstrapAll(){')),quotes);
  await quotes.performMetalQuotes();assert.equal(quotes.quoteAt.XAUUSD,0);assert(quotes.quoteAt.XAGUSD>0);assert.deepEqual(quoteCalls,['XAGUSD']);
  goldFails=false;goldAge=60000;await quotes.performMetalQuotes();assert.equal(quotes.quoteAt.XAUUSD,0,'old provider quote cannot become fresh on receipt');
  goldAge=2000;await quotes.performMetalQuotes();assert(quotes.quoteAt.XAUUSD<=Date.now()-2000);assert.equal(quotes.prices.XAUUSD,4100);

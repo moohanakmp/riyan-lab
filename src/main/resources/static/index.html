@@ -1166,10 +1166,12 @@ body{background:
 <script src="/market-context.js?v=20261020-context"></script>
 <script src="/order-flow.js?v=20261124-bgflow"></script>
 <script src="/live-volume.js?v=20261125-review"></script>
-<script src="/paper-engine.js?v=20261028-active-basket2"></script>
+<script src="/paper-engine.js?v=20261125-server-clock"></script>
 <script src="/basket-demo.js?v=20261028-active-basket2"></script>
 
 <script>
+// NOTE: background/scanner.cjs extracts many functions/consts below by name for server scanning.
+// Before renaming one, see "Names the server scanner reads" in docs/background-scanner.md.
 // Init EmailJS lazily once public key is set (see saveNotifSettings)
 let emailJsInited=false;
 
@@ -1521,6 +1523,8 @@ async function loadAuthState(){
 
 // Typical spreads (USD) per asset
 const SPREAD={XAUUSD:0.35,XAGUSD:0.03,BTCUSD:5};
+// Account-wide paper limits. Must equal PaperTradingService.RISK_USD / DAY_LOSS_USD / MAX_OPEN (scripts/check-paper-limits.cjs).
+const PAPER_LIMITS={riskUsd:4,dayLossUsd:8,maxOpen:5};
 
 // ═══ STATE ════════════════════════════════════════════════════════════════
 const ohlcData={XAUUSD:{},XAGUSD:{},BTCUSD:{}};
@@ -1988,7 +1992,7 @@ async function performMetalQuotes(){
       const code=sym==='XAUUSD'?'XAU':'XAG',response=await liveFetch('https://api.gold-api.com/price/'+code);
       if(!response.ok)throw Error('Metal quote HTTP '+response.status);
       quoteResponse=true;
-      const q=await response.json(),now=Date.now(),at=Date.parse(q?.updatedAt),p=q?.price;
+      const q=await response.json(),now=marketNow(),at=Date.parse(q?.updatedAt),p=q?.price;
       if(q?.symbol!==code||(q.currency&&q.currency!=='USD')||!PaperMath.positive(p)||!Number.isFinite(at)||at>now||now-at>=30000)throw Error('Metal quote stale or invalid');
       if(dayOpen[sym]===undefined)dayOpen[sym]=p;
       prev[sym]=prices[sym];prices[sym]=p;quoteAt[sym]=at;
@@ -4992,10 +4996,11 @@ function paperAccountRisk(sym,dir,entry,sl,units,now=Date.now()){
   }
   const planned=((entry-sl)*(dir==='BUY'?1:-1)+(SPREAD[sym]||0))*units,total=planned+open.reduce((a,b)=>a+b,0);
   if(!['BUY','SELL'].includes(dir)||!Number.isFinite(entry)||entry<=0||!Number.isFinite(sl)||sl<=0||!Number.isFinite(units)||units<=0||!Number.isFinite(planned)||planned<=0||(entry-sl)*(dir==='BUY'?1:-1)<=0)return{ok:false,reason:'Invalid structural stop or risk inputs'};
-  if(planned>4.000001)return{ok:false,reason:`Structural stop needs $${planned.toFixed(2)} risk at 0.01 lot; account limit is $4.00. Wait for a closer entry; stop is not tightened to force a trade.`};
-  if(open.length>=5)return{ok:false,reason:'Five paper positions already open'};
-  if(dayNet<=-8||total>8+dayNet)return{ok:false,reason:'Account daily loss budget would be exceeded'};
-  if(total>4.000001)return{ok:false,reason:`Combined open risk $${total.toFixed(2)} exceeds $4.00 account limit`};
+  const L=PAPER_LIMITS;
+  if(planned>L.riskUsd+1e-6)return{ok:false,reason:`Structural stop needs $${planned.toFixed(2)} risk at 0.01 lot; account limit is $${L.riskUsd.toFixed(2)}. Wait for a closer entry; stop is not tightened to force a trade.`};
+  if(open.length>=L.maxOpen)return{ok:false,reason:'Five paper positions already open'.replace('Five',String(L.maxOpen))};
+  if(dayNet<=-L.dayLossUsd||total>L.dayLossUsd+dayNet)return{ok:false,reason:'Account daily loss budget would be exceeded'};
+  if(total>L.riskUsd+1e-6)return{ok:false,reason:`Combined open risk $${total.toFixed(2)} exceeds $${L.riskUsd.toFixed(2)} account limit`};
   return{ok:true,planned,total,dayNet,positions:open.length};
 }
 function autoEntryCheck(sym,sig,manual=false){

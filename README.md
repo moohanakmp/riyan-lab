@@ -9,7 +9,7 @@ Paper-trading signal app for XAUUSD, XAGUSD and BTCUSD. **Java 21 / Spring Boot 
 | Strategy engine (Auto signals, Low Profit, Analysis) | `static/index.html` (inline JS) + `static/trading-core.js` | Runs in the browser. |
 | Background scanner | `BackgroundScanner.java` + `background/scanner.cjs` | Runs the *same* engine in Node when no browser holds the lease. `scanner.cjs` pulls named functions/consts out of `index.html` with regex: renaming them breaks server scanning (`scripts/check-background.cjs` catches it). See `docs/background-scanner.md`. |
 | Paper ledger + risk checks | `RecordController.java`, `PaperTradingService.java` | Server re-validates every paper entry. |
-| Volume Trap / order flow | `OrderFlowCollector.java`, `static/order-flow.js`, `static/live-volume.js` | Display only. See `docs/order-flow-footprint-20261119.md`. |
+| Volume Trap / order flow | `OrderFlowCollector.java`, `static/order-flow.js`, `static/live-volume.js` | Display only. See `docs/history/order-flow-footprint-20261119.md`. |
 | Broker mirror (MT5 EA bridge) | `BrokerMirrorService.java`, `connector/mt5/RiyanLabBridge.mq5` | Admin Broker tab. DRY_RUN by default. See `docs/broker-bridge.md`. |
 | Telegram alerts | `TelegramDelivery.java` | Server-side delivery. |
 | Market data proxy | `MarketDataController.java` | Fixed host/path allowlist. |

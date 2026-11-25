@@ -19,7 +19,7 @@ const names=['ema','rsi','atr','swingLevels','emaSeries','macd','kmrAdx','kmrPiv
 const paper=fs.readFileSync(path.join(root,'paper-engine.js'),'utf8');
 const source=fs.readFileSync(path.join(root,'trading-core.js'),'utf8')+'\n'+
  fs.readFileSync(path.join(root,'market-context.js'),'utf8')+'\n'+
- ['ASSETS','ICONS','SIG_TUNE','SPREAD','SCALP_DEF'].map(n=>extract(n,'const')).join('\n')+'\n'+
+ ['ASSETS','ICONS','SIG_TUNE','SPREAD','PAPER_LIMITS','SCALP_DEF'].map(n=>extract(n,'const')).join('\n')+'\n'+
  names.filter(n=>n!=='freshQuote').map(n=>extract(n)).join('\n')+'\n'+paper.match(/function freshQuote\([^\n]+/)[0];
 function normalize(raw,ms,now,coinbase){
   if(!Array.isArray(raw))return [];
@@ -39,7 +39,7 @@ async function scan(job){
  const context=vm.createContext({Date:FixedDate,Intl,console:{warn:()=>{}},job,diagnostics,errors,
   document:{getElementById:()=>({style:{display:'none'}})},
   showToast:()=>{},fireAlert:()=>{},fireOutcome:()=>{},scalpNotify:()=>{},recordHourSample:()=>{},saveSigMeta:()=>{},renderSignals:()=>{},renderHistory:()=>{},sendTelegram:()=>{},sendEmailAlert:()=>{},claimAlertOnce:async()=>false,
-  paperReady:()=>true,
+  paperReady:()=>true,marketNow:()=>Date.now(),
   dbPut:async(_,r)=>save(r.manual?'manual-signals':'auto-signals',r.id,r),
   saveSignal:async r=>save(r.manual?'manual-signals':'auto-signals',r.id,r),
   saveScalpHist:()=>{},

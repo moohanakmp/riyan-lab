@@ -23,14 +23,27 @@ public class EconomicCalendar {
     @org.springframework.beans.factory.annotation.Autowired
     public EconomicCalendar(JdbcTemplate jdbc,ObjectMapper json){this(jdbc,json,HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(4)).version(HttpClient.Version.HTTP_1_1).build(),System::currentTimeMillis);}
     EconomicCalendar(JdbcTemplate jdbc,ObjectMapper json,HttpClient client,LongSupplier clock){this.jdbc=jdbc;this.json=json;this.client=client;this.clock=clock;}
-    public synchronized Map<String,Object> view(){
-        long now=clock.getAsLong();restore(now);
-        if(now>=nextAttempt){
-            if(claim(now))refresh(now);
-            else{loaded=false;restore(now);}
+    // While one caller is fetching (up to ~16 s in an outage), other callers get the last answer instead of
+    // queueing on the lock behind the network call.
+    private final java.util.concurrent.atomic.AtomicBoolean refreshing=new java.util.concurrent.atomic.AtomicBoolean();
+    private volatile Map<String,Object> lastView;
+    public Map<String,Object> view(){
+        var cached=lastView;
+        if(refreshing.get()&&cached!=null)return new LinkedHashMap<>(cached);
+        synchronized(this){
+            long now=clock.getAsLong();restore(now);
+            if(now>=nextAttempt){
+                refreshing.set(true);
+                try{
+                    if(claim(now))refresh(now);
+                    else{loaded=false;restore(now);}
+                }finally{refreshing.set(false);}
+            }
+            var out=snapshot(clock.getAsLong());lastView=out;
+            return new LinkedHashMap<>(out);
         }
-        return snapshot(clock.getAsLong());
     }
+    boolean isRefreshing(){return refreshing.get();}
     private boolean claim(long now){
         if(jdbc==null)return true;
         // A short durable reservation also coalesces overlapping deployment instances.
@@ -40,7 +53,11 @@ public class EconomicCalendar {
             WHERE economic_calendar_cache.next_attempt_at<=?
             """,java.sql.Timestamp.from(Instant.ofEpochMilli(now+60000)),java.sql.Timestamp.from(Instant.ofEpochMilli(now)))>0;
     }
-    public synchronized Map<String,Object> peek(){restore(clock.getAsLong());return snapshot(clock.getAsLong());}
+    public Map<String,Object> peek(){
+        var cached=lastView;
+        if(refreshing.get()&&cached!=null)return new LinkedHashMap<>(cached);
+        synchronized(this){restore(clock.getAsLong());var out=snapshot(clock.getAsLong());lastView=out;return new LinkedHashMap<>(out);}
+    }
     private void restore(long now){
         if(loaded)return;
         if(jdbc!=null){

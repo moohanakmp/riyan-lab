@@ -38,6 +38,6 @@ ctx.quoteAt.XAGUSD=now-27000;assert.equal(ctx.metalPollDelay(now),4500);
 ctx.quoteAt.XAGUSD=now-31000;assert.equal(ctx.metalPollDelay(now),2000);
 ctx.quoteAt.XAGUSD=now-60000;ctx.quoteAt.XAUUSD=0;assert.equal(ctx.metalPollDelay(now),8000,'long outages keep the old cadence');
 // Freshness gate itself is unchanged.
-assert(fs.readFileSync('src/main/resources/static/paper-engine.js','utf8').includes('Date.now()-(quoteAt[sym]||0)<30000'));
+assert(fs.readFileSync('src/main/resources/static/paper-engine.js','utf8').includes('now-(quoteAt[sym]||0)<30000'));
 assert.equal(ctx.signalQuality(btc,'BTCUSD').cap,vm.runInContext('KMR_BLOCKED_SCORE_CAP',ctx),'meter cap and manual-plan cap agree');
 console.log('PASS blocked score cap, gate/factor counts, quote-blocker chips, unchanged HIGH setup, metal poll timing');
