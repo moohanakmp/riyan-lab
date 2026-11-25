@@ -74,10 +74,14 @@ public class BackgroundScanner {
         }
         Path dir=runtime();Path output=Files.createTempFile(dir,"out-",".json"),error=Files.createTempFile(dir,"err-",".log");Process process=null;
         try{
-            process=new ProcessBuilder(node,"--max-old-space-size=64",dir.resolve("background/scanner.cjs").toString()).redirectOutput(output.toFile()).redirectError(error.toFile()).start();
+            var pb=new ProcessBuilder(node,"--max-old-space-size=64",dir.resolve("background/scanner.cjs").toString()).redirectOutput(output.toFile()).redirectError(error.toFile());
+            // The strategy runtime needs no secrets: do not hand it DB_PASSWORD, DATABASE_URL or the bootstrap admin password.
+            var env=pb.environment();String path=env.get("PATH"),scannerStatic=env.get("SCANNER_STATIC");env.clear();
+            if(path!=null)env.put("PATH",path);if(scannerStatic!=null)env.put("SCANNER_STATIC",scannerStatic);
+            process=pb.start();
             try(var stdin=process.getOutputStream()){stdin.write(json.writeValueAsBytes(job));}
             if(!process.waitFor(12,TimeUnit.SECONDS)){process.destroyForcibly();throw new IllegalStateException("Shared strategy runtime timed out");}
-            if(process.exitValue()!=0)throw new IllegalStateException("Shared strategy runtime failed: "+Files.readString(error).substring(0,(int)Math.min(220,Files.size(error))));
+            if(process.exitValue()!=0)throw new IllegalStateException("Shared strategy runtime failed: "+clipText(Files.readString(error),220));
             if(Files.size(output)>6000000)throw new IllegalStateException("Oversized strategy result");
             var result=json.readTree(Files.readString(output));
             var changes=new ArrayList<JsonNode>();result.path("changes").forEach(changes::add);
@@ -97,6 +101,8 @@ public class BackgroundScanner {
                     saved++;
                 }
                 catch(org.springframework.web.server.ResponseStatusException e){rejected++;if(reasons.size()<5)reasons.add(Objects.toString(e.getReason(),"Entry rejected"));}
+                // Any other failure on one record must not drop the rest of this user's changes (e.g. settlements).
+                catch(RuntimeException e){rejected++;if(reasons.size()<5)reasons.add("Save failed: "+e.getClass().getSimpleName());}
             }
             var detail=json.createObjectNode().put("saved",saved).put("rejected",rejected).put("paperOnly",true);
             detail.set("reasons",reasons);detail.set("instruments",result.path("diagnostics"));
@@ -133,5 +139,6 @@ public class BackgroundScanner {
         out.put("owner",leases.isEmpty()?"WAITING":((String)leases.getFirst().get("owner")).startsWith("server-")?"SERVER":"BROWSER");
         return out;
     }
-    @PreDestroy public void cleanup(){if(runtime!=null)try(var files=Files.walk(runtime)){files.sorted(Comparator.reverseOrder()).forEach(p->{try{Files.deleteIfExists(p);}catch(Exception ignored){}});}catch(Exception ignored){}}
+    static String clipText(String s,int max){return s.length()>max?s.substring(0,max):s;}
+    @PreDestroy public synchronized void cleanup(){if(runtime!=null)try(var files=Files.walk(runtime)){files.sorted(Comparator.reverseOrder()).forEach(p->{try{Files.deleteIfExists(p);}catch(Exception ignored){}});}catch(Exception ignored){}}
 }

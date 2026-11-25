@@ -31,6 +31,9 @@ public class AuthService {
     private final JdbcTemplate jdbc;
     private final BCryptPasswordEncoder hasher = new BCryptPasswordEncoder(12);
     private final SecureRandom random = new SecureRandom();
+    // Compared against when the username is unknown, so response time does not reveal which usernames exist.
+    private final String dummyHash = hasher.encode("riyan-lab-timing-equaliser");
+    private static final long DEVICE_SECONDS = 90L * 24 * 3600;
 
     @Value("${RIYAN_BOOTSTRAP_ADMIN_USER:}")
     private String bootstrapUser;
@@ -114,17 +117,20 @@ public class AuthService {
     }
 
     public Map<String,Object> login(String username, String password, HttpServletRequest request) {
-        if (username == null || password == null || password.length() > 1024)
+        if (username == null || password == null || password.length() > 1024 || username.length() > 64)
             throw unauthorized();
         var rows = jdbc.queryForList(
           "SELECT id, username, password_hash, role, active, failed_logins, locked_until FROM auth_users WHERE username=?",
           username);
-        if (rows.isEmpty()) throw unauthorized();
+        if (rows.isEmpty()) { hasher.matches(password, dummyHash); throw unauthorized(); }
         var row = rows.get(0);
+        long id = ((Number)row.get("id")).longValue();
         boolean active = Boolean.TRUE.equals(row.get("active"));
         Timestamp until = (Timestamp) row.get("locked_until");
-        if (!active || (until != null && until.toInstant().isAfter(Instant.now()))) throw unauthorized();
-        long id = ((Number)row.get("id")).longValue();
+        // A lock stops strangers guessing, but a browser that already signed in as this user may still try,
+        // so nobody can lock the owner out just by typing wrong passwords.
+        boolean locked = until != null && until.toInstant().isAfter(Instant.now()) && !trustedDevice(request, id);
+        if (!active || locked) { hasher.matches(password, dummyHash); throw unauthorized(); }
         if (!hasher.matches(password, (String)row.get("password_hash"))) {
             jdbc.update("UPDATE auth_users SET failed_logins=failed_logins+1, locked_until=CASE WHEN failed_logins+1>=5 THEN now()+interval '15 minutes' ELSE NULL END WHERE id=?",id);
             activity(username,"LOGIN_FAILED","auth_users",username,"{}");
@@ -135,7 +141,31 @@ public class AuthService {
         jdbc.update("INSERT INTO auth_sessions(token_hash,user_id,csrf_hash,expires_at) VALUES(?,?,?,?)",
             digest(token),id,digest(csrf),Timestamp.from(Instant.now().plus(SESSION_SECONDS, ChronoUnit.SECONDS)));
         activity(username, "LOGIN", "auth_sessions", null, "{}");
-        return Map.of("username",username,"role",row.get("role"),"token",token,"csrf",csrf,"permissions",permissions());
+        String device = randomSecret();
+        jdbc.update("INSERT INTO auth_trusted_devices(token_hash,user_id,expires_at) VALUES(?,?,?)",
+            digest(device),id,Timestamp.from(Instant.now().plus(DEVICE_SECONDS, ChronoUnit.SECONDS)));
+        return Map.of("username",username,"role",row.get("role"),"token",token,"csrf",csrf,"device",device,"permissions",permissions());
+    }
+    private boolean trustedDevice(HttpServletRequest request, long userId) {
+        String device = cookie(request, "RIYAN_DEVICE");
+        if (device == null || device.isBlank() || device.length() > 128) return false;
+        Integer n = jdbc.queryForObject("SELECT count(*) FROM auth_trusted_devices WHERE token_hash=? AND user_id=? AND expires_at>now()",
+            Integer.class, digest(device), userId);
+        return n != null && n > 0;
+    }
+    public String deviceCookie(String token, boolean secure) {
+        return ResponseCookie.from("RIYAN_DEVICE", token).httpOnly(true).secure(secure)
+            .sameSite("Strict").path("/api/v1/auth").maxAge(DEVICE_SECONDS).build().toString();
+    }
+    /** Expired sessions and device marks are useless; keep the tables small. */
+    @org.springframework.scheduling.annotation.Scheduled(initialDelay=600_000L, fixedDelay=6*3600_000L)
+    public void purgeExpired() {
+        try {
+            jdbc.update("DELETE FROM auth_sessions WHERE expires_at<now()");
+            jdbc.update("DELETE FROM auth_trusted_devices WHERE expires_at<now()");
+        } catch (RuntimeException e) {
+            org.slf4j.LoggerFactory.getLogger(AuthService.class).warn("Session purge failed: {}", e.getMessage());
+        }
     }
 
     private ResponseStatusException unauthorized() {
@@ -226,7 +256,8 @@ public class AuthService {
                 "Password for "+role+" must contain at least "+required+" characters (maximum 256)");
     }
     public void createUser(Identity actor,String username,String password,String role) {
-        if (!validUsername(username) || !ROLES.contains(role))
+        // "--" separates owner and key in record ids ("<user>--..."), so it cannot appear inside a new username.
+        if (!validUsername(username) || username.contains("--") || !ROLES.contains(role))
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Invalid username or role");
         validatePassword(role,password);
         jdbc.update("INSERT INTO auth_users(username,password_hash,role) VALUES(?,?,?)",
@@ -259,6 +290,7 @@ public class AuthService {
             jdbc.update("UPDATE auth_users SET role=?,updated_at=now() WHERE username=?",role,username);
         }
         jdbc.update("DELETE FROM auth_sessions WHERE user_id=(SELECT id FROM auth_users WHERE username=?)",username);
+        jdbc.update("DELETE FROM auth_trusted_devices WHERE user_id=(SELECT id FROM auth_users WHERE username=?)",username);
         activity(actor.username(),"CHANGE_ROLE","auth_users",username,"{}");
     }
     public void resetPassword(Identity actor,String username,String password) {
@@ -270,6 +302,7 @@ public class AuthService {
         jdbc.update("UPDATE auth_users SET password_hash=?,failed_logins=0,locked_until=NULL,updated_at=now() WHERE username=?",
             hasher.encode(password),username);
         jdbc.update("DELETE FROM auth_sessions WHERE user_id=(SELECT id FROM auth_users WHERE username=?)",username);
+        jdbc.update("DELETE FROM auth_trusted_devices WHERE user_id=(SELECT id FROM auth_users WHERE username=?)",username);
         activity(actor.username(),"RESET_PASSWORD","auth_users",username,"{}");
     }
     public void changeOwnPassword(Identity identity,String oldPassword,String password) {

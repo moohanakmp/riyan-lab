@@ -58,5 +58,9 @@ const PaperMath=require('../src/main/resources/static/trading-core.js');
  vm.runInContext(['historyAttempt','metalHistorySources'].map(n=>extract(n)).join('\n'),backoff);const primary=backoff.metalHistorySources('XAUUSD')[0];await assert.rejects(primary.fn('4h',60));assert.equal(await primary.fn('5m',60),healthy,'a 4h request backoff cannot suppress healthy 5m data');await assert.rejects(primary.fn('4h',60));assert.equal(frameAttempts,2,'failed timeframe still honors its backoff');
  const html=fs.readFileSync('src/main/resources/static/index.html','utf8');
  assert.match(html,/<script\s+async\s+src="https:\/\/cdn\.jsdelivr\.net\/npm\/@emailjs/,'optional email SDK cannot block application login');
+ // Kalai's standing rule: Auto analysis, Low Profit and Volume Trap UI must stay in the app.
+ {const page=fs.readFileSync(require('node:path').join(__dirname,'../src/main/resources/static/index.html'),'utf8');
+  for(const tab of ['signals','analysis','scalp','flow'])assert.ok(page.includes(`data-tab="${tab}"`),'tab '+tab+' must stay');
+  assert.ok(/Volume Trap/.test(page),'Volume Trap UI must stay');}
  console.log('PASS stored/fallback news, permitted/denied routes, analytics race isolation, closed MTF history, approval-aware dashboard, ordered BE/partial/stale history P&L, IST month boundaries, research failure isolation and nonblocking SDK');
 })().catch(e=>{console.error(e);process.exitCode=1;});

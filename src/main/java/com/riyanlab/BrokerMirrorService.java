@@ -122,6 +122,7 @@ public class BrokerMirrorService {
         String clientId="RL-"+id;
         String state,reason;
         String invalid=validatePlan(acct,sym,dir,entry,sl,tp,volume);
+        if(invalid==null)invalid=staleSignal(acct,s);
         if(invalid!=null){state="BLOCKED";reason=invalid;}
         else if("DRY_RUN".equals(acct.get("mode"))){state="DRY_RUN";reason="Dry-run mode: recorded only, not sent to broker";}
         else{reason=gate(acct,null,null);state=reason==null?"QUEUED":"BLOCKED";}
@@ -168,6 +169,15 @@ public class BrokerMirrorService {
         return null;
     }
 
+    /** Age gate on the signal's own time (not the queue time), so a late save is never treated as fresh. */
+    static String staleSignal(Map<String,Object> acct,JsonNode s){
+        JsonNode ts=s.path("ts");
+        if(!ts.isNumber())return null;
+        long t=ts.asLong();if(t<100000000000L)t*=1000;
+        long age=(System.currentTimeMillis()-t)/1000,max=num(acct,"max_signal_age_seconds").longValue();
+        return age>max?"Signal is "+age+"s old (max "+max+"s); not chased":null;
+    }
+
     private void queueChild(Map<String,Object> acct,Map<String,Object> parent,String action,BigDecimal sl,String reason) {
         long accountId=num(acct,"id").longValue(),parentId=num(parent,"id").longValue();
         Integer dup=jdbc.queryForObject("SELECT count(*) FROM broker_orders WHERE parent_id=? AND action=? AND state NOT IN ('REJECTED','CANCELLED')",Integer.class,parentId,action);
@@ -202,17 +212,22 @@ public class BrokerMirrorService {
         info.put("openPositions",ours).put("floatingUsd",floating);
         jdbc.update("UPDATE broker_accounts SET connector_last_seen=now(),connector_info=?::jsonb WHERE id=?",info.toString(),accountId);
 
+        // Identity first: only the linked terminal may change order state.
+        String linkedLogin=(String)acct.get("account_login"),linkedServer=(String)acct.get("account_server");
+        boolean identityOk=linkedLogin!=null&&!linkedLogin.isBlank()&&linkedLogin.equals(login)
+            &&(linkedServer==null||linkedServer.isBlank()||linkedServer.equalsIgnoreCase(server));
+
         // 1) Reconcile what the terminal actually holds (the only execution evidence we trust).
-        for(String[] r:positions) {
+        for(String[] r:identityOk?positions:List.<String[]>of()) {
             if(!r[1].startsWith("RL-"))continue;
             int n=jdbc.update("""
                 UPDATE broker_orders SET state='FILLED',broker_ticket=?,fill_price=COALESCE(fill_price,?),fill_volume=COALESCE(fill_volume,?),
                     fill_time=COALESCE(fill_time,now()),state_reason='Position found in terminal',updated_at=now()
                 WHERE account_id=? AND client_order_id=? AND action='OPEN' AND state IN ('QUEUED','DISPATCHED','UNKNOWN')
-                """,clip(r[0],40),decOrNull(r[5]),decOrNull(r[4]),accountId,r[1]);
+                """,clip(r[0],40),positiveOrNull(r[5]),positiveOrNull(r[4]),accountId,r[1]);
             if(n>0)event(orderIdByClient(accountId,r[1]),accountId,"RECONCILED_FILLED","connector",Map.of("ticket",r[0],"openPrice",r[5],"volume",r[4]));
         }
-        for(String[] r:rows(p.get("closes"),5)) {
+        for(String[] r:identityOk?rows(p.get("closes"),5):List.<String[]>of()) {
             // Brokers may rewrite the closing deal comment (e.g. "[sl ...]"), so match the position ticket too.
             String ticket=clip(r[0],40);
             var ids=jdbc.queryForList("""
@@ -234,9 +249,14 @@ public class BrokerMirrorService {
                 accountId,num(acct,"max_signal_age_seconds").intValue()))
             event(num(r,"id").longValue(),accountId,"EXPIRED","server",Map.of());
 
+        // An OPEN left UNKNOWN for 10 min, while the verified terminal reports neither a position nor a close for it,
+        // never reached the broker. Release its slot instead of blocking every later entry. Never re-send.
+        if(identityOk)for(var r:jdbc.queryForList("UPDATE broker_orders SET state='CANCELLED',state_reason='No position or close in terminal 10 min after dispatch; treated as not filled',updated_at=now() WHERE account_id=? AND action='OPEN' AND state='UNKNOWN' AND dispatched_at<now()-interval '10 minutes' RETURNING id",accountId))
+            {event(num(r,"id").longValue(),accountId,"NOT_FILLED","server",Map.of());
+             jdbc.update("UPDATE broker_orders SET state='CANCELLED',state_reason='Parent order not filled',updated_at=now() WHERE parent_id=? AND state='QUEUED'",num(r,"id").longValue());}
+
         // 3) Decide whether this terminal may receive commands at all.
         String halt=null;
-        String linkedLogin=(String)acct.get("account_login"),linkedServer=(String)acct.get("account_server");
         if(linkedLogin==null||linkedLogin.isBlank())halt="Account login not set in Broker tab";
         else if(!linkedLogin.equals(login))halt="Terminal login does not match the linked account";
         else if(linkedServer!=null&&!linkedServer.isBlank()&&!linkedServer.equalsIgnoreCase(server))halt="Terminal server does not match the linked account";
@@ -244,7 +264,7 @@ public class BrokerMirrorService {
         else if("real".equals(mode)&&!liveAllowed(acct))halt="Real-money account refused: live trading not confirmed";
         StringBuilder out=new StringBuilder();
         var queued=jdbc.queryForList("""
-            SELECT o.*,p.broker_ticket AS parent_ticket FROM broker_orders o LEFT JOIN broker_orders p ON p.id=o.parent_id
+            SELECT o.*,p.broker_ticket AS parent_ticket,p.state AS parent_state FROM broker_orders o LEFT JOIN broker_orders p ON p.id=o.parent_id
             WHERE o.account_id=? AND o.state='QUEUED' ORDER BY o.id LIMIT 5 FOR UPDATE OF o SKIP LOCKED
             """,accountId);
         boolean execute="EXECUTE".equals(acct.get("mode"))&&bool(acct,"enabled");
@@ -260,6 +280,8 @@ public class BrokerMirrorService {
                 openNow++;
             }
             if(Set.of("CLOSE","MODIFY").contains(action)&&o.get("parent_ticket")==null){
+                // Parent fill not confirmed yet: keep the CLOSE/MODIFY queued so a late fill is still closed.
+                if(Set.of("QUEUED","DISPATCHED","UNKNOWN").contains(s(o.get("parent_state"))))continue;
                 setState(oid,"CANCELLED","Parent has no broker ticket");event(oid,accountId,"CANCELLED","server",Map.of());continue;
             }
             jdbc.update("UPDATE broker_orders SET state='DISPATCHED',dispatched_at=now(),account_mode=?,updated_at=now() WHERE id=?",mode,oid);
@@ -291,7 +313,7 @@ public class BrokerMirrorService {
                 jdbc.update("""
                     UPDATE broker_orders SET state='FILLED',broker_ticket=?,fill_price=?,fill_volume=?,fill_time=COALESCE(to_timestamp(?::bigint),now()),
                         broker_retcode=?,broker_message=?,state_reason='Broker confirmed fill',updated_at=now() WHERE id=?
-                    """,clip(p.get("ticket"),40),decOrNull(p.get("price")),decOrNull(p.get("volume")),longOrNull(p.get("time")),retcode,message,oid);
+                    """,clip(p.get("ticket"),40),positiveOrNull(p.get("price")),positiveOrNull(p.get("volume")),longOrNull(p.get("time")),retcode,message,oid);
             } else if("REJECTED".equals(status)) {
                 jdbc.update("UPDATE broker_orders SET state='REJECTED',broker_retcode=?,broker_message=?,state_reason='Broker or EA rejected',updated_at=now() WHERE id=?",retcode,message,oid);
             } else if("DONE".equals(status)&&!"OPEN".equals(action)) {
@@ -495,6 +517,8 @@ public class BrokerMirrorService {
     }
     private static BigDecimal dec(String v){BigDecimal d=decOrNull(v);return d==null?BigDecimal.ZERO:d;}
     private static BigDecimal decOrNull(String v){if(v==null||v.isBlank())return null;try{return new BigDecimal(v.trim());}catch(NumberFormatException e){return null;}}
+    /** Prices and volumes are never zero or negative; a pending order may report 0, which must not look like a fill price. */
+    private static BigDecimal positiveOrNull(String v){BigDecimal d=decOrNull(v);return d==null||d.signum()<=0?null:d;}
     private static Long longOrNull(String v){if(v==null||v.isBlank())return null;try{return Long.parseLong(v.trim());}catch(NumberFormatException e){return null;}}
     private static String clip(String v,int max){if(v==null)return "";v=v.replaceAll("[\\r\\n|;]"," ").trim();return v.length()>max?v.substring(0,max):v;}
     private static String s(Object o){if(o==null)return "";if(o instanceof BigDecimal d)return d.stripTrailingZeros().toPlainString();return o.toString();}

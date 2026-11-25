@@ -98,7 +98,8 @@ public class TelegramDelivery {
                 ORDER BY d.retry_at,d.id LIMIT 10
                 """);
             for(var item:due)deliverOne(((Number)item.get("id")).longValue());
-        }catch(Exception ignored){/* Keep the worker alive; delivery failures are recorded per item. No credentials logged. */}
+        }catch(Exception e){/* Keep the worker alive; per-item failures are recorded. Log the class/message only, never a token. */
+            org.slf4j.LoggerFactory.getLogger(TelegramDelivery.class).warn("Telegram delivery cycle failed: {} {}",e.getClass().getSimpleName(),Objects.toString(e.getMessage(),"").replaceAll("bot[0-9]+:[A-Za-z0-9_-]+","bot***"));}
         finally{busy.set(false);}
     }
     void deliverOne(long id)throws Exception{

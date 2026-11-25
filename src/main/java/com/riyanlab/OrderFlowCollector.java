@@ -36,7 +36,7 @@ public class OrderFlowCollector {
     interface Handler{void accept(String text)throws Exception;}
 
     static final class Minute{
-        final long t;double o,h,l,c,buy,sell;long first=Long.MAX_VALUE,last=Long.MIN_VALUE,firstOrd,lastOrd;int n;boolean partial,dirty;long rev;
+        final long t;double o,h,l,c,buy,sell;long first=Long.MAX_VALUE,last=Long.MIN_VALUE,firstOrd,lastOrd;int n;boolean partial,dirty,closeSent;long rev;
         final TreeMap<Double,double[]> cells=new TreeMap<>();
         Minute(long t,boolean partial){this.t=t;this.partial=partial;}
         void add(long ts,long ord,double px,double sz,boolean takerBuy,double tick){
@@ -67,6 +67,7 @@ public class OrderFlowCollector {
     private volatile long ctRetryAt;
     private ScheduledExecutorService ticker;private ExecutorService filler;
     private final Map<String,Conn> conns=new LinkedHashMap<>();
+    java.util.function.LongSupplier clock=System::currentTimeMillis; // injectable for tests
     long backfillMs=6*3600_000L,memoryMs=6*3600_000L+VIEW_MS,pageDelayMs=150;
     @Value("${app.orderflow.enabled:true}") boolean enabled=true;
     @Value("${app.orderflow.backfill-hours:6}") void backfillHours(int h){backfillMs=Math.max(1,Math.min(12,h))*3600_000L;memoryMs=backfillMs+VIEW_MS;}
@@ -101,17 +102,20 @@ public class OrderFlowCollector {
         if(ticker==null)return;
         for(Conn c:conns.values()){var ws=c.ws;c.ws=null;if(ws!=null)ws.abort();}
         ticker.shutdownNow();filler.shutdownNow();
-        for(Book b:books.values())synchronized(b){disconnected(b,System.currentTimeMillis());}
+        for(Book b:books.values())synchronized(b){disconnected(b,clock.getAsLong());}
         flushSafe();
     }
-    private void tick(){
-        long now=System.currentTimeMillis();
+    void tick(){
+        long now=clock.getAsLong();
         try{
+            // A minute that closes without a later trade must still reach browsers as final.
+            for(Book b:books.values())synchronized(b){for(Minute m:b.mins.tailMap(Math.floorDiv(now-VIEW_MS,MIN)*MIN).values())
+                if(!m.closeSent&&m.t+MIN<=now){m.closeSent=true;m.rev=rev.incrementAndGet();}}
             for(Conn c:conns.values())c.check(now);
-            if(now>=ctRetryAt&&books.values().stream().anyMatch(x->x.ctVal<=0)){ctRetryAt=now+60_000;filler.execute(()->books.values().forEach(this::loadContractSize));}
+            if(filler!=null&&now>=ctRetryAt&&books.values().stream().anyMatch(x->x.ctVal<=0)){ctRetryAt=now+60_000;filler.execute(()->books.values().forEach(this::loadContractSize));}
             for(Book b:books.values()){
                 boolean due;synchronized(b){due=b.needBackfill&&b.firstId>=0&&now>=b.backfillRetryAt;if(due)b.backfillRetryAt=Long.MAX_VALUE;}
-                if(due)filler.execute(()->backfill(b));
+                if(due&&filler!=null)filler.execute(()->backfill(b));
             }
         }catch(Exception e){log("Order flow tick failed: "+e);}
     }
@@ -131,8 +135,8 @@ public class OrderFlowCollector {
             client.newWebSocketBuilder().connectTimeout(Duration.ofSeconds(10)).buildAsync(URI.create(url),listener(this,name.equals("okx")?OrderFlowCollector.this::onOkx:OrderFlowCollector.this::onCoinbase))
                 .whenComplete((w,e)->{
                     connecting=false;
-                    if(e!=null){failures++;retryAt=System.currentTimeMillis()+Math.min(60_000,2_000L<<Math.min(5,failures));log("Order flow "+name+" connect failed: "+e.getMessage());return;}
-                    ws=w;failures=0;lastMsg=System.currentTimeMillis();log("Order flow "+name+" stream connected");
+                    if(e!=null){failures++;retryAt=clock.getAsLong()+Math.min(60_000,2_000L<<Math.min(5,failures));log("Order flow "+name+" connect failed: "+e.getMessage());return;}
+                    ws=w;failures=0;lastMsg=clock.getAsLong();log("Order flow "+name+" stream connected");
                     String sub=name.equals("okx")
                         ?"{\"op\":\"subscribe\",\"args\":[{\"channel\":\"trades\",\"instId\":\"XAU-USDT-SWAP\"},{\"channel\":\"trades\",\"instId\":\"XAG-USDT-SWAP\"}]}"
                         :"{\"type\":\"subscribe\",\"product_ids\":[\"BTC-USD\"],\"channels\":[\"matches\"]}";
@@ -141,8 +145,8 @@ public class OrderFlowCollector {
         }
         void closed(WebSocket w){
             if(ws!=w)return;
-            ws=null;failures++;retryAt=System.currentTimeMillis()+Math.min(60_000,1_000L<<Math.min(5,failures));
-            long now=System.currentTimeMillis();
+            ws=null;failures++;retryAt=clock.getAsLong()+Math.min(60_000,1_000L<<Math.min(5,failures));
+            long now=clock.getAsLong();
             for(String s:syms){Book b=books.get(s);synchronized(b){disconnected(b,now);}}
         }
     }
@@ -152,7 +156,7 @@ public class OrderFlowCollector {
             @Override public void onOpen(WebSocket w){w.request(1);}
             @Override public CompletionStage<?> onText(WebSocket w,CharSequence data,boolean last){
                 buf.append(data);
-                if(last){String s=buf.toString();buf.setLength(0);c.lastMsg=System.currentTimeMillis();
+                if(last){String s=buf.toString();buf.setLength(0);c.lastMsg=clock.getAsLong();
                     try{handler.accept(s);}catch(Exception e){log("Order flow "+c.name+" message skipped: "+e.getMessage());}}
                 w.request(1);return null;
             }
@@ -167,7 +171,7 @@ public class OrderFlowCollector {
         String sym=OKX_INST.entrySet().stream().filter(e->e.getValue().equals(inst)).map(Map.Entry::getKey).findFirst().orElse(null);
         if(sym==null)return;
         Book b=books.get(sym);
-        if("subscribe".equals(m.path("event").asText())){synchronized(b){connected(b,System.currentTimeMillis());}return;}
+        if("subscribe".equals(m.path("event").asText())){synchronized(b){connected(b,clock.getAsLong());}return;}
         if(!"trades".equals(m.path("arg").path("channel").asText()))return;
         for(JsonNode x:m.path("data")){
             long id=x.path("tradeId").asLong(-1),count=Math.max(1,x.path("count").asLong(1));
@@ -177,7 +181,7 @@ public class OrderFlowCollector {
     void onCoinbase(String text)throws Exception{
         JsonNode m=json.readTree(text);Book b=books.get("BTCUSD");
         switch(m.path("type").asText()){
-            case "subscriptions"->{synchronized(b){connected(b,System.currentTimeMillis());}}
+            case "subscriptions"->{synchronized(b){connected(b,clock.getAsLong());}}
             case "match"->{
                 if(!"BTC-USD".equals(m.path("product_id").asText()))return;
                 long id=m.path("trade_id").asLong(-1);
@@ -206,7 +210,7 @@ public class OrderFlowCollector {
                 // First trade after (re)connecting: this minute missed earlier trades. Start it
                 // clean (it is rebuilt from trade history below), so nothing is counted twice.
                 b.live=true;b.firstId=idLow;b.firstMinute=t;
-                if(b.connectedAt==0)b.connectedAt=System.currentTimeMillis();
+                if(b.connectedAt==0)b.connectedAt=clock.getAsLong();
                 if(b.mins.containsKey(t))b.mins.put(t,new Minute(t,true));
             }
             if(t<b.firstMinute)return;
@@ -219,7 +223,7 @@ public class OrderFlowCollector {
 
     // ── Gap fill from exchange trade history ─────────────────────────────────
     void backfill(Book b){
-        long stopId,connectMin,from,now=System.currentTimeMillis();
+        long stopId,connectMin,from,now=clock.getAsLong();
         synchronized(b){
             if(!b.needBackfill||b.firstId<0){b.backfillRetryAt=0;return;}
             stopId=b.firstId;connectMin=b.firstMinute;
@@ -260,12 +264,12 @@ public class OrderFlowCollector {
                 if(b.firstId!=stopId){b.backfillRetryAt=0;return;}
                 b.needBackfill=false;
                 b.verifiedFrom=appliedDownTo<=b.verifiedUpTo&&b.verifiedUpTo>b.verifiedFrom?Math.min(b.verifiedFrom,appliedDownTo):appliedDownTo;b.verifiedUpTo=connectMin+MIN;
-                b.backfill=reached?"complete":"partly filled";b.backfillAt=System.currentTimeMillis();b.backfillFrom=appliedDownTo;
+                b.backfill=reached?"complete":"partly filled";b.backfillAt=clock.getAsLong();b.backfillFrom=appliedDownTo;
             }
             log("Order flow "+b.sym+" gap fill "+(reached?"complete":"partial")+" from "+java.time.Instant.ofEpochMilli(appliedDownTo)+" ("+built.size()+" minutes rebuilt)");
         }catch(InterruptedException e){Thread.currentThread().interrupt();}
         catch(Exception e){
-            synchronized(b){b.backfill="retrying: "+Objects.toString(e.getMessage(),"history unavailable");b.backfillRetryAt=System.currentTimeMillis()+60_000;}
+            synchronized(b){b.backfill="retrying: "+Objects.toString(e.getMessage(),"history unavailable");b.backfillRetryAt=clock.getAsLong()+60_000;}
             log("Order flow "+b.sym+" gap fill failed: "+e.getMessage());
         }
     }
@@ -315,7 +319,7 @@ public class OrderFlowCollector {
     // ── Storage ──────────────────────────────────────────────────────────────
     void load(){
         if(jdbc==null)return;
-        long now=System.currentTimeMillis(),since=Math.floorDiv(now-memoryMs,MIN)*MIN;
+        long now=clock.getAsLong(),since=Math.floorDiv(now-memoryMs,MIN)*MIN;
         for(Book b:books.values()){
             var rows=jdbc.queryForList("SELECT t,o,h,l,c,buy,sell,trades,partial,cells::text AS cells FROM order_flow_minutes WHERE symbol=? AND t>=? ORDER BY t",b.sym,since);
             synchronized(b){
@@ -337,7 +341,7 @@ public class OrderFlowCollector {
         }
     }
     private static double num(Object o){return ((Number)o).doubleValue();}
-    private void flushSafe(){try{flush(System.currentTimeMillis());}catch(Exception e){log("Order flow save failed: "+e.getMessage());}}
+    private void flushSafe(){try{flush(clock.getAsLong());}catch(Exception e){log("Order flow save failed: "+e.getMessage());}}
     /** Saves closed minutes that changed. Forming minutes are rebuilt from history after a restart. */
     int flush(long now){
         if(jdbc==null)return 0;
@@ -363,7 +367,7 @@ public class OrderFlowCollector {
         return args.size();
     }
     private void prune(){
-        try{if(jdbc!=null)jdbc.update("DELETE FROM order_flow_minutes WHERE t<?",System.currentTimeMillis()-3*86_400_000L);}
+        try{if(jdbc!=null)jdbc.update("DELETE FROM order_flow_minutes WHERE t<?",clock.getAsLong()-3*86_400_000L);}
         catch(Exception e){log("Order flow prune failed: "+e.getMessage());}
     }
 

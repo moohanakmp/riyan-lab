@@ -1158,14 +1158,14 @@ body{background:
 <div id="flowAlert" role="alertdialog" aria-live="assertive" aria-labelledby="flowAlertTitle" hidden></div>
 <div id="evPop" class="evpop" role="status" aria-live="polite"></div>
 <button id="evFab" class="evfab" onclick="evwReopen()" aria-label="Show next event popup"></button>
-<script async src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script async src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4.4.1/dist/email.min.js" integrity="sha384-SALc35EccAf6RzGw4iNsyj7kTPr33K7RoGzYu+7heZhT8s0GZouafRiCg1qy44AS" crossorigin="anonymous"></script>
 <script src="/trading-core.js?v=20261017-2"></script>
 <script src="/public-market-fetch.js?v=20261019-recovery"></script>
 <script src="/btc-feed.js?v=20261019-recovery"></script>
 <script src="/reference-feed.js?v=20261017-2"></script>
 <script src="/market-context.js?v=20261020-context"></script>
 <script src="/order-flow.js?v=20261124-bgflow"></script>
-<script src="/live-volume.js?v=20261124-bgflow"></script>
+<script src="/live-volume.js?v=20261125-review"></script>
 <script src="/paper-engine.js?v=20261028-active-basket2"></script>
 <script src="/basket-demo.js?v=20261028-active-basket2"></script>
 
@@ -1283,6 +1283,7 @@ async function doLogin(){
     await riyanRestore();
     await basketDbRestore();
     riyanProcessQueue();
+    loadNotifData().catch(()=>{});
     if(!window._appBooted){window._appBooted=true;bootApp();}
   }catch(e){
     currentUser=null;riyanCsrf='';
@@ -1293,6 +1294,7 @@ async function doLogout(){
   try{await riyanApi('/api/v1/auth/logout',{method:'POST'});}
   catch(e){showToast('Could not revoke server session — retry logout','var(--red)');return;}
   currentUser=null;riyanCsrf='';paperEngine.until=0;
+  notifSettings={...NOTIF_DEFAULTS};emailJsInited=false;
   signalHistory=[];scalpHist=[];activeSignals={};sigCooldown={};
   basketDemo={enabled:false,active:null,history:[],events:[],lastBars:{},replays:{}};
   document.getElementById('loginUser').value='';
@@ -1620,7 +1622,7 @@ function handleSoundUpload(input){
   const reader=new FileReader();
   reader.onload=async()=>{
     notifSettings.soundUrl=reader.result;
-    try{await dbPut('state',{key:'notifSettings',value:notifSettings});}catch(e){}
+    try{await dbPut('state',{key:notifKey(),value:notifSettings});}catch(e){}
     document.getElementById('soundPreviewName').textContent='Custom sound set ✓';
     showToast('🔊 Custom alert sound saved','var(--grn)');
     playBeep('TICK');
@@ -1631,7 +1633,7 @@ function handleSoundUpload(input){
 function testAlertSound(){playBeep('BUY');}
 async function clearAlertSound(){
   notifSettings.soundUrl='';
-  try{await dbPut('state',{key:'notifSettings',value:notifSettings});}catch(e){}
+  try{await dbPut('state',{key:notifKey(),value:notifSettings});}catch(e){}
   document.getElementById('soundPreviewName').textContent='Using default beep tone';
   showToast('Reset to default beep tone','var(--acc)');
 }
@@ -3767,7 +3769,7 @@ function newsTrackHtml(){
   past.forEach(e=>{
     const p=e.pred||{goldDir:'NEUTRAL',conf:50,reasons:[]};
     const when=new Date(e.ts).toLocaleString('en-IN',{weekday:'short',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
-    html+=`<div class="lvl-row nt-row" style="flex-wrap:wrap"><span style="flex:1;min-width:140px">${e.title} <span style="color:var(--dim)">(${e.country})</span><br><span style="color:var(--dim);font-size:9px">${when}${e.forecast?` · F ${e.forecast}`:''}${e.previous?` · P ${e.previous}`:''}${e.actual?` · A ${e.actual}`:''}</span></span>`;
+    html+=`<div class="lvl-row nt-row" style="flex-wrap:wrap"><span style="flex:1;min-width:140px">${basketTxt(e.title)} <span style="color:var(--dim)">(${basketTxt(e.country)})</span><br><span style="color:var(--dim);font-size:9px">${when}${e.forecast?` · F ${basketTxt(e.forecast)}`:''}${e.previous?` · P ${basketTxt(e.previous)}`:''}${e.actual?` · A ${basketTxt(e.actual)}`:''}</span></span>`;
     html+=`<span class="sent-tag ${dirCls(p.goldDir)}">Gold call: ${p.goldDir}${p.goldDir!=='NEUTRAL'?` · model score ${p.conf}/100`:''}</span>`;
     if(!e.graded)html+=`<span class="sent-tag neu">Grading ~45min after release…</span>`;
     else if(e.ungradeable)html+=`<span class="sent-tag neu">Not graded — ${e.country} event</span>`;
@@ -3784,7 +3786,7 @@ function newsTrackHtml(){
     html+=`<div class="it" style="margin-top:10px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">🔮 Next events — live gold call (updates until release)<button class="qa" style="padding:4px 10px;font-size:10.5px" onclick="evwReopen()">⚡ Open live popup</button></div>`;
     next.forEach(e=>{const p=e.pred||{goldDir:'NEUTRAL',conf:50,reasons:[]};
       const when=new Date(e.ts).toLocaleString('en-IN',{weekday:'short',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
-      html+=`<div class="lvl-row nt-row" style="flex-wrap:wrap"><span style="flex:1;min-width:140px">${e.title} <span style="color:var(--dim)">(${e.country})</span><br><span style="color:var(--dim);font-size:9px">${when}${e.forecast?` · F ${e.forecast}`:''}${e.previous?` · P ${e.previous}`:''}</span></span><span class="sent-tag ${dirCls(p.goldDir)}">Gold call: ${p.goldDir}${p.goldDir!=='NEUTRAL'?` · model score ${p.conf}/100`:''}</span><div class="nt-why">${(p.reasons||[]).map(r=>'• '+r).join('<br>')}</div></div>`;});
+      html+=`<div class="lvl-row nt-row" style="flex-wrap:wrap"><span style="flex:1;min-width:140px">${basketTxt(e.title)} <span style="color:var(--dim)">(${basketTxt(e.country)})</span><br><span style="color:var(--dim);font-size:9px">${when}${e.forecast?` · F ${basketTxt(e.forecast)}`:''}${e.previous?` · P ${basketTxt(e.previous)}`:''}</span></span><span class="sent-tag ${dirCls(p.goldDir)}">Gold call: ${p.goldDir}${p.goldDir!=='NEUTRAL'?` · model score ${p.conf}/100`:''}</span><div class="nt-why">${(p.reasons||[]).map(r=>'• '+r).join('<br>')}</div></div>`;});
   }
   html+=`<div style="font-size:9.5px;color:var(--dim);margin-top:6px">Both columns are in GOLD terms. The call uses only pre-release information (consensus forecast vs previous → USD lean, 36h gold-news tone, gold's 4h drift and 24h trend). Graded on real XAU/USD 15m candles ~45 min after release; moves smaller than 0.15 ATR count as flat.</div>`;
   html+=`</div></div>`;
@@ -3894,14 +3896,14 @@ function evwRender(g,items,phase,diff,flipped,nextG){
     mid+=`<div class="evp-live"><span>📰 Live news (90 min)</span><b class="${nd>0?'up':nd<0?'dn':'nt'}">${ln.n?`${ln.sum>0?'+':''}${ln.sum} / ${ln.n} headlines`:'none yet'}</b><em class="${!nd||!pd?'nt':nd===pd?'up':'dn'}">${!ln.n?(evw.newsBusy?'fetching…':'refreshes every 60 s'):!nd||!pd?'no clear match':nd===pd?'✓ news matches price':'✗ news vs price conflict'}</em></div>`;
   }
   const dots=phase==='final'&&evw.checks.length?`<div class="evp-dots">${evw.checks.map(c=>`<i class="${c.dir==='BULLISH'?'up':c.dir==='BEARISH'?'dn':'nt'}"></i>`).join('')}<span>last ${evw.checks.length} checks</span></div>`:'';
-  const evList=multi?`<div class="evp-evs">${items.map(e=>`<div class="evp-ev"><span><b>${e.title}</b> <em>${e.country}${e.forecast?` · F ${e.forecast}`:''}${e.previous?` · P ${e.previous}`:''}</em></span>${(()=>{const c=e.predSolo&&e.predSolo.parts?e.predSolo.parts.cons:0;return`<i class="${c>0?'up':c<0?'dn':'nt'}" title="this release's own forecast lean">${c>0?'▲':c<0?'▼':'—'}</i>`;})()}</div>`).join('')}</div>`:'';
+  const evList=multi?`<div class="evp-evs">${items.map(e=>`<div class="evp-ev"><span><b>${basketTxt(e.title)}</b> <em>${basketTxt(e.country)}${e.forecast?` · F ${basketTxt(e.forecast)}`:''}${e.previous?` · P ${basketTxt(e.previous)}`:''}</em></span>${(()=>{const c=e.predSolo&&e.predSolo.parts?e.predSolo.parts.cons:0;return`<i class="${c>0?'up':c<0?'dn':'nt'}" title="this release's own forecast lean">${c>0?'▲':c<0?'▼':'—'}</i>`;})()}</div>`).join('')}</div>`:'';
   const cadence=phase==='watch'?'re-scored every 5 min':phase==='final'?'re-checked every 5 s · news every 60 s':'updated every 5 s';
   const then=nextG?`<div class="evp-then">Then: ${nextG.items.length>1?nextG.items.length+' events':nextG.items[0].title} at ${new Date(nextG.ts).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</div>`:'';
   el.innerHTML=`
     <div class="evp-pill" onclick="evwToggleMin()"><span class="evp-bolt">⚡</span><b>${multi?items.length+' events':lead.title}</b><span class="evp-cd" data-cd="${g.ts}">${phase==='live'?'LIVE':fmtCountdown(diff)}</span><span class="evp-badge ${cls}">${arrow(p.goldDir)}</span></div>
     <div class="evp-body">
       <div class="evp-top"><span class="evp-lbl"><i class="evp-dot"></i>${label}</span><span class="evp-btns"><button onclick="evwToggleMin()" aria-label="Minimise">▾</button><button onclick="evwClose()" aria-label="Close">✕</button></span></div>
-      <div class="evp-title">${multi?`${items.length} releases at the same time`:`${lead.title} <span>${lead.country}</span>`}</div>
+      <div class="evp-title">${multi?`${items.length} releases at the same time`:`${basketTxt(lead.title)} <span>${basketTxt(lead.country)}</span>`}</div>
       <div class="evp-sub">${when}${!multi&&lead.forecast?` · F ${lead.forecast}`:''}${!multi&&lead.previous?` · P ${lead.previous}`:''}${multi?' · one combined gold call':''}</div>
       ${evList}
       <div class="evp-row"><div class="evp-call ${cls}${flipped?' flip':''}"><small>${multi?'COMBINED GOLD CALL':'GOLD CALL'}</small>${callTxt}</div><div class="evp-count"><small>${phase==='live'?'SINCE RELEASE':'RELEASE IN'}</small><b class="evp-cd" data-cd="${g.ts}">${phase==='live'?fmtCountdown(-diff):fmtCountdown(diff)}</b></div></div>
@@ -5330,18 +5332,30 @@ function waitCard(sym,a,sig,isAdmin){
 
 // ═══ RECORD SIGNAL — fires for BOTH HIGH and MED ══════════════════════════
 // ═══ EXTERNAL NOTIFICATIONS — Telegram + Email ═══════════════════════════
-let notifSettings={
+const NOTIF_DEFAULTS=Object.freeze({
   sendHere:true,
   tgEnabled:false, tgToken:'', tgChatId:'',
   emEnabled:false, emPublicKey:'', emServiceId:'', emTemplateId:'', emToEmail:'',
   soundUrl:'', // admin-configurable custom alert sound (data: URL from an uploaded file, or any https URL)
-};
+});
+let notifSettings={...NOTIF_DEFAULTS};
+// 2026-11-25: settings (Telegram token, EmailJS keys) are stored per user, so the next person
+// to sign in on a shared device never inherits them. The old shared key is adopted once, then removed.
+function notifKey(){return 'notifSettings:'+(currentUser?.username||'');}
 
 // FIX: settings are now loaded at boot for EVERY role (previously only when the
 // Admin panel rendered — so on user/guest sessions tgEnabled stayed false and
 // sendTelegram()/sendEmailAlert() silently returned without sending anything).
 async function loadNotifData(){
-  try{const s=await dbGet('state','notifSettings');if(s&&s.value)notifSettings={...notifSettings,...s.value};}catch(e){}
+  notifSettings={...NOTIF_DEFAULTS};
+  if(!currentUser?.username)return; // signed out: nothing to load (doLogin loads after sign-in)
+  try{
+    let s=await dbGet('state',notifKey());
+    if(!s){const legacy=await dbGet('state','notifSettings');
+      if(legacy&&legacy.value){s=legacy;await dbPut('state',{key:notifKey(),value:legacy.value});
+        if(db)db.transaction('state','readwrite').objectStore('state').delete('notifSettings');}}
+    if(s&&s.value)notifSettings={...notifSettings,...s.value};
+  }catch(e){}
   initEmailJsIfNeeded();
   if(currentUser?.role!=='guest'){
     if(notifSettings.tgEnabled&&notifSettings.tgToken&&notifSettings.tgChatId&&notifSettings.sendHere!==false)await syncTelegramSettings().catch(()=>{});
@@ -5381,7 +5395,7 @@ async function saveNotifSettings(){
   };
   document.getElementById('tgFields').style.display=notifSettings.tgEnabled?'block':'none';
   document.getElementById('emFields').style.display=notifSettings.emEnabled?'block':'none';
-  try{await dbPut('state',{key:'notifSettings',value:notifSettings});}catch(e){}
+  try{await dbPut('state',{key:notifKey(),value:notifSettings});}catch(e){}
   initEmailJsIfNeeded();
   try{await syncTelegramSettings();await refreshTelegramStatus();}
   catch(e){telegramStatusText('Telegram settings were not saved on the server: '+e.message);showToast('Telegram setup failed — see delivery status','var(--red)');return false;}
