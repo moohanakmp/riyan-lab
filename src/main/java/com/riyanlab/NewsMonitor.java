@@ -82,7 +82,7 @@ public class NewsMonitor {
                     String headline=tag(el,"title"),url=tag(el,"link"),date=tag(el,"pubDate");
                     if(headline.isBlank()||url.isBlank())continue;
                     Instant published=null;
-                    try{published=ZonedDateTime.parse(date,DateTimeFormatter.RFC_1123_DATE_TIME).toInstant();}catch(Exception ignored){}
+                    try{published=ZonedDateTime.parse(date,DateTimeFormatter.RFC_1123_DATE_TIME).toInstant();}catch(java.time.format.DateTimeParseException ignored){/* undated headline */}
                     jdbc.update("""
                       INSERT INTO news_feed_items(symbol,headline,source_url,source_name,published_at)
                       VALUES(?,?,?,?,?) ON CONFLICT(symbol,source_url) DO UPDATE SET checked_at=now()

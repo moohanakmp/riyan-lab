@@ -128,7 +128,7 @@ public class OrderFlowCollector {
             var w=ws;
             if(w==null){if(!connecting&&now>=retryAt)connect();return;}
             if(now-lastMsg>60_000){log("Order flow "+name+" stream silent for 60s; reconnecting");w.abort();closed(w);return;}
-            if(name.equals("okx")&&now-lastPing>=20_000){lastPing=now;try{w.sendText("ping",true);}catch(Exception ignored){}}
+            if(name.equals("okx")&&now-lastPing>=20_000){lastPing=now;try{w.sendText("ping",true);}catch(RuntimeException ignored){/* a dead socket is caught by the 60 s silence check */}}
         }
         void connect(){
             connecting=true;

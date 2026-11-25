@@ -53,6 +53,13 @@ Set in Render (never commit values). Defaults in brackets.
 | `RENDER_EXTERNAL_URL` | `KeepAwake` | Set by Render; staging self-ping target. |
 | `SCANNER_STATIC` | `background/scanner.cjs` | Optional path to the static folder (tests). |
 | `RIYAN_INTEGRATION_TEST` | tests | `true` enables the PostgreSQL integration tests. |
+| `RIYAN_TOKEN_KEY` [unset] | `TelegramDelivery` (`TokenCipher`) | Passphrase for AES-256-GCM encryption of Telegram bot tokens at rest. When set, plain tokens are encrypted at startup. Keep it stable: if it is removed or changed, saved tokens cannot be read and users must re-enter them. |
+
+## Security headers
+
+`SecurityHeadersFilter` sets `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`, HSTS (on HTTPS) and a Content-Security-Policy. Scripts may load only from this site, `cdn.jsdelivr.net` (EmailJS, pinned with integrity) and `s3.tradingview.com`. `'unsafe-inline'` stays until the inline engine and `onclick` handlers in `index.html` move into files. Request bodies are capped at 16 KB for `/api/v1/auth/` and 2 MB elsewhere (413). Logged-in users get at most 180 upstream market-data fetches per minute (cached answers are free).
+
+Dated audit and design notes live in `docs/history/` and may be out of date.
 
 ## Run tests locally
 
