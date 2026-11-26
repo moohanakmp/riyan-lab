@@ -110,7 +110,25 @@ public class BackgroundScanner {
             detail.put("calendarError",Objects.toString(calendar.getOrDefault("calendarError","")));
             detail.put("basket",Boolean.TRUE.equals(openBasket)?"Basket positions remain browser managed":"Low Profit uses structure; optional Basket mode requires a browser");
             status(identity.username(),"SCANNING",detail);
+            try{recordReasons(identity.username(),result.path("diagnostics"));}catch(RuntimeException e){System.err.println("Skip-reason history not saved: "+e.getClass().getSimpleName());}
         }finally{if(process!=null&&process.isAlive())process.destroyForcibly();Files.deleteIfExists(output);Files.deleteIfExists(error);}
+    }
+    private volatile long reasonsPrunedAt=0;
+    static String reasonKey(String reason){return reason.replaceAll("[0-9]+(?:[.,][0-9]+)*","#");}
+    // One row per change of skip reason (numbers ignored); a repeat only moves last_seen.
+    void recordReasons(String user,JsonNode diagnostics){
+        diagnostics.fields().forEachRemaining(e->{
+            for(String strategy:List.of("auto","lowProfit")){
+                String reason=clipText(e.getValue().path(strategy).asText(""),400);if(reason.isBlank())continue;
+                String sym=clipText(e.getKey(),12),key=clipText(reasonKey(reason),400);
+                int moved=jdbc.update("""
+                    UPDATE background_scanner_reasons SET last_seen=now(),reason=? WHERE id=(
+                      SELECT id FROM background_scanner_reasons WHERE username=? AND symbol=? AND strategy=? ORDER BY id DESC LIMIT 1)
+                    AND reason_key=?""",reason,user,sym,strategy,key);
+                if(moved==0)jdbc.update("INSERT INTO background_scanner_reasons(username,symbol,strategy,reason,reason_key) VALUES(?,?,?,?,?)",user,sym,strategy,reason,key);
+            }
+        });
+        if(System.currentTimeMillis()-reasonsPrunedAt>3600000){reasonsPrunedAt=System.currentTimeMillis();jdbc.update("DELETE FROM background_scanner_reasons WHERE last_seen<now()-interval '3 days'");}
     }
     private ObjectNode legacyConfig(String user)throws Exception{
         ObjectNode config=json.createObjectNode();ObjectNode assets=config.putObject("assets");boolean any=false;
@@ -135,6 +153,7 @@ public class BackgroundScanner {
         if(!settings.isEmpty())try{out.put("settings",json.readTree((String)settings.getFirst().get("config")));}catch(com.fasterxml.jackson.core.JsonProcessingException ignored){/* corrupt saved settings: browser keeps its own */}
         var rows=jdbc.queryForList("SELECT state,checked_at,details::text AS details FROM background_scanner_status WHERE username=?",user);
         if(!rows.isEmpty())out.putAll(rows.getFirst());
+        out.put("reasonHistory",jdbc.queryForList("SELECT symbol,strategy,reason,first_seen,last_seen FROM background_scanner_reasons WHERE username=? AND last_seen>now()-interval '24 hours' ORDER BY id DESC LIMIT 60",user));
         var leases=jdbc.queryForList("SELECT owner,expires_at FROM paper_engine_leases WHERE username=? AND expires_at>now()",user);
         out.put("owner",leases.isEmpty()?"WAITING":((String)leases.getFirst().get("owner")).startsWith("server-")?"SERVER":"BROWSER");
         return out;

@@ -2278,6 +2278,16 @@ function kmrTfBias(c){
   if(C.length>=55){const a=ema(C,20),b=ema(C,50);if(a>b&&p>b)return'BULL';if(a<b&&p<b)return'BEAR';return'NEUTRAL';}
   const a=ema(C,9),b=ema(C,21);return a>b?'BULL':a<b?'BEAR':'NEUTRAL';
 }
+// A higher-timeframe trend whose EMA20 and EMA50 sit within 0.2 ATR of each other is flat:
+// the BULL/BEAR label from kmrTfBias is then a coin flip, not an opinion. Needs the full
+// 20/50 history; the short 9/21 fallback is never called flat.
+function kmrTfFlat(c,limit=0.2){
+  if(!c||c.length<55)return null;
+  const C=c.map(k=>k.c),a=ema(C,20),b=ema(C,50),A=atr(c);
+  if(a==null||b==null||!A)return null;
+  const gap=Math.abs(a-b)/A;
+  return{flat:gap<limit,gap};
+}
 // Core: candles15 = CLOSED 15m candles; h1/h4 = higher timeframe candles; ctx gives
 // tune, order blocks, news events, current IST hour, live price and whether the asset is
 // a metal (rollover filter).
@@ -2293,19 +2303,23 @@ function kmrSmartScan(candles15,h1,h4,ctx){
   const st=kmrStructure(c);
   const vp=kmrVolumePressure(c,20);
   const evidence=typeof MarketContext==='undefined'?null:MarketContext.analyze(c,{step:900000,now:ctx.now});
-  const b1=kmrTfBias(h1),b4=kmrTfBias(h4);
-  Object.assign(out,{price,atrV,atrPct,e20,e50,e200,rsi:r,macd:m,adx:dmi,structure:st,vp,evidence,bias1h:b1,bias4h:b4});
+  const b1=kmrTfBias(h1),b4=kmrTfBias(h4),f1=kmrTfFlat(h1);
+  Object.assign(out,{price,atrV,atrPct,e20,e50,e200,rsi:r,macd:m,adx:dmi,structure:st,vp,evidence,bias1h:b1,bias4h:b4,flat1h:f1});
 
   // ── DIRECTION: decided by the higher timeframes, never by the 15m alone ──
-  let dir=null;
+  // Normal: 1H and 4H agree. 4H-led: the 1H is flat (no opinion) and the 4H is clear;
+  // then the 15m structure must already confirm the 4H and the setup is capped at MED.
+  let dir=null,led4h=false;
   if(b1==='BULL'&&b4==='BULL')dir='BUY';
   else if(b1==='BEAR'&&b4==='BEAR')dir='SELL';
-  out.dir=dir;
+  else if(f1?.flat&&(b4==='BULL'||b4==='BEAR')){dir=b4==='BULL'?'BUY':'SELL';led4h=true;}
+  out.dir=dir;out.led4h=led4h;
   const want=dir==='BUY'?'BULL':'BEAR',sgn=dir==='BUY'?1:-1;
   const gate=(key,ok,label,wait)=>{out.gates.push({key,ok,label,wait});return ok;};
 
   // ── HARD GATES — any failure means NO TRADE, with a clear "what to wait for" ──
-  gate('htf',!!dir,dir?`Higher timeframes agree: ${dir==='BUY'?'bullish':'bearish'}`:`1H ${b1||'—'} vs 4H ${b4||'—'} — no clear higher-timeframe direction`,'Wait for 1H and 4H to point the same way');
+  gate('htf',!!dir,led4h?`4H ${b4} leads — 1H is flat (EMA20/50 ${f1.gap.toFixed(2)}× ATR apart)`:dir?`Higher timeframes agree: ${dir==='BUY'?'bullish':'bearish'}`:`1H ${b1||'—'} vs 4H ${b4||'—'} — no clear higher-timeframe direction`,'Wait for 1H and 4H to point the same way, or for the 1H to flatten under a clear 4H');
+  if(led4h)gate('lead15',st.state===want,`15m structure ${st.state} — ${st.state===want?'confirms':'does not yet confirm'} the 4H`,`4H-led trades need 15m ${dir==='BUY'?'higher highs & lows':'lower highs & lows'} first`);
   const volOk=atrPct>=tune.atrMin&&atrPct<=tune.atrMax;
   gate('vol',volOk,`Volatility ${atrPct.toFixed(2)}% ${volOk?'in':'outside'} this asset's normal ${tune.atrMin}–${tune.atrMax}% band`,atrPct>tune.atrMax?'Wait for the volatility spike to calm down':'Market too quiet — wait for participation');
   const trending=!dmi||dmi.adx>=20;
@@ -2362,7 +2376,7 @@ function kmrSmartScan(candles15,h1,h4,ctx){
   let s=0;
   if(dir){
     s+=f(b4===want?20:b4==='NEUTRAL'?8:0,20,`4H trend ${b4||'—'}`);
-    s+=f(b1===want?15:0,15,`1H trend ${b1||'—'}`);
+    s+=f(led4h?0:b1===want?15:0,15,led4h?'1H trend flat — 4H leads':`1H trend ${b1||'—'}`);
     s+=f(st.state===want?15:st.state==='MIXED'?5:0,15,`15m structure ${st.state==='BULL'?'higher highs & lows':st.state==='BEAR'?'lower highs & lows':st.state.toLowerCase()}`);
     s+=f(valueZone?15:0,15,valueZone?`Pullback into value (${valueZone})`:'Not at a value zone');
     s+=f(rejection?10:closeWith||patternTrigger?8:0,10,rejection?'Rejection wick trigger':closeWith?'Candle closed in trade direction':patternTrigger?'Confirmed contextual candlestick trigger':'No trigger candle yet');
@@ -2385,7 +2399,7 @@ function kmrSmartScan(candles15,h1,h4,ctx){
   out.score=Math.max(0,Math.min(100,Math.round(s)));
   const allGates=out.gates.every(g=>g.ok);
   out.gatesOk=allGates;
-  out.tier=allGates&&out.score>=84?'HIGH':allGates&&out.score>=70?'MED':null;
+  out.tier=allGates&&out.score>=84&&!led4h?'HIGH':allGates&&out.score>=70?'MED':null;
   const firstFail=out.gates.find(g=>!g.ok);
   out.reason=firstFail?firstFail.label:out.tier?`${out.tier} setup — ${out.score}/100`:`Setup quality ${out.score}/100 — needs 70+`;
   out.wait=firstFail?firstFail.wait:out.tier?'':(out.factors.filter(x=>!x.pass).map(x=>x.label).slice(0,2).join(' · ')||'Wait for more confluence');
@@ -5652,7 +5666,7 @@ async function recordSignal(sym,sig,pos,manual){
     posUnits:pos.posUnits,lot:pos.lot,volLevel:pos.volLevel,atrPct:pos.atrPct,slUsd:pos.slUsd,tpUsd:pos.tpUsd,
     riskPct:pos.riskPct,rr:pos.rr,confidence:sig.confidence,
     score:sig.score,total:sig.total,conditions:sig.conditions||[],mtf:sig.mtf||{},
-    smartScore:sig.smart?sig.smart.score:null,marketEvidence:marketEvidenceSnapshot(sig.smart?.evidence),why:sig.smart?{zone:sig.smart.valueZone,buyPct:sig.smart.vp&&sig.smart.vp.ok?Math.round(sig.smart.vp.buyPct):null,adx:sig.smart.adx?Math.round(sig.smart.adx.adx):null}:null,
+    smartScore:sig.smart?sig.smart.score:null,marketEvidence:marketEvidenceSnapshot(sig.smart?.evidence),why:sig.smart?{zone:sig.smart.valueZone,buyPct:sig.smart.vp&&sig.smart.vp.ok?Math.round(sig.smart.vp.buyPct):null,adx:sig.smart.adx?Math.round(sig.smart.adx.adx):null,led4h:!!sig.smart.led4h}:null,
     outcome:'OPEN',exitPrice:null,exitTimeStr:null,pnlUsd:null,pnlPct:null,
     timeStr:new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'}),
     dateStr:new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'2-digit'})};
