@@ -15,14 +15,14 @@
   const isAdmin=()=>g('currentUser')?.role==='admin';
 
   // Read-only server facts, refreshed at most every 30 s while the desk or roll call is open.
-  const server={at:0,busy:false,telegram:null,news:null,broker:null,errors:{}};
+  const server={at:0,busy:false,telegram:null,news:null,broker:null,lead:null,errors:{}};
   async function refreshServer(force=false){
     if(server.busy||(!force&&Date.now()-server.at<30e3)||!g('currentUser'))return;
     server.busy=true;
     const api=g('riyanApi');
     const get=async(key,path)=>{try{server[key]=await api(path);delete server.errors[key];}catch(e){server[key]=null;server.errors[key]=String(e?.message||e).slice(0,80);}};
     try{
-      const jobs=[get('news','/api/v1/news/latest?symbol=XAUUSD')];
+      const jobs=[get('news','/api/v1/news/latest?symbol=XAUUSD'),get('lead','/api/v1/agents/lead')];
       if(['admin','user'].includes(g('currentUser')?.role))jobs.push(get('telegram','/api/v1/telegram/status'));
       if(isAdmin())jobs.push(get('broker','/api/v1/broker/account'));
       await Promise.all(jobs);server.at=Date.now();
@@ -127,12 +127,22 @@
       return {state:a.connector_online?'ok':'idle',line:(a.mode||'DRY_RUN')+' mode. MT5 connector '+(a.connector_online?'online':'offline')+'.'};
     }}
   ];
+  // ATLAS's tasks for the day come from the server (LeadAgent.java); each agent shows its own.
+  const TASK_LABEL={DONE:'Done',BLOCKED:'Blocked',ASSIGNED:'Assigned',SKIPPED:'Skipped'};
+  function tasks(){const t=server.lead?.tasks;return Array.isArray(t)?t:[];}
+  function taskFor(name){const mine=tasks().filter(t=>t.agent===name);if(!mine.length)return null;
+    return mine.find(t=>t.status==='BLOCKED')||mine.find(t=>t.status==='ASSIGNED')||mine[0];}
+  function planSummary(){
+    const t=tasks();if(!t.length)return null;
+    const done=t.filter(x=>x.status==='DONE'||x.status==='SKIPPED').length,blocked=t.filter(x=>x.status==='BLOCKED');
+    return {total:t.length,done,blocked,line:'Today\'s plan: '+t.length+' tasks, '+done+' done'+(blocked.length?', '+blocked.length+' blocked ('+[...new Set(blocked.map(x=>x.agent))].join(', ')+')':'')+'.'};
+  }
   function visibleAgents(){return AGENTS.filter(a=>{try{return a.show();}catch(e){return false;}});}
   function reports(){
-    const list=visibleAgents().map(a=>{let r;try{r=a.report();}catch(e){r={state:'warn',line:'Status check failed.'};}return {...a,...r};});
-    const attention=list.filter(r=>r.state==='warn'||r.state==='off').length;
-    const lead={id:'atlas',name:'ATLAS',role:'Team lead',hue:'#e9b949',state:attention?'warn':'ok',
-      line:'Atlas online. '+list.length+' agents on duty'+(attention?', '+attention+(attention>1?' need':' needs')+' attention.':', all reporting normally.')};
+    const list=visibleAgents().map(a=>{let r;try{r=a.report();}catch(e){r={state:'warn',line:'Status check failed.'};}return {...a,...r,task:taskFor(a.name)};});
+    const attention=list.filter(r=>r.state==='warn'||r.state==='off').length,plan=planSummary();
+    const lead={id:'atlas',name:'ATLAS',role:'Lead (CEO)',hue:'#e9b949',state:attention||plan?.blocked.length?'warn':'ok',task:null,
+      line:'Atlas online. '+list.length+' agents on duty'+(attention?', '+attention+(attention>1?' need':' needs')+' attention.':', all reporting normally.')+(plan?' '+plan.line:'')};
     const all=[lead,...list];note(all);return all;
   }
   // Per-agent status history for the Office terminal: one entry each time an agent's state or line changes.
@@ -213,6 +223,11 @@
     const q=String(raw||'').toLowerCase().trim();if(!q)return 'Ask me about prices, signals, open trades, today\'s profit, Low Profit, news or the team.';
     if(/^(please )?(buy|sell|close|exit|place|open a|enter)\b/.test(q))return 'I can\'t place or close trades by voice. Use the buttons in the app.';
     const syms=symsIn(q),list=syms.length?syms:['XAUUSD','XAGUSD','BTCUSD'];
+    if(/plan|task|work|briefing|market (today|view|condition)|ceo|atlas|manager/.test(q)){
+      const p=planSummary(),notes=server.lead?.notes;
+      if(!p)return 'Atlas has not published today\'s plan yet. The server writes it within a minute of starting.';
+      return p.line+(Array.isArray(notes)&&notes.length?' '+notes.slice(0,4).join(' '):'')+(p.blocked.length?' Blocked: '+p.blocked.map(x=>x.agent+', '+x.evidence).join('. ')+'.':'');
+    }
     if(/team|agent|everyone|roll ?call|report|status of all|how is everything/.test(q)){const r=reports();return r.map(a=>a.name+': '+a.line).join(' ');}
     if(/price|rate|quote|trading at|how much/.test(q)||(syms.length&&!/signal|setup|trade|position/.test(q)))
       return list.map(s=>{const v=g('prices')?.[s];return Number.isFinite(v)?NAMES[s]+' is '+call('fmtP',s,v)+(call('freshQuote',s)?'':' (not live right now)'):NAMES[s]+' price is not available';}).join('. ')+'.';
@@ -263,11 +278,27 @@
     document.getElementById('agentLead').innerHTML=`<span class="ag-dot ag-${lead.state}"></span>${esc(lead.line)}`;
     grid.innerHTML=list.map(a=>`<article class="ag-desk ag-${a.state}" style="--h:${a.hue}">
       <div class="ag-head"><div class="ag-orb" aria-hidden="true"><i></i></div><div><h3>${esc(a.name)}</h3><p>${esc(a.role)}</p></div><span class="ag-pill">${STATE_LABEL[a.state]}</span></div>
-      <div class="ag-bubble">${esc(a.line)}</div></article>`).join('');
+      <div class="ag-bubble">${esc(a.line)}</div>${a.task?`<p class="ag-task">Task from Atlas: <b>${esc(a.task.title)}</b> · ${esc(TASK_LABEL[a.task.status]||a.task.status)}</p>`:''}</article>`).join('');
+    renderPlan();
     document.getElementById('agentVoiceToggle').checked=prefs.voice;document.getElementById('agentRollToggle').checked=prefs.rollcall;
     document.getElementById('agentMicNote').hidden=micSupported();
   }
-  function open(){refreshServer().then(render);render();renderChat();}
+  const hhmm=ms=>{const d=new Date(+ms);return Number.isFinite(d.getTime())?d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Kolkata'}):'';};
+  function renderPlan(){
+    const L=server.lead,count=document.getElementById('agentPlanCount');if(!count)return;
+    const p=planSummary(),hue=Object.fromEntries(AGENTS.map(a=>[a.name,a.hue]));
+    count.textContent=p?p.done+' / '+p.total+' done':server.errors.lead?'Unavailable':'Waiting for Atlas';
+    document.getElementById('agentNotes').innerHTML=(Array.isArray(L?.notes)?L.notes:[]).map(n=>`<li>${esc(n)}</li>`).join('');
+    document.getElementById('agentTasks').innerHTML=tasks().map(t=>`<li style="--h:${hue[t.agent]||'#e9b949'}"><span class="ag-st ag-st-${esc(t.status)}">${esc(TASK_LABEL[t.status]||t.status)}</span><span><span class="ag-who">${esc(t.agent)}</span> ${esc(t.title)}</span><span class="ag-ev">${esc(t.evidence||'')}${t.doneAt&&t.status==='DONE'?' · done '+hhmm(t.doneAt)+' IST':t.doneAt&&t.status==='BLOCKED'?' · was done at '+hhmm(t.doneAt)+' IST':''}</span></li>`).join('');
+    const hist=(L?.history||[]).slice(1,7).map(h=>h.day.slice(5)+': '+h.done+'/'+h.total).join(' · ');
+    const review=L?.paperReview,rv=review?.lines?.length?' Last 7 days (paper): '+review.lines.join('; ')+'.'+(review.bestSession?' Best session: '+review.bestSession+'.':''):'';
+    document.getElementById('agentPlanMeta').textContent=(L?.briefingAt?'Briefing updated '+hhmm(L.briefingAt)+' IST. ':'')+(hist?'Earlier days: '+hist+'.':'')+rv+(review?' '+review.note:'')+' Atlas is rule based, reads real app data only and never places trades.';
+    const bg=L?.background,line=document.getElementById('agentBgLine');
+    if(line)line.textContent=!bg?(server.errors.lead?'Server status unavailable.':'Checking the server scanner…'):!bg.scannerEnabled?'Server scanner is turned off.':
+      (bg.lastScanAgoSeconds>=0&&bg.lastScanAgoSeconds<180?'Server is scanning now (last scan '+bg.lastScanAgoSeconds+' s ago). You can close the app.':'Server scan is not running right now.')+
+      (!bg.keepAwakeConfigured?' This server is not kept awake: on free hosting it sleeps after 15 minutes with no visitors.':bg.keepAwake?' Kept awake for the trading week ('+bg.keepAwakeWindow+').':' Weekend: the free server may sleep until someone opens the app.');
+  }
+  function open(){refreshServer().then(render);render();renderChat();try{root.KmrPush?.sync?.();}catch(e){}}
   function wire(){
     const form=document.getElementById('agentAskForm');
     if(form&&!form.dataset.wired){form.dataset.wired='1';form.addEventListener('submit',e=>{e.preventDefault();const i=document.getElementById('agentAsk');const t=i.value.trim();if(t){i.value='';ask(t);}});}
@@ -281,5 +312,5 @@
     if(g('currentUser')){if(document.getElementById('tag')?.style.display==='block')open();maybeRollCall();}
   }
   if(typeof document!=='undefined'){if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',wire);else wire();}
-  root.KmrAgents={AGENTS,reports,answer,ask,rollCall,maybeRollCall,open,render,listen,log,speak,stopSpeaking,refresh:refreshServer,prefs,STATE_LABEL,_test:{assetState,refreshServer,server}};
+  root.KmrAgents={AGENTS,reports,tasks,planSummary,answer,ask,rollCall,maybeRollCall,open,render,listen,log,speak,stopSpeaking,refresh:refreshServer,prefs,STATE_LABEL,_test:{assetState,refreshServer,server}};
 })(typeof window==='undefined'?globalThis:window);

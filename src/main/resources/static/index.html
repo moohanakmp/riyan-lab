@@ -658,7 +658,7 @@ body{background:
 .hero-prev{width:100%;height:90px;border-radius:12px;border:1px dashed rgba(255,255,255,.15);background:rgba(255,255,255,.03) center/cover no-repeat;margin:8px 0;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--dim)}
 
 </style>
-<link rel="stylesheet" href="/workspace-ui.css?v=20261126-office">
+<link rel="stylesheet" href="/workspace-ui.css?v=20261126-lead">
 <link rel="preload" as="video" href="happy.mp4" type="video/mp4"><link rel="preload" as="video" href="bull.mp4" type="video/mp4"><link rel="preload" as="video" href="bear.mp4" type="video/mp4">
 </head>
 <body>
@@ -1114,7 +1114,20 @@ body{background:
       <div class="ag-actions"><button type="button" class="ag-btn ag-primary" id="agentRollBtn">Play roll call</button>
         <button type="button" class="ag-btn" data-agent-mic aria-pressed="false"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg> <span>Talk</span></button></div>
     </section>
+    <section class="ag-plan" id="agentPlan" aria-label="Atlas daily plan">
+      <div class="ag-plan-head"><h2 class="sec-ttl" style="margin:0">Atlas · today's plan</h2><span class="ag-pill" id="agentPlanCount">Loading…</span></div>
+      <ul class="ag-notes" id="agentNotes"></ul>
+      <ol class="ag-tasks" id="agentTasks"></ol>
+      <p class="sc-dim" id="agentPlanMeta"></p>
+    </section>
     <div class="ag-grid" id="agentGrid"></div>
+    <section class="ag-plan" id="agentAlways" aria-label="Background scanning and alerts">
+      <h2 class="sec-ttl" style="margin:0 0 8px">Always-on scanning and alerts</h2>
+      <p class="ag-bg-line" id="agentBgLine">Checking the server scanner…</p>
+      <p class="sc-dim">The scan runs on the server, not on your phone or laptop, so the app can be closed. A phone or laptop cannot keep a web app running in the background; instead the server sends you an alert. Free hosting sleeps on weekends and after 15 minutes with no traffic outside the trading week; opening the app wakes it.</p>
+      <div class="ag-actions"><button type="button" class="ag-btn ag-primary" id="pushOnBtn">Turn on alerts on this device</button><button type="button" class="ag-btn" id="pushTestBtn" hidden>Send a test alert</button><button type="button" class="ag-btn" id="pushOffBtn" hidden>Turn off on this device</button></div>
+      <p class="sc-dim" id="pushNote"></p>
+    </section>
     <section class="ag-chat-card" aria-label="Ask your agents">
       <h2 class="sec-ttl" style="margin:0 0 8px">Ask the team</h2>
       <div id="agentChat" class="ag-chat" aria-live="polite"></div>
@@ -7064,8 +7077,9 @@ initAuth();
 
 <button id="riyanSyncBtn" type="button" onclick="riyanConnect()" style="position:fixed;bottom:8px;right:8px;z-index:9999;padding:7px 11px;border-radius:15px;background:#284f72;color:white;border:1px solid #8ac8e7;font-size:11px">☁ DB Sync</button>
 <script src="orbital-ui.js?v=20261126-today" defer></script>
-<script src="agents.js?v=20261126-office" defer></script>
-<script src="office.js?v=20261126-office" defer></script>
+<script src="agents.js?v=20261126-lead" defer></script>
+<script src="office.js?v=20261126-lead" defer></script>
+<script src="push-client.js?v=20261126-lead" defer></script>
 <script src="/background-client.js?v=20261113-settings-adopt"></script>
 <script src="/broker-link.js?v=20261115-symbols"></script>
 </body>

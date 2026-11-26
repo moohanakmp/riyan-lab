@@ -49,6 +49,23 @@ assert(!guest.includes('bridge')&&!guest.includes('courier'),'guests do not see 
 assert.match(A.answer('broker'),/admins only/);
 const vaultLine=txt=>{ctx.document.getElementById=id=>id==='riyanSyncBtn'?{textContent:txt}:null;const r=A.AGENTS.find(a=>a.id==='vault').report();ctx.document.getElementById=()=>null;return r;};
 assert.equal(vaultLine('☁ DB Synced').state,'ok');assert.equal(vaultLine('☁ Failed 2 · Pending 3').state,'warn');assert.equal(vaultLine('☁ Pending 4').state,'busy');assert.equal(vaultLine('☁ DB Sync').state,'idle');
+ctx.currentUser={username:'tester',role:'admin'};ctx.hasAccess=()=>true;
+// ATLAS's server plan: tasks attach to their agent, the lead line summarises them, and the assistant answers from them.
+A._test.server.lead={tasks:[{agent:'NIGHT OWL',key:'server-scan',title:'Run the server scan',status:'DONE',evidence:'Scanned 1 account(s)'},
+  {agent:'TRAPPER',key:'order-flow',title:'Record the order-flow footprint',status:'BLOCKED',evidence:'No recent order-flow minutes for Gold'}],notes:['Gold: uptrend on 1h and 4h, volatility normal.']};
+const planned=A.reports();
+assert.equal(planned.find(r=>r.id==='nightowl').task.status,'DONE','agent carries its task from Atlas');
+assert.equal(planned.find(r=>r.id==='trapper').task.status,'BLOCKED');
+assert.match(planned[0].line,/2 tasks, 1 done, 1 blocked \(TRAPPER\)/,'lead line summarises the plan');
+assert.equal(planned[0].state,'warn','a blocked task needs attention');
+assert.match(A.answer("what is today's plan"),/Blocked: TRAPPER, No recent order-flow/);
+A._test.server.lead=null;A.reports();
+const push=fs.readFileSync(dir+'push-client.js','utf8');
+for(const bad of ['/paper/','/broker/','/settings'])assert(!push.includes(bad),'push client only touches alert endpoints: '+bad);
+assert(html.includes('push-client.js?v=')&&html.includes('id="pushOnBtn"')&&html.includes('id="agentTasks"'),'plan and alert controls on the Agents tab');
+const sw=fs.readFileSync(dir+'sw.js','utf8');
+assert(sw.includes("addEventListener('push'")&&sw.includes('/api/v1/push/inbox')&&sw.includes('showNotification'),'service worker shows server pushes');
+assert(office.includes('tasks --today'),'Office terminal lists the day\'s tasks');
 const log=A.log.atlas;assert(log&&log.length>=1&&log.at(-1).line,'status history is recorded for the terminal');
 const n=log.length;A.reports();assert.equal(A.log.atlas.length,n,'unchanged status is not logged twice');
 const octx={console,Math,String,Date,Object,Array,Number,JSON,document:{readyState:'complete',getElementById:()=>null,addEventListener(){}}};octx.globalThis=octx;vm.createContext(octx);vm.runInContext(office,octx);
