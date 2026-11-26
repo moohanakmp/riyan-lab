@@ -30,7 +30,10 @@ class EconomicCalendarPersistenceIntegrationTest {
   assertEquals("DEGRADED",feed.view().get("calendarState"));
   var restarted=new EconomicCalendar(jdbc,json,client,now::get);assertEquals(fetched,restarted.view().get("calendarAt"));
   verify(client,times(2)).send(any(HttpRequest.class),any(HttpResponse.BodyHandler.class));
-  now.set(fetched+31*60000L);var expired=new EconomicCalendar(jdbc,json,client,now::get);assertEquals(false,expired.view().get("ready"));
+  // Past the 30 min TTL the stored 429 keeps the saved schedule in use (DEGRADED), still not re-dated.
+  now.set(fetched+31*60000L);var savedView=new EconomicCalendar(jdbc,json,client,now::get).view();assertEquals(true,savedView.get("ready"));assertEquals(fetched,savedView.get("calendarAt"));
+  jdbc.update("UPDATE economic_calendar_cache SET next_attempt_at=? WHERE id=1",java.sql.Timestamp.from(java.time.Instant.ofEpochMilli(fetched+EconomicCalendar.SAVED_MAX+600000)));
+  now.set(fetched+EconomicCalendar.SAVED_MAX+1);var expired=new EconomicCalendar(jdbc,json,client,now::get);assertEquals(false,expired.view().get("ready"));
   assertEquals(fetched,expired.peek().get("fetchedAt"));verify(client,times(2)).send(any(HttpRequest.class),any(HttpResponse.BodyHandler.class));
  }
 }

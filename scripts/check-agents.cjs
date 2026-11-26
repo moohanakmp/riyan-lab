@@ -10,8 +10,11 @@ for(const bad of ['/paper/close','/paper/open','/broker/order','/broker/mode','m
 assert(html.includes('data-tab="agents"'),'Agents tab button');
 assert(html.includes('<div id="tag" style="display:none">'),'Agents panel');
 assert(html.includes('agents.js?v='),'agents.js loaded');
-assert(html.includes("if(n==='agents'&&!currentUser)return;"),'Agents tab needs sign-in');
-assert(/'tbk','tag'\]/.test(html),'panel hide list includes the Agents panel');
+assert(html.includes("if((n==='agents'||n==='office')&&!currentUser)return;"),'Agents and Office tabs need sign-in');
+assert(/'tbk','tag','tof'\]/.test(html),'panel hide list includes the Agents and Office panels');
+assert(html.includes('data-tab="office"')&&html.includes('<div id="tof" style="display:none">')&&html.includes('office.js?v='),'Office tab, panel and script');
+const office=fs.readFileSync(dir+'office.js','utf8');
+assert(!/\beval\s*\(|new Function|riyanApi|fetch\(/.test(office),'Office only reads KmrAgents: no eval and no network calls of its own');
 
 const ctx={console,Date,Math,JSON,Number,String,Array,Object,Promise,setTimeout,clearTimeout,setInterval:()=>0,clearInterval(){},
   localStorage:{getItem:()=>null,setItem(){}},sessionStorage:{getItem:()=>'1',setItem(){}},
@@ -46,4 +49,10 @@ assert(!guest.includes('bridge')&&!guest.includes('courier'),'guests do not see 
 assert.match(A.answer('broker'),/admins only/);
 const vaultLine=txt=>{ctx.document.getElementById=id=>id==='riyanSyncBtn'?{textContent:txt}:null;const r=A.AGENTS.find(a=>a.id==='vault').report();ctx.document.getElementById=()=>null;return r;};
 assert.equal(vaultLine('☁ DB Synced').state,'ok');assert.equal(vaultLine('☁ Failed 2 · Pending 3').state,'warn');assert.equal(vaultLine('☁ Pending 4').state,'busy');assert.equal(vaultLine('☁ DB Sync').state,'idle');
+const log=A.log.atlas;assert(log&&log.length>=1&&log.at(-1).line,'status history is recorded for the terminal');
+const n=log.length;A.reports();assert.equal(A.log.atlas.length,n,'unchanged status is not logged twice');
+const octx={console,Math,String,Date,Object,Array,Number,JSON,document:{readyState:'complete',getElementById:()=>null,addEventListener(){}}};octx.globalThis=octx;vm.createContext(octx);vm.runInContext(office,octx);
+const O=octx.KmrOffice._test;for(const wide of [true,false]){const L=O.makeLayout(11,wide);assert.equal(L.slots.length,11);
+  for(const s of L.slots)assert(s.cx+16<=L.w&&s.aisleY<L.h,'every desk fits inside the room');}
+assert.equal(O.short('Scanning. Gold wait.'),'Scanning.');
 console.log('agents checks passed');
