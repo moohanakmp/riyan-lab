@@ -27,7 +27,7 @@ console.log('PASS original semantic style cascade and custom hero-image styles p
 assert.ok(/\.pc\.sel\{border-color:var\(--acc\)!important/.test(css),'Selected prices must remain visible above the legacy glass border');
 
 const pages=context.OrbitalUI.workspaces,route=context.OrbitalUI.routeTarget,all=Object.keys(pages);
-assert.equal(all.length,16);
+assert.equal(all.length,17);
 for(const tab of all){
  assert.equal(route('#'+tab,all),tab);
  assert.equal(route('#'+tab,[]),null);

@@ -27,6 +27,7 @@
     history:{panel:'th',title:'Trade Journal',group:'Portfolio',description:'Trace signal outcomes, entry details and the records behind performance.',links:['pnl','dashboard','signals']},
     pnl:{panel:'tpn',title:'Performance',group:'Portfolio',description:'Explore paper results by period, strategy and instrument.',links:['history','dashboard','analytics']},
     admin:{panel:'tad',title:'Settings & Access',group:'Workspace',description:'Manage the existing account, appearance and alert controls.',links:['info','dashboard','pnl']},
+    broker:{panel:'tbk',title:'Broker (MT5)',group:'Workspace',description:'Link the MT5 bridge, review mirrored orders and safety state. Admin only.',links:['admin','info']},
     info:{panel:'ti',title:'Trading Guide',group:'Workspace',description:'Understand the rules, data sources and risk limits behind this workspace.',links:['signals','analysis','admin']}
   };
   function routeTarget(hash,allowed){
@@ -112,7 +113,7 @@
     const tab=document.querySelector('#tabsRow .tab.active')?.dataset.tab;
     if(syncWorkspace(user,tab))return;
     if(user&&workspaces[tab])decoratePanel(tab);
-    const visible=!!user&&tab==='chart';
+    const visible=!!user&&(tab==='chart'||tab==='today');
     $('orbitalOverview').hidden=!visible;
     if(!visible||document.hidden)return;
     for(const sym of symbols){
@@ -121,13 +122,14 @@
       const change=Number.isFinite(value)&&dayOpen[sym]>0?(value/dayOpen[sym]-1)*100:null;
       $('orbit-change-'+sym).textContent=change==null?'Change unavailable':(change>=0?'+':'')+change.toFixed(2)+'%';
       $('orbit-change-'+sym).className='orbit-change '+(change==null?'':change>=0?'up':'dn');
-      status.textContent=fresh?'Latest quote':'Quote unavailable / stale';
+      status.textContent=fresh?'Live':'Stale';
+      $('orbit-card-'+sym).classList.toggle('stale',!fresh);
       drawTrend(sym,change);
       const btn=$('orbit-card-'+sym);btn.classList.toggle('selected',selAsset===sym);
       btn.setAttribute('aria-pressed',String(selAsset===sym));
       btn.disabled=!hasAccess('chart');
     }
-    if(tab!=='chart')return;
+    if(tab!=='chart'&&tab!=='today')return;
     const sym=selAsset;
     const fs=feedStatus(sym);
     const newsReady=calendarReady();
@@ -158,6 +160,8 @@
   symbols.forEach(sym=>$('orbit-card-'+sym).addEventListener('click',()=>{
     if(!hasAccess('chart'))return;
     // Use original symbol selector and tab button, including their existing permission gates.
+    // On Today a quote chip selects the asset for the whole page (chart, Now card, quality).
+    if(document.body.classList.contains('today-view')){pick(sym);if(todayChartOpen)pickChart(sym);lastScan=0;schedule();return;}
     navigate('chart');pickChart(sym);lastScan=0;schedule();
   }));
   $('orbit-ideas').addEventListener('click',()=>navigate('signals'));

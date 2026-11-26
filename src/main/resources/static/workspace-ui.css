@@ -268,3 +268,61 @@ body[data-workspace-tab=chart] #orbitalWorkspace{display:none}
 .fa-x{background:none;border:0;color:#cbd5e1;font-size:22px;line-height:1;cursor:pointer;padding:0 4px}
 .fa-act{margin-top:10px;display:flex;justify-content:flex-end}
 @keyframes faIn{from{opacity:0;transform:translate(-50%,-10px)}to{opacity:1;transform:translate(-50%,0)}}
+/* ═══ Today: one page instead of 17 tabs (2026-11-26 UI review) ═══ */
+.today-merged{display:none!important}
+#mainScroll{padding-bottom:72px}
+.sbar{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#workspaceArtwork,#workspaceRelated,#workspaceDirectory{display:none!important}
+#orbitalWorkspace .workspace-heading{min-height:0;padding:14px 0 6px}
+body.today-view #mainScroll>*{max-width:1180px;margin-left:auto;margin-right:auto}
+body.today-view #orbitalOverview .orbit-hero{display:none}
+body.today-view #orbitalOverview{position:sticky;top:0;z-index:20;padding:10px 0;margin-bottom:6px;background:linear-gradient(var(--bg,#070b16) 82%,transparent)}
+body.today-view .orbit-quotes{gap:10px;margin:0}
+body.today-view .orbit-quote{min-height:0;padding:12px 14px;border-radius:14px;flex-direction:row;align-items:center;border-left:3px solid #2a4169}
+body.today-view #orbit-card-XAUUSD{border-left-color:#e9b949}body.today-view #orbit-card-XAGUSD{border-left-color:#b8c4d6}body.today-view #orbit-card-BTCUSD{border-left-color:#f7931a}
+body.today-view .orbit-quote.selected{background:#102241;box-shadow:inset 0 0 0 1px #4f7de4}
+body.today-view .orbit-quote img{display:none}
+body.today-view .orbit-quote-copy{gap:3px}
+body.today-view .orbit-quote strong{font-size:22px}
+body.today-view .orbit-spark{top:auto;bottom:12px;right:12px;width:72px;height:30px;opacity:.85}
+.orbit-quote-status::before{content:'';display:inline-block;width:7px;height:7px;border-radius:50%;background:#22c55e;margin-right:5px;vertical-align:1px}
+.orbit-quote.stale .orbit-quote-status::before{background:#f5a524}
+body.today-view #tdb .sig-wrap>.sec-ttl{display:none}
+body.today-view #tdb .dash-hero{min-height:0;padding:18px 20px;margin-bottom:6px}
+body.today-view #tdb .dash-hero .big{font-size:36px}
+body.today-view #tsc .recheck-btn:first-child{display:none}
+body.today-view:not([data-today-module="signals"]) #ts #autoSignalAnalysis,
+body.today-view:not([data-today-module="signals"]) #ts #trendStrip,
+body.today-view:not([data-today-module="signals"]) #ts .sig-wrap>details.workspace-explainer,
+body.today-view:not([data-today-module="signals"]) #ts #signalsContainer{display:none}
+.today-modules{display:flex;gap:4px;padding:4px;margin:16px 0 12px;background:#0b1730;border:1px solid var(--orbit-line,#22304a);border-radius:14px;overflow-x:auto;scrollbar-width:none}
+.today-modules[hidden],.today-modules button[hidden]{display:none}
+.today-modules button{flex:1 0 auto;min-height:42px;border:0;border-radius:10px;background:transparent;color:#bdcbe3;font:600 13px Inter,system-ui,sans-serif;padding:0 14px;white-space:nowrap;cursor:pointer}
+.today-modules button .bi{margin-right:6px}
+.today-modules button.active{background:#15366d;color:#fff;box-shadow:inset 0 0 0 1px #3a64cf}
+.today-chart-bar{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:50px;margin:16px auto 8px;padding:0 18px;border:1px solid var(--orbit-line,#22304a);border-radius:14px;background:#08162e;color:var(--txt);font:600 14px Inter,system-ui,sans-serif;cursor:pointer}
+.today-chart-bar[hidden]{display:none}.today-chart-bar .bi{margin-right:8px;color:#5cc8ff}.today-chart-bar #todayChartHint{color:#9cafce;font-weight:500;font-size:12px}
+body.today-view #tc{margin-bottom:12px}
+#mainScroll select{background:#0c1a33;color:var(--txt);border:1px solid var(--orbit-line,#22304a);border-radius:10px;min-height:38px;padding:0 10px;font:inherit;font-size:13px}
+@media(max-width:850px){body.today-view #tc .orbit-quality{display:none}body.today-view .orbit-quote{padding:10px;flex-direction:column;align-items:flex-start}body.today-view .orbit-spark{display:none}body.today-view .orbit-quote strong{font-size:18px}}
+@media(max-width:760px){
+ #tabsRow{position:fixed!important;left:0;right:0;bottom:0;top:auto!important;z-index:60;justify-content:space-around;gap:6px;padding:6px 12px calc(6px + env(safe-area-inset-bottom))!important;border-top:1px solid var(--orbit-line,#22304a);border-bottom:0;background:#060f22!important}
+ #tabsRow>.tab,#tabsRow>.orbit-more{flex:1 1 0}
+ #tabsRow>.tab,#tabsRow .orbit-more>summary{justify-content:center;text-align:center;min-height:46px;font-size:12px}
+ #tabsRow .orbit-more>summary{display:flex;align-items:center;justify-content:center;gap:6px}
+ #tabsRow .orbit-more-menu{top:auto!important;bottom:68px;left:10px;right:10px!important;min-width:0;max-height:70dvh;display:grid;grid-template-columns:1fr 1fr;gap:4px}
+ #tabsRow .orbit-more-menu .tab{margin:0}
+ #mainScroll{padding-bottom:96px!important}
+ #riyanSyncBtn{bottom:72px!important}
+ body.today-view .orbit-quotes{gap:6px}
+ body.today-view .orbit-quote{padding:8px 9px;border-radius:12px}
+ body.today-view .orbit-asset{font-size:11px}
+ body.today-view .orbit-quote strong{font-size:16px;letter-spacing:-.03em}
+ body.today-view .orbit-change{font-size:10px}
+ .today-modules button{padding:0 11px;font-size:12px}
+}
+.orbit-more-menu{z-index:10001}.orbit-more-menu .tab[style*="block"]{display:flex!important;align-items:center;gap:8px}
+body:has(#orbitalMore[open]) #riyanSyncBtn{display:none}
+body.today-view #triggeredSignals .ib>p.sc-dim{display:none}
+@media(max-width:420px){.today-modules button{padding:0 6px;font-size:12px;flex:1 1 auto}.today-modules button .bi{display:none}}
+body.today-view #tsc [data-background-scanner],body.today-view #tad [data-background-scanner]{display:none}
