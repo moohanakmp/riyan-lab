@@ -15,6 +15,9 @@ import java.util.function.LongSupplier;
 public class EconomicCalendar {
     static final String URL="https://nfs.faireconomy.media/ff_calendar_thisweek.json";
     static final long TTL=1800000,REFRESH=900000;
+    // When the provider is failing (e.g. HTTP 429 on Render's shared IP), this week's already-validated schedule keeps
+    // protecting entries around known events for up to 12 h, marked DEGRADED. Event times are published for the week.
+    static final long SAVED_MAX=12*3600000L;
     private final JdbcTemplate jdbc;private final ObjectMapper json;private final HttpClient client;private final LongSupplier clock;
     @org.springframework.beans.factory.annotation.Value("${ECONOMIC_CALENDAR_FALLBACK_URL:}")
     private String fallbackUrl="";
@@ -129,11 +132,13 @@ public class EconomicCalendar {
     }
     private Map<String,Object> snapshot(long now){
         long end=calendar==null?0:weekStart(Instant.parse(calendar.get(0).path("date").asText()).toEpochMilli()).plusWeeks(1).toInstant().toEpochMilli();
-        boolean ready=calendar!=null&&fetchedAt>0&&fetchedAt<=now&&now-fetchedAt<TTL&&now+45*60000<end;
-        String reason=ready?error:error.isBlank()?"Calendar stale or weekly coverage ended — news risk unchecked":error;
+        boolean usable=calendar!=null&&fetchedAt>0&&fetchedAt<=now&&now+45*60000<end;
+        boolean fresh=usable&&now-fetchedAt<TTL,saved=usable&&!fresh&&!error.isBlank()&&now-fetchedAt<SAVED_MAX;
+        boolean ready=fresh||saved;
+        String reason=saved?error+" — using this week's saved schedule from "+Math.max(1,(now-fetchedAt)/60000)+" min ago":ready?error:error.isBlank()?"Calendar stale or weekly coverage ended — news risk unchecked":error;
         var out=new LinkedHashMap<String,Object>();
         out.put("calendarAt",ready?fetchedAt:0);out.put("calendarError",reason);out.put("calendarState",ready?(error.isBlank()?"READY":"DEGRADED"):"UNAVAILABLE");
-        out.put("ready",ready);out.put("fetchedAt",fetchedAt);out.put("expiresAt",calendar==null?0:Math.min(fetchedAt+TTL,end-45*60000));out.put("retryAt",nextAttempt);
+        out.put("ready",ready);out.put("fetchedAt",fetchedAt);out.put("expiresAt",calendar==null?0:Math.min(fetchedAt+(saved?SAVED_MAX:TTL),end-45*60000));out.put("retryAt",nextAttempt);
         out.put("source",fetchedSource);out.put("sourceUrl","https://www.forexfactory.com/calendar");out.put("eventCount",calendar==null?0:calendar.size());out.put("httpStatus",httpStatus);
         // A published schedule remains useful for display during a rate limit. It must
         // never be re-dated or passed as a freshly checked news-risk schedule.

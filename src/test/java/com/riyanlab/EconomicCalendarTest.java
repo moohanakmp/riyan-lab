@@ -30,12 +30,23 @@ class EconomicCalendarTest {
   verify(client,times(1)).send(any(HttpRequest.class),any(HttpResponse.BodyHandler.class));
   now.addAndGet(EconomicCalendar.REFRESH);when(client.send(any(HttpRequest.class),any(HttpResponse.BodyHandler.class))).thenReturn(response(429,"",Map.of("Retry-After",List.of("1200"))));
   var delayed=feed.view();assertEquals("DEGRADED",delayed.get("calendarState"));assertEquals(start,delayed.get("calendarAt"));
-  now.set(start+EconomicCalendar.TTL+1);var stale=feed.view();assertEquals(false,stale.get("ready"));assertFalse(stale.containsKey("calendar"));assertEquals(start,stale.get("fetchedAt"));
+  // Past the 30 min TTL while the provider is still rate limited: this week's saved schedule keeps protecting, marked DEGRADED.
+  now.set(start+EconomicCalendar.TTL+1);var saved=feed.view();assertEquals(true,saved.get("ready"));assertEquals("DEGRADED",saved.get("calendarState"));
+  assertEquals(start,saved.get("calendarAt"));assertTrue(saved.containsKey("calendar"));assertTrue(saved.get("calendarError").toString().contains("saved schedule"));
+  assertEquals(start+EconomicCalendar.SAVED_MAX,((Number)saved.get("expiresAt")).longValue());
   verify(client,times(2)).send(any(HttpRequest.class),any(HttpResponse.BodyHandler.class));
   now.set(start+35*60000L);when(client.send(any(HttpRequest.class),any(HttpResponse.BodyHandler.class))).thenReturn(response(304,"",Map.of()));
   assertEquals(now.get(),feed.view().get("calendarAt"));
   var requests=org.mockito.ArgumentCaptor.forClass(HttpRequest.class);verify(client,times(3)).send(requests.capture(),any(HttpResponse.BodyHandler.class));
   assertEquals("\"v1\"",requests.getAllValues().get(2).headers().firstValue("If-None-Match").orElseThrow());
+ }
+ @Test @SuppressWarnings({"unchecked","rawtypes"}) void savedScheduleExpiresAfterTwelveHoursOfProviderFailure()throws Exception{
+  var now=new AtomicLong(start);var client=mock(HttpClient.class);
+  when(client.send(any(HttpRequest.class),any(HttpResponse.BodyHandler.class))).thenReturn(response(200,events(start).toString(),Map.of()));
+  var feed=new EconomicCalendar(null,json,client,now::get);assertEquals(true,feed.view().get("ready"));
+  when(client.send(any(HttpRequest.class),any(HttpResponse.BodyHandler.class))).thenReturn(response(429,"",Map.of()));
+  now.set(start+EconomicCalendar.SAVED_MAX-60000);assertEquals(true,feed.view().get("ready"),"saved schedule still protects inside 12 h");
+  now.set(start+EconomicCalendar.SAVED_MAX+1);var expired=feed.view();assertEquals(false,expired.get("ready"));assertFalse(expired.containsKey("calendar"));
  }
  @Test @SuppressWarnings({"unchecked","rawtypes"}) void rateLimitWithoutRetryHeaderWaitsAtLeastFiveMinutes()throws Exception{
   var now=new AtomicLong(start);var client=mock(HttpClient.class);
@@ -68,7 +79,10 @@ class EconomicCalendarTest {
   when(jdbc.queryForList(anyString())).thenReturn(List.of(row));
   var feed=new EconomicCalendar(jdbc,json,client,now::get);assertEquals(start,feed.view().get("calendarAt"));
   now.set(start+31*60000);var restarted=new EconomicCalendar(jdbc,json,client,now::get);
-  assertEquals(false,restarted.view().get("ready"));assertEquals(start,restarted.peek().get("fetchedAt"));verifyNoInteractions(client);
+  // The stored 429 means the provider is still failing, so the saved schedule is used (DEGRADED) without re-dating it.
+  var restored=restarted.view();assertEquals(true,restored.get("ready"));assertEquals("DEGRADED",restored.get("calendarState"));assertEquals(start,restored.get("calendarAt"));
+  assertEquals(start,restarted.peek().get("fetchedAt"));verifyNoInteractions(client);
+  now.set(start+EconomicCalendar.SAVED_MAX+1);row.put("retry",now.get()+600000);assertEquals(false,new EconomicCalendar(jdbc,json,client,now::get).view().get("ready"));verifyNoInteractions(client);
   row.put("fetched",now.get()+60000);var future=new EconomicCalendar(jdbc,json,client,now::get);assertEquals(false,future.peek().get("ready"));
  }
  @Test @SuppressWarnings({"unchecked","rawtypes"}) void invalidNotModifiedOrMalformedSuccessCannotEnableEntries()throws Exception{

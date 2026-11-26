@@ -76,8 +76,10 @@
       if(!LV)return {state:'off',line:'Live volume is not loaded.'};
       const s=LV.snapshot(sym),name=NAMES[sym];
       if(s.status==='live')return {state:'ok',line:name+' one-minute stream is live.'};
-      if(s.status==='quiet')return {state:'idle',line:name+' stream is connected but quiet.'};
-      return {state:s.status==='connecting'?'busy':'idle',line:name+' stream is '+(s.status||'idle')+'. It starts when Volume Trap is open or alerts are on.'};
+      if(s.status==='quiet')return {state:'ok',line:name+' stream is connected. The market is quiet, waiting for trades.'};
+      if(s.status==='connecting'||s.status==='reconnecting')return {state:'busy',line:'Connecting to the '+name+' trade stream.'};
+      if(s.status==='unavailable')return {state:'warn',line:name+' stream error: '+String(s.error||'unknown').slice(0,80)+'. Retrying.'};
+      return {state:'idle',line:name+' stream is off. Turn on flow alerts in Volume Trap to keep it running.'};
     }},
     {id:'nightowl',name:'NIGHT OWL',role:'Server scanner',hue:'#5cc8ff',show:()=>can('signals'),report(){
       const s=g('backgroundStatus'),on=g('backgroundEnabled');
@@ -131,8 +133,12 @@
     const attention=list.filter(r=>r.state==='warn'||r.state==='off').length;
     const lead={id:'atlas',name:'ATLAS',role:'Team lead',hue:'#e9b949',state:attention?'warn':'ok',
       line:'Atlas online. '+list.length+' agents on duty'+(attention?', '+attention+(attention>1?' need':' needs')+' attention.':', all reporting normally.')};
-    return [lead,...list];
+    const all=[lead,...list];note(all);return all;
   }
+  // Per-agent status history for the Office terminal: one entry each time an agent's state or line changes.
+  const log={};
+  function note(list){const t=Date.now();for(const r of list){const h=log[r.id]||(log[r.id]=[]),last=h[h.length-1];
+    if(!last||last.line!==r.line||last.state!==r.state){h.push({t,state:r.state,line:r.line});if(h.length>40)h.shift();}}}
 
   // ── Voice ─────────────────────────────────────────────────────────────
   const prefs={get voice(){try{return localStorage.getItem('kmr_agent_voice')!=='off';}catch(e){return true;}},set voice(v){try{localStorage.setItem('kmr_agent_voice',v?'on':'off');}catch(e){}},
@@ -275,5 +281,5 @@
     if(g('currentUser')){if(document.getElementById('tag')?.style.display==='block')open();maybeRollCall();}
   }
   if(typeof document!=='undefined'){if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',wire);else wire();}
-  root.KmrAgents={AGENTS,reports,answer,ask,rollCall,maybeRollCall,open,render,listen,_test:{assetState,refreshServer,server}};
+  root.KmrAgents={AGENTS,reports,answer,ask,rollCall,maybeRollCall,open,render,listen,log,speak,stopSpeaking,refresh:refreshServer,prefs,STATE_LABEL,_test:{assetState,refreshServer,server}};
 })(typeof window==='undefined'?globalThis:window);

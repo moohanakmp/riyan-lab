@@ -658,7 +658,7 @@ body{background:
 .hero-prev{width:100%;height:90px;border-radius:12px;border:1px dashed rgba(255,255,255,.15);background:rgba(255,255,255,.03) center/cover no-repeat;margin:8px 0;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--dim)}
 
 </style>
-<link rel="stylesheet" href="/workspace-ui.css?v=20261126-agents2">
+<link rel="stylesheet" href="/workspace-ui.css?v=20261126-office">
 <link rel="preload" as="video" href="happy.mp4" type="video/mp4"><link rel="preload" as="video" href="bull.mp4" type="video/mp4"><link rel="preload" as="video" href="bear.mp4" type="video/mp4">
 </head>
 <body>
@@ -719,6 +719,7 @@ body{background:
 <div class="tabs" id="tabsRow" style="display:none">
   <button class="tab active" data-tab="today" onclick="showTab('today',this)"><span class="tab-ic"><i class="bi bi-house-door" aria-hidden="true"></i></span><span class="tab-lbl">Today</span><i class="tab-ripple"></i></button>
   <button class="tab" data-tab="agents" onclick="showTab('agents',this)"><span class="tab-ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01"/></svg></span><span class="tab-lbl">Agents</span><i class="tab-ripple"></i></button>
+  <button class="tab" data-tab="office" onclick="showTab('office',this)"><span class="tab-ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="11" width="18" height="3" rx="1"/><path d="M5 14v6M19 14v6M8 11V5h8v6"/></svg></span><span class="tab-lbl">Office</span><i class="tab-ripple"></i></button>
   <div class="today-merged" hidden>
   <button class="tab" data-tab="chart" onclick="showTab('chart',this)"><span class="tab-ic"><i class="bi bi-grid-1x2" aria-hidden="true"></i></span><span class="tab-lbl">Markets</span><i class="tab-ripple"></i></button>
   <button class="tab" data-tab="prices" onclick="showTab('prices',this)"><span class="tab-ic"><i class="bi bi-bar-chart" aria-hidden="true"></i></span><span class="tab-lbl">Prices</span><i class="tab-ripple"></i></button>
@@ -1089,6 +1090,21 @@ body{background:
 <!-- INFO -->
 <div id="tbk" style="display:none">
   <div class="iwrap" id="brokerPanel"><div class="ic"><div class="it">🔌 Broker link</div><div class="ib">Loading…</div></div></div>
+</div>
+<!-- OFFICE: pixel office; each agent works at its desk from live status. Tap an agent for its terminal. -->
+<div id="tof" style="display:none">
+  <div class="sig-wrap office-wrap">
+    <div class="of-top"><div><p class="ag-eyebrow">Agents office</p><p class="of-sum" id="officeSummary">Opening the office…</p></div>
+      <p class="of-legend"><span class="s-ok">typing = working</span><span class="s-idle">walking = idle</span><span class="s-warn">! = needs attention</span><span class="s-off">empty desk = away</span></p></div>
+    <div class="of-room" id="officeRoom"><canvas id="officeCanvas" role="img" aria-label="Pixel office with each agent at its desk"></canvas><div id="officeLayer" class="of-layer"></div></div>
+    <div class="of-roster" id="officeRoster" aria-label="Agents"></div>
+    <aside id="officeTerm" class="of-term" hidden role="dialog" aria-label="Agent terminal">
+      <div class="of-term-bar"><div id="officeTermHead" class="of-term-head"></div><button id="officeTermClose" type="button" class="of-x" aria-label="Close terminal">&#10005;</button></div>
+      <div class="of-term-tabs"><span class="on">TERMINAL</span><span>read-only</span></div>
+      <div id="officeTermBody" class="of-term-body" aria-live="polite"></div>
+      <form id="officeTermForm" class="of-term-form"><input id="officeTermAsk" maxlength="160" autocomplete="off" placeholder="Ask, e.g. gold price" aria-label="Ask this agent"><button type="submit">Send</button></form>
+    </aside>
+  </div>
 </div>
 <!-- AGENTS: every worker in the app reports its real status; voice roll call and voice questions -->
 <div id="tag" style="display:none">
@@ -1696,7 +1712,7 @@ function showToday(module,opts={}){
   if(opts.chart&&hasAccess('chart'))todayChartOpen=true;
   if(!todayModuleAllowed(todayModule))todayModule=Object.keys(TODAY_PANEL).find(todayModuleAllowed)||null;
   try{if(todayModule)localStorage.setItem('kmr_today_module',todayModule);}catch(e){}
-  ['tdb','tp','tc','ts','tsc','th','tan','tse','tfl','tvt','tma','tre','tay','ti','tad','tpn','tbk','tag'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
+  ['tdb','tp','tc','ts','tsc','th','tan','tse','tfl','tvt','tma','tre','tay','ti','tad','tpn','tbk','tag','tof'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
   document.body.classList.add('today-view');document.body.dataset.todayModule=todayModule||'';
   const show=id=>{const el=document.getElementById(id);if(el)el.style.display='block';return el;};
   if(hasAccess('dashboard'))show('tdb');
@@ -1743,14 +1759,14 @@ function showTab(n,el){
   if(n==='info'&&!hasAccess('info'))return showNoAccess('info');
   if(n==='admin'&&(!currentUser||currentUser.role!=='admin'))return;
   if(n==='broker'&&(!currentUser||currentUser.role!=='admin'))return;
-  if(n==='agents'&&!currentUser)return;
+  if((n==='agents'||n==='office')&&!currentUser)return;
 
   if(n==='pnl'&&!(hasAccess('pnlReport')||(currentUser&&currentUser.role==='admin')))return showNoAccess('pnl');
   // Single-page layout: Home, Markets, Prices, Signals, Low Profit, Volume Trap and Analysis live on Today.
   if(n==='today'||TODAY_MERGED.includes(n))return showToday(TODAY_MODULE_OF[n]||null,{chart:n==='chart'});
   document.body.classList.remove('today-view');
-  ['tdb','tp','tc','ts','tsc','th','tan','tse','tfl','tvt','tma','tre','tay','ti','tad','tpn','tbk','tag'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
-  const panel=document.getElementById({dashboard:'tdb',prices:'tp',chart:'tc',signals:'ts',scalp:'tsc',history:'th',analysis:'tan',session:'tse',flow:'tfl',volumeTrap:'tvt',manual:'tma',research:'tre',analytics:'tay',admin:'tad',broker:'tbk',info:'ti',pnl:'tpn',agents:'tag'}[n]);
+  ['tdb','tp','tc','ts','tsc','th','tan','tse','tfl','tvt','tma','tre','tay','ti','tad','tpn','tbk','tag','tof'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
+  const panel=document.getElementById({dashboard:'tdb',prices:'tp',chart:'tc',signals:'ts',scalp:'tsc',history:'th',analysis:'tan',session:'tse',flow:'tfl',volumeTrap:'tvt',manual:'tma',research:'tre',analytics:'tay',admin:'tad',broker:'tbk',info:'ti',pnl:'tpn',agents:'tag',office:'tof'}[n]);
   panel.style.display='block';
   panel.classList.remove('tab-fade');void panel.offsetWidth;panel.classList.add('tab-fade');
   magicPop(el);
@@ -1774,6 +1790,7 @@ function showTab(n,el){
   if(n==='admin')renderAdminPanel();
   if(n==='broker'&&typeof renderBrokerPanel==='function')renderBrokerPanel();
   if(n==='agents'&&window.KmrAgents)KmrAgents.open();
+  if(n==='office'&&window.KmrOffice)KmrOffice.open();
   // Staggered entrance for whatever's now visible — deliberately runs AFTER the tab-specific
   // render calls above (so it catches the freshly-populated content), and only on this one
   // navigation moment. The periodic refreshes that follow (5-8s later) never call this, so
@@ -4719,7 +4736,9 @@ let volumeTrapWatching=false;
 function volumeTrapLiveSync(){
   if(typeof LiveVolume==='undefined')return;
   const onTab=document.getElementById('tvt')?.style.display!=='none';
-  if(onTab)volumeTrapWatching=true;
+  // TRAPPER keeps the one-minute stream running while the app is open for anyone with Volume Trap access
+  // (the alerts switch still turns it off); before, it only started after the tab was opened once.
+  if(onTab||(typeof currentUser!=='undefined'&&currentUser&&hasAccess('flow')))volumeTrapWatching=true;
   if(!document.hidden&&(onTab||volumeTrapWatching&&flowAlertsOn()))LiveVolume.start(volumeTrapSym);else LiveVolume.stop();
 }
 function flowAlertsOn(){try{return localStorage.getItem('kmr_flow_alerts')!=='off';}catch(e){return true;}}
@@ -6124,7 +6143,7 @@ let calendarDisplay=null,calendarNextWeek=null;
 let calendarFailedAt=0,calendarLastCheckAt=0,calendarPromise=null;
 const CALENDAR_RETRY_COOLDOWN_MS=30000;
 function calendarReady(now=Date.now()){
-  return Array.isArray(calendarCache)&&calendarCacheAt>0&&now>=calendarCacheAt&&now-calendarCacheAt<30*60e3&&
+  return Array.isArray(calendarCache)&&calendarCacheAt>0&&now>=calendarCacheAt&&now-calendarCacheAt<12*36e5&&
     (typeof calendarHealth==='undefined'||!calendarHealth||(calendarHealth.ready!==false&&now<calendarHealth.expiresAt));
 }
 function renderCalendarHealth(){
@@ -6156,7 +6175,7 @@ async function fetchEconCalendarImpl(force){
     calendarNextWeek=Array.isArray(data.nextWeekCalendar)&&data.nextWeekCalendar.every(e=>Number.isFinite(Date.parse(e.date))&&e.title&&e.country&&e.impact)?data.nextWeekCalendar:calendarNextWeek;
     calendarDisplay=Array.isArray(data.displayCalendar)&&data.fetchedAt>0&&data.fetchedAt<=Date.now()&&data.displayCalendar.every(e=>Number.isFinite(Date.parse(e.date))&&e.title&&e.country)?data.displayCalendar:null;
     if(!data.ready){calendarCache=null;calendarCacheAt=0;calendarFailedAt=Date.now();feedError.calendar=data.calendarError||'Calendar unavailable';renderCalendarHealth();return null;}
-    if(!Array.isArray(data.calendar)||!data.calendar.length||!Number.isFinite(data.calendarAt)||data.calendarAt>Date.now()||Date.now()-data.calendarAt>=30*60e3||!Number.isFinite(data.expiresAt)||Date.now()>=data.expiresAt||data.calendar.some(e=>!Number.isFinite(Date.parse(e.date))||!['High','Medium','Low','Holiday','Non-Economic'].includes(e.impact)||!e.title||!e.country))throw Error('Invalid or stale calendar schedule');
+    if(!Array.isArray(data.calendar)||!data.calendar.length||!Number.isFinite(data.calendarAt)||data.calendarAt>Date.now()||Date.now()-data.calendarAt>=12*36e5||!Number.isFinite(data.expiresAt)||Date.now()>=data.expiresAt||data.calendar.some(e=>!Number.isFinite(Date.parse(e.date))||!['High','Medium','Low','Holiday','Non-Economic'].includes(e.impact)||!e.title||!e.country))throw Error('Invalid or stale calendar schedule');
     calendarCache=data.calendar;calendarDisplay=data.calendar;calendarCacheAt=data.calendarAt;calendarFailedAt=0;feedError.calendar=data.calendarError||null;
     updateNewsLog();renderCalendarHealth();return calendarCache;
   }catch(e){
@@ -7045,7 +7064,8 @@ initAuth();
 
 <button id="riyanSyncBtn" type="button" onclick="riyanConnect()" style="position:fixed;bottom:8px;right:8px;z-index:9999;padding:7px 11px;border-radius:15px;background:#284f72;color:white;border:1px solid #8ac8e7;font-size:11px">☁ DB Sync</button>
 <script src="orbital-ui.js?v=20261126-today" defer></script>
-<script src="agents.js?v=20261126-agents3" defer></script>
+<script src="agents.js?v=20261126-office" defer></script>
+<script src="office.js?v=20261126-office" defer></script>
 <script src="/background-client.js?v=20261113-settings-adopt"></script>
 <script src="/broker-link.js?v=20261115-symbols"></script>
 </body>
