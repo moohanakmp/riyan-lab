@@ -28,6 +28,7 @@
     pnl:{panel:'tpn',title:'Performance',group:'Portfolio',description:'Explore paper results by period, strategy and instrument.',links:['history','dashboard','analytics']},
     admin:{panel:'tad',title:'Settings & Access',group:'Workspace',description:'Manage the existing account, appearance and alert controls.',links:['info','dashboard','pnl']},
     broker:{panel:'tbk',title:'Broker (MT5)',group:'Workspace',description:'Link the MT5 bridge, review mirrored orders and safety state. Admin only.',links:['admin','info']},
+    agents:{panel:'tag',title:'Agents',group:'Workspace',description:'Every worker in the app reports its live status. Ask questions by voice or text.',links:['info']},
     info:{panel:'ti',title:'Trading Guide',group:'Workspace',description:'Understand the rules, data sources and risk limits behind this workspace.',links:['signals','analysis','admin']}
   };
   function routeTarget(hash,allowed){
