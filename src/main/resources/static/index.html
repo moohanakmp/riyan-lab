@@ -658,7 +658,7 @@ body{background:
 .hero-prev{width:100%;height:90px;border-radius:12px;border:1px dashed rgba(255,255,255,.15);background:rgba(255,255,255,.03) center/cover no-repeat;margin:8px 0;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--dim)}
 
 </style>
-<link rel="stylesheet" href="/workspace-ui.css?v=20261119-footprint">
+<link rel="stylesheet" href="/workspace-ui.css?v=20261126-today">
 <link rel="preload" as="video" href="happy.mp4" type="video/mp4"><link rel="preload" as="video" href="bull.mp4" type="video/mp4"><link rel="preload" as="video" href="bear.mp4" type="video/mp4">
 </head>
 <body>
@@ -716,24 +716,27 @@ body{background:
 </div>
 <button id="installBtn" onclick="installApp()">⬇ Install Kalai Markets</button>
 <div class="tabs" id="tabsRow" style="display:none">
+  <button class="tab active" data-tab="today" onclick="showTab('today',this)"><span class="tab-ic"><i class="bi bi-house-door" aria-hidden="true"></i></span><span class="tab-lbl">Today</span><i class="tab-ripple"></i></button>
+  <div class="today-merged" hidden>
   <button class="tab" data-tab="chart" onclick="showTab('chart',this)"><span class="tab-ic"><i class="bi bi-grid-1x2" aria-hidden="true"></i></span><span class="tab-lbl">Markets</span><i class="tab-ripple"></i></button>
   <button class="tab" data-tab="prices" onclick="showTab('prices',this)"><span class="tab-ic"><i class="bi bi-bar-chart" aria-hidden="true"></i></span><span class="tab-lbl">Prices</span><i class="tab-ripple"></i></button>
   <button class="tab" data-tab="signals" onclick="showTab('signals',this)"><span class="tab-ic"><i class="bi bi-bullseye" aria-hidden="true"></i></span><span class="tab-lbl">Signals</span><i class="tab-ripple"></i></button>
   <button class="tab" data-tab="analysis" onclick="showTab('analysis',this)"><span class="tab-ic"><i class="bi bi-activity" aria-hidden="true"></i></span><span class="tab-lbl">Analysis</span><i class="tab-ripple"></i></button>
-  <details id="orbitalMore" class="orbit-more"><summary>More <i class="bi bi-chevron-down" aria-hidden="true"></i></summary><div class="orbit-more-menu" aria-label="More workspace pages">
-  <button class="tab active" data-tab="dashboard" onclick="showTab('dashboard',this)"><span class="tab-ic"><i class="bi bi-house-door" aria-hidden="true"></i></span><span class="tab-lbl">Home</span><i class="tab-ripple"></i></button>
+  <button class="tab" data-tab="dashboard" onclick="showTab('dashboard',this)"><span class="tab-ic"><i class="bi bi-house-door" aria-hidden="true"></i></span><span class="tab-lbl">Home</span><i class="tab-ripple"></i></button>
   <button class="tab" data-tab="scalp" onclick="showTab('scalp',this)"><span class="tab-ic"><i class="bi bi-cash-stack" aria-hidden="true"></i></span><span class="tab-lbl">Low Profit</span><i class="tab-ripple"></i></button>
-  <button class="tab" data-tab="history" onclick="showTab('history',this)"><span class="tab-ic"><i class="bi bi-clock-history" aria-hidden="true"></i></span><span class="tab-lbl">History</span><i class="tab-ripple"></i></button>
-  <button class="tab" data-tab="session" onclick="showTab('session',this)"><span class="tab-ic"><i class="bi bi-clock" aria-hidden="true"></i></span><span class="tab-lbl">Session</span><i class="tab-ripple"></i></button>
   <button class="tab" data-tab="volumeTrap" onclick="showTab('volumeTrap',this)"><span class="tab-ic"><i class="bi bi-bar-chart" aria-hidden="true"></i></span><span class="tab-lbl">Volume Trap</span><i class="tab-ripple"></i></button>
+  </div>
+  <details id="orbitalMore" class="orbit-more"><summary><i class="bi bi-grid-1x2" aria-hidden="true"></i> Tools</summary><div class="orbit-more-menu" aria-label="Tools">
+  <button class="tab" data-tab="history" onclick="showTab('history',this)"><span class="tab-ic"><i class="bi bi-clock-history" aria-hidden="true"></i></span><span class="tab-lbl">Journal</span><i class="tab-ripple"></i></button>
+  <button class="tab" data-tab="session" onclick="showTab('session',this)"><span class="tab-ic"><i class="bi bi-clock" aria-hidden="true"></i></span><span class="tab-lbl">Sessions</span><i class="tab-ripple"></i></button>
   <button class="tab" data-tab="flow" onclick="showTab('flow',this)"><span class="tab-ic"><i class="bi bi-water" aria-hidden="true"></i></span><span class="tab-lbl">Flow</span><i class="tab-ripple"></i></button>
-  <button class="tab" data-tab="manual" onclick="showTab('manual',this)"><span class="tab-ic"><i class="bi bi-compass" aria-hidden="true"></i></span><span class="tab-lbl">Manual</span><i class="tab-ripple"></i></button>
+  <button class="tab" data-tab="manual" onclick="showTab('manual',this)"><span class="tab-ic"><i class="bi bi-compass" aria-hidden="true"></i></span><span class="tab-lbl">Trade Planner</span><i class="tab-ripple"></i></button>
   <button class="tab" data-tab="research" onclick="showTab('research',this)"><span class="tab-ic"><i class="bi bi-search" aria-hidden="true"></i></span><span class="tab-lbl">Research</span><i class="tab-ripple"></i></button>
-  <button class="tab" data-tab="analytics" onclick="showTab('analytics',this)"><span class="tab-ic"><i class="bi bi-graph-up" aria-hidden="true"></i></span><span class="tab-lbl">Analytics</span><i class="tab-ripple"></i></button>
-  <button class="tab" data-tab="pnl" onclick="showTab('pnl',this)" id="pnlTabBtn"><span class="tab-ic"><i class="bi bi-wallet2" aria-hidden="true"></i></span><span class="tab-lbl">P&amp;L</span><i class="tab-ripple"></i></button>
+  <button class="tab" data-tab="analytics" onclick="showTab('analytics',this)"><span class="tab-ic"><i class="bi bi-graph-up" aria-hidden="true"></i></span><span class="tab-lbl">Strategy Lab</span><i class="tab-ripple"></i></button>
+  <button class="tab" data-tab="pnl" onclick="showTab('pnl',this)" id="pnlTabBtn"><span class="tab-ic"><i class="bi bi-wallet2" aria-hidden="true"></i></span><span class="tab-lbl">Performance</span><i class="tab-ripple"></i></button>
   <button class="tab" data-tab="admin" onclick="showTab('admin',this)" id="adminTabBtn" style="display:none"><span class="tab-ic"><i class="bi bi-gear" aria-hidden="true"></i></span><span class="tab-lbl">Admin</span><i class="tab-ripple"></i></button>
-  <button class="tab" data-tab="broker" onclick="showTab('broker',this)" id="brokerTabBtn" style="display:none"><span class="tab-ic"><i class="bi bi-plug" aria-hidden="true"></i></span><span class="tab-lbl">Broker</span><i class="tab-ripple"></i></button>
-  <button class="tab" data-tab="info" onclick="showTab('info',this)"><span class="tab-ic"><i class="bi bi-info-circle" aria-hidden="true"></i></span><span class="tab-lbl">Info</span><i class="tab-ripple"></i></button>
+  <button class="tab" data-tab="broker" onclick="showTab('broker',this)" id="brokerTabBtn" style="display:none"><span class="tab-ic"><i class="bi bi-activity" aria-hidden="true"></i></span><span class="tab-lbl">Broker</span><i class="tab-ripple"></i></button>
+  <button class="tab" data-tab="info" onclick="showTab('info',this)"><span class="tab-ic"><i class="bi bi-info-circle" aria-hidden="true"></i></span><span class="tab-lbl">Guide</span><i class="tab-ripple"></i></button>
   </div></details>
 </div>
 <div class="scroll" id="mainScroll" style="display:none">
@@ -792,35 +795,7 @@ body{background:
   </div>
 </div>
 
-<!-- CHART -->
-<div id="tc" style="display:none">
- <div class="orbit-chart-layout"><div class="orbit-chart-main">
-  <div class="cwrap">
-    <div class="chdr"><div class="csym-txt" id="csym">XAU/USD · Gold</div><div class="tfs"><button class="tf" onclick="setTF('1',this)">1m</button><button class="tf" onclick="setTF('5',this)">5m</button><button class="tf" onclick="setTF('15',this)">15m</button><button class="tf active" onclick="setTF('60',this)">1H</button><button class="tf" onclick="setTF('D',this)">1D</button></div></div>
-    <div class="tv-container"><div class="tv-loading" id="tvLoading">📈 Loading chart...</div><div id="tvWidgetWrap" style="height:100%"></div></div>
-    <div class="tv-note">TradingView · OANDA/Binance data · Pinch to zoom</div>
-  </div>
-  <div class="qa-row"><button class="qa active" id="qa-XAUUSD" onclick="pickChart('XAUUSD')">🥇 XAU</button><button class="qa" id="qa-XAGUSD" onclick="pickChart('XAGUSD')">🥈 XAG</button><button class="qa" id="qa-BTCUSD" onclick="pickChart('BTCUSD')">₿ BTC</button></div>
-
- </div><aside class="orbit-quality" aria-label="Current signal quality">
-   <div class="orbit-quality-heading"><h2>Signal Quality</h2><span id="orbit-quality-state">DATA UNAVAILABLE</span></div>
-   <div class="orbit-quality-market" id="orbit-quality-symbol">XAU/USD</div>
-   <div class="orbit-score-wrap"><canvas id="orbit-gauge-chart" width="340" height="180" aria-hidden="true"></canvas><strong id="orbit-score">—</strong><span>/ 100</span></div>
-   <progress id="orbit-gauge" max="100" value="0" aria-label="Setup quality"></progress>
-   <h3>Build confidence before entry.</h3>
-   <p id="orbit-quality-reason">Waiting for complete candle history</p>
-   <div id="orbit-quality-groups"></div>
-   <div class="orbit-quality-foot"><p>Engine v3 · Completed candles</p><p id="orbit-quality-source"></p><small>Setup quality is not a win probability. All entry and risk checks still apply.</small></div>
-   <button type="button" id="orbit-ideas">View Trade Ideas <i class="bi bi-arrow-right" aria-hidden="true"></i></button>
- </aside></div>
-</div>
-
 <!-- SIGNALS -->
-<!-- LOW-PROFIT SCALPS -->
-<div id="tsc" style="display:none">
-  <div class="sig-wrap"><button class="recheck-btn" onclick="showTriggeredSignals()">View active trades →</button><div id="scalpContainer"></div></div>
-</div>
-
 <div id="ts" style="display:none">
   <div class="sig-wrap">
     <div id="signalGlance" role="status"></div>
@@ -841,6 +816,12 @@ body{background:
     <details class="workspace-explainer"><summary>Backtest & validation</summary><div class="notice" style="margin-top:8px"><b>🧪 Check it yourself:</b> Analytics → <b>Run backtest</b> runs an indicator-only historical replay on the candles loaded here. It excludes live account-risk approval, costs and order-block history, so its trade count and returns do not represent accepted app entries. The Low Profit page has a separate replay of its own structure rules.</div></details>
     <div id="signalsContainer"></div>
   </div>
+</div>
+
+<nav id="todayModules" class="today-modules" aria-label="Today modules" hidden><button type="button" data-module="signals" onclick="showToday('signals')"><i class="bi bi-bullseye" aria-hidden="true"></i> Signals</button><button type="button" data-module="scalp" onclick="showToday('scalp')"><i class="bi bi-cash-stack" aria-hidden="true"></i> Low Profit</button><button type="button" data-module="volumeTrap" onclick="showToday('volumeTrap')"><i class="bi bi-bar-chart" aria-hidden="true"></i> Volume Trap</button><button type="button" data-module="analysis" onclick="showToday('analysis')"><i class="bi bi-activity" aria-hidden="true"></i> Levels</button></nav>
+<!-- LOW-PROFIT SCALPS -->
+<div id="tsc" style="display:none">
+  <div class="sig-wrap"><button class="recheck-btn" onclick="showTriggeredSignals()">View active trades →</button><div id="scalpContainer"></div></div>
 </div>
 
 <!-- HISTORY -->
@@ -1145,6 +1126,30 @@ body{background:
     <div class="ic" style="background:rgba(246,201,14,.04);border-color:rgba(246,201,14,.15)"><div class="it">⚠ Disclaimer</div><div class="ib">Rule-based signals only. Not financial advice. Past signals do not guarantee future results. Always use your own judgment.</div></div>
   </div>
 </div>
+<button type="button" id="todayChartBar" class="today-chart-bar" hidden onclick="todayToggleChart()" aria-expanded="false"><span><i class="bi bi-graph-up" aria-hidden="true"></i> Chart</span><span id="todayChartHint">Show</span></button>
+<!-- CHART -->
+<div id="tc" style="display:none">
+ <div class="orbit-chart-layout"><div class="orbit-chart-main">
+  <div class="cwrap">
+    <div class="chdr"><div class="csym-txt" id="csym">XAU/USD · Gold</div><div class="tfs"><button class="tf" onclick="setTF('1',this)">1m</button><button class="tf" onclick="setTF('5',this)">5m</button><button class="tf" onclick="setTF('15',this)">15m</button><button class="tf active" onclick="setTF('60',this)">1H</button><button class="tf" onclick="setTF('D',this)">1D</button></div></div>
+    <div class="tv-container"><div class="tv-loading" id="tvLoading">📈 Loading chart...</div><div id="tvWidgetWrap" style="height:100%"></div></div>
+    <div class="tv-note">TradingView · OANDA/Binance data · Pinch to zoom</div>
+  </div>
+  <div class="qa-row"><button class="qa active" id="qa-XAUUSD" onclick="pickChart('XAUUSD')">🥇 XAU</button><button class="qa" id="qa-XAGUSD" onclick="pickChart('XAGUSD')">🥈 XAG</button><button class="qa" id="qa-BTCUSD" onclick="pickChart('BTCUSD')">₿ BTC</button></div>
+
+ </div><aside class="orbit-quality" aria-label="Current signal quality">
+   <div class="orbit-quality-heading"><h2>Signal Quality</h2><span id="orbit-quality-state">DATA UNAVAILABLE</span></div>
+   <div class="orbit-quality-market" id="orbit-quality-symbol">XAU/USD</div>
+   <div class="orbit-score-wrap"><canvas id="orbit-gauge-chart" width="340" height="180" aria-hidden="true"></canvas><strong id="orbit-score">—</strong><span>/ 100</span></div>
+   <progress id="orbit-gauge" max="100" value="0" aria-label="Setup quality"></progress>
+   <h3>Build confidence before entry.</h3>
+   <p id="orbit-quality-reason">Waiting for complete candle history</p>
+   <div id="orbit-quality-groups"></div>
+   <div class="orbit-quality-foot"><p>Engine v3 · Completed candles</p><p id="orbit-quality-source"></p><small>Setup quality is not a win probability. All entry and risk checks still apply.</small></div>
+   <button type="button" id="orbit-ideas">View Trade Ideas <i class="bi bi-arrow-right" aria-hidden="true"></i></button>
+ </aside></div>
+</div>
+
 <div class="foot">Kalai Markets (KMR) · XAU · XAG · BTC · TradingView · Coinbase · Yahoo futures reference · gold-api.com</div>
 </div>
 <div id="themeSheet" style="display:none" class="sheet-ov" onclick="if(event.target===this)closeThemeSheet()">
@@ -1657,6 +1662,48 @@ function fireOutcome(sym,dir,outcome,pnlUsd){celebrate(outcome,pnlUsd);if(!alert
 function toggleAlerts(){alertsEnabled=!alertsEnabled;const btn=document.getElementById('notifBtn');if(alertsEnabled){btn.style.color='var(--grn)';btn.style.borderColor='var(--grn)';try{getAudio().resume();}catch(e){}playBeep('TICK');doVibrate('TICK');showToast('🔔 Alerts ON','var(--grn)');}else{btn.style.color='';btn.style.borderColor='';showToast('🔕 Alerts OFF','var(--dim)');}}
 
 // ═══ TABS ═════════════════════════════════════════════════════════════════
+// ═══ TODAY — one page: price strip, today's P&L, now + active trades, one module, chart ═══
+const TODAY_MERGED=['dashboard','prices','chart','signals','scalp','volumeTrap','analysis'];
+const TODAY_MODULE_OF={signals:'signals',scalp:'scalp',volumeTrap:'volumeTrap',analysis:'analysis'};
+const TODAY_PANEL={signals:'ts',scalp:'tsc',volumeTrap:'tvt',analysis:'tan'};
+let todayModule=(()=>{try{return localStorage.getItem('kmr_today_module')||'signals';}catch(e){return 'signals';}})(),todayChartOpen=false;
+function todayModuleAllowed(m){return m==='analysis'?hasAccess('analysis'):m==='volumeTrap'?hasAccess('flow'):(m==='signals'||m==='scalp')?hasAccess('signals'):false;}
+function todayToggleChart(){todayChartOpen=!todayChartOpen;showToday(null,{keepScroll:true});if(todayChartOpen)document.getElementById('todayChartBar')?.scrollIntoView({behavior:'smooth',block:'start'});}
+function showToday(module,opts={}){
+  if(module)todayModule=module;
+  if(opts.chart&&hasAccess('chart'))todayChartOpen=true;
+  if(!todayModuleAllowed(todayModule))todayModule=Object.keys(TODAY_PANEL).find(todayModuleAllowed)||null;
+  try{if(todayModule)localStorage.setItem('kmr_today_module',todayModule);}catch(e){}
+  ['tdb','tp','tc','ts','tsc','th','tan','tse','tfl','tvt','tma','tre','tay','ti','tad','tpn','tbk'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
+  document.body.classList.add('today-view');document.body.dataset.todayModule=todayModule||'';
+  const show=id=>{const el=document.getElementById(id);if(el)el.style.display='block';return el;};
+  if(hasAccess('dashboard'))show('tdb');
+  const tsOn=hasAccess('signals');if(tsOn)show('ts');
+  if(todayModule)show(TODAY_PANEL[todayModule]);
+  const nav=document.getElementById('todayModules');
+  if(nav){
+    const allowed=Object.keys(TODAY_PANEL).filter(todayModuleAllowed);
+    nav.hidden=allowed.length<2;
+    nav.querySelectorAll('button').forEach(b=>{const m=b.dataset.module;b.hidden=!allowed.includes(m);b.classList.toggle('active',m===todayModule);b.setAttribute('aria-pressed',String(m===todayModule));});
+    const anchor=tsOn?document.getElementById('triggeredSignals'):document.getElementById('ts');
+    if(anchor&&anchor.nextElementSibling!==nav)anchor.after(nav);
+  }
+  const bar=document.getElementById('todayChartBar');
+  if(bar){bar.hidden=!hasAccess('chart');bar.setAttribute('aria-expanded',String(todayChartOpen));document.getElementById('todayChartHint').textContent=todayChartOpen?'Hide':'Show';}
+  if(todayChartOpen&&hasAccess('chart')){show('tc');pickChart(selAsset);}
+  const btnToday=document.querySelector('#tabsRow [data-tab="today"]');
+  document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active','rippling'));btnToday?.classList.add('active');
+  if(location.hash!=='#today')history.replaceState(null,'','#today');
+  updateKmrBuddy('dashboard');
+  if(!opts.keepScroll)document.getElementById('mainScroll').scrollTop=0;
+  if(hasAccess('dashboard'))renderDashboard();
+  if(tsOn){renderSignals();renderTrendStrip(true);}
+  if(todayModule==='scalp')renderScalpTab();
+  if(todayModule==='analysis')refreshAnalysis(false);
+  if(todayModule==='volumeTrap'){renderVolumeTrap();renderVolumeTrapLive();renderVolumeTrapFootprint();}
+  volumeTrapLiveSync();
+  renderFeedStatus();
+}
 function showTab(n,el){
   // Permission gate — non-admins cannot access disallowed pages even by direct call
   if(n==='dashboard'&&!hasAccess('dashboard'))return showNoAccess('dashboard');
@@ -1676,6 +1723,9 @@ function showTab(n,el){
   if(n==='broker'&&(!currentUser||currentUser.role!=='admin'))return;
 
   if(n==='pnl'&&!(hasAccess('pnlReport')||(currentUser&&currentUser.role==='admin')))return showNoAccess('pnl');
+  // Single-page layout: Home, Markets, Prices, Signals, Low Profit, Volume Trap and Analysis live on Today.
+  if(n==='today'||TODAY_MERGED.includes(n))return showToday(TODAY_MODULE_OF[n]||null,{chart:n==='chart'});
+  document.body.classList.remove('today-view');
   ['tdb','tp','tc','ts','tsc','th','tan','tse','tfl','tvt','tma','tre','tay','ti','tad','tpn','tbk'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
   const panel=document.getElementById({dashboard:'tdb',prices:'tp',chart:'tc',signals:'ts',scalp:'tsc',history:'th',analysis:'tan',session:'tse',flow:'tfl',volumeTrap:'tvt',manual:'tma',research:'tre',analytics:'tay',admin:'tad',broker:'tbk',info:'ti',pnl:'tpn'}[n]);
   panel.style.display='block';
@@ -2742,13 +2792,13 @@ function renderDashboard(){
   const openN=SYMS.filter(x=>activeSignals[x]).length;
   const hasImg=!!themeSettings.heroImg;
   let html=`<div class="dash-hero ${hasImg?'has-img':''}">
-    <img class="art b" src="art/art-btc.svg" alt=""><img class="art g" src="art/art-gold.svg" alt="">
-    <div class="hi">${greet}, ${who} · TODAY'S P&amp;L</div>
+    <div class="hi">Today's P&amp;L</div>
     <div class="big" style="color:${col}">${st.pnl>=0?'+':'-'}$${Math.abs(st.pnl).toFixed(2)}</div>
     <div class="sub">${st.closed?`${st.w} wins · ${st.l} losses · ${st.wr}% win rate`:'No closed trades yet today — the engine only fires on clean setups.'}</div>
     <div class="chips"><span class="chip">🎯 ${openN} open</span><span class="chip">⚡ ${signalHistory.length.toLocaleString('en-IN')} signals all-time</span><span class="chip">🧠 Engine v3</span><span class="chip" onclick="showTab('scalp',document.querySelector('[data-tab=scalp]'))" style="cursor:pointer">💵 Scalps ${(()=>{const d=scalpToday();return`${d.pnl>=0?'+':'−'}$${Math.abs(d.pnl).toFixed(2)} / $${scalpCfg.goal}`;})()}</span></div>
   </div>`;
 
+  if(document.body?.classList?.contains('today-view')){body.innerHTML=html;return;}
   html+=`<div class="hist-section-title">MARKET PULSE · ENGINE v3</div><div class="pulse-grid">`;
   SYMS.forEach(sym=>{
     let sig=null;try{sig=computeSignal(sym);}catch(e){}
@@ -2773,7 +2823,7 @@ function renderDashboard(){
     const p=prices[sym];
     const chg=(p!=null&&dayOpen[sym])?((p-dayOpen[sym])/dayOpen[sym]*100):null;
     const cls=sym==='XAUUSD'?'gold':sym==='XAGUSD'?'silver':'btc';
-    html+=`<div class="pc ${cls}" onclick="showTab('prices',document.querySelector('[data-tab=prices]'))">
+    html+=`<div class="pc ${cls}" onclick="showToday(null,{chart:true})">
       <div class="cm"><div class="al"><div class="ico">${ICONS[sym]}</div><div><div class="asym">${ASSETS[sym].sym}</div></div></div>
       <div class="pr"><div class="pv">${p!=null?fmtP(sym,p):'——'}</div>${chg!=null?`<div class="pchg ${chg>0.001?'up':chg<-0.001?'dn':'nt'}">${chg>=0?'+':''}${chg.toFixed(2)}%</div>`:''}</div></div>
     </div>`;
@@ -6970,7 +7020,7 @@ initAuth();
 </script>
 
 <button id="riyanSyncBtn" type="button" onclick="riyanConnect()" style="position:fixed;bottom:8px;right:8px;z-index:9999;padding:7px 11px;border-radius:15px;background:#284f72;color:white;border:1px solid #8ac8e7;font-size:11px">☁ DB Sync</button>
-<script src="orbital-ui.js?v=20261020-volume-details" defer></script>
+<script src="orbital-ui.js?v=20261126-today" defer></script>
 <script src="/background-client.js?v=20261113-settings-adopt"></script>
 <script src="/broker-link.js?v=20261115-symbols"></script>
 </body>
