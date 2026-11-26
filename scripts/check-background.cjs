@@ -42,7 +42,7 @@ const {scan,normalize}=require('../src/main/resources/background/scanner.cjs');
  assert((await scan({...eligibleJob,calendar:[newsEvent]})).changes.some(x=>x.type==='low-profit'),'known news must not block structure entries');
  const {extract}=require('../src/main/resources/background/scanner.cjs'),vm=require('node:vm');
  const gateContext=vm.createContext({Date,Math});
- const mathNames=['ema','rsi','atr','swingLevels','emaSeries','macd','kmrAdx','kmrPivots','kmrStructure','kmrVolumePressure','kmrSweep','kmrTfBias','kmrSmartScan','ev2txt'];
+ const mathNames=['ema','rsi','atr','swingLevels','emaSeries','macd','kmrAdx','kmrPivots','kmrStructure','kmrVolumePressure','kmrSweep','kmrTfBias','kmrTfFlat','kmrSmartScan','ev2txt'];
  vm.runInContext(fs.readFileSync('src/main/resources/static/trading-core.js','utf8')+'\n'+mathNames.map(n=>extract(n)).join('\n'),gateContext);
  const f=eligibleJob.feeds.XAUUSD;
  const manualScan=gateContext.kmrSmartScan(f.bars['15m'],f.bars['1h'],f.bars['4h'],{now,istHour:14,isMetal:true,dec:2,events:[],newsReady:false,obs:[],tune:{atrMin:.05,atrMax:.6,rsiHardHi:80,rsiHardLo:20}});

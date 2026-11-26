@@ -52,6 +52,14 @@ function backgroundRender(status){
     const hosting=document.createElement('p');hosting.textContent='Hosting: Render free can sleep after 15 minutes without incoming traffic. Uninterrupted background scanning requires an always-on service. Telegram uses the server delivery queue while the service is running; device push and browser email require the browser.';box.append(hosting);
     let detail;try{detail=typeof status.details==='string'?JSON.parse(status.details):status.details;}catch(e){}
     if(detail){const lines=document.createElement('p');lines.textContent=detail.reason||Object.entries(detail.instruments||{}).map(([sym,s])=>sym+': Auto — '+s.auto+'; Low Profit — '+s.lowProfit+(s.quoteError?'; Quote — '+s.quoteError:'')+Object.entries(s.frameErrors||{}).map(([tf,error])=>'; '+tf+' — '+error).join('')).join(' · ');box.append(lines);}
+    const past=Array.isArray(status.reasonHistory)?status.reasonHistory.filter(r=>r.strategy==='auto'):[];
+    if(past.length){
+      const head=document.createElement('p');head.style.marginTop='10px';head.textContent='Why Auto did not trade (last 24 h, newest first, IST):';box.append(head);
+      const list=document.createElement('ul');list.style.cssText='margin:4px 0 8px 16px;padding:0;font-size:11px';
+      const ist=t=>{const d=new Date(t);return Number.isFinite(d.getTime())?d.toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit'}):'—';};
+      past.slice(0,20).forEach(r=>{const li=document.createElement('li');li.textContent=ist(r.first_seen)+'–'+ist(r.last_seen)+' '+r.symbol+': '+r.reason;list.append(li);});
+      box.append(list);
+    }
     if(status.cycleError){const error=document.createElement('p');error.textContent=status.cycleError;box.append(error);}
     if(detail?.calendarError){const news=document.createElement('p');news.textContent=detail.calendarError;box.append(news);}
     if(status.reason){const reason=document.createElement('p');reason.textContent=status.reason;box.append(reason);}

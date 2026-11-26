@@ -40,4 +40,19 @@ class BackgroundScannerIntegrationTest {
   jdbc.update("INSERT INTO background_scanner_settings(username,enabled) VALUES(?,false)",user);
   assertEquals(false,scanner.status(user).get("enabled"));
  }
+ @Test void skipReasonsKeepOneRowPerChange()throws Exception{
+  String user="reasonowner";
+  var d=json.createObjectNode();d.putObject("XAUUSD").put("auto","ADX 17 — ranging/choppy market").put("lowProfit","Waiting for confirmed setup");
+  scanner.recordReasons(user,d);
+  ((com.fasterxml.jackson.databind.node.ObjectNode)d.path("XAUUSD")).put("auto","ADX 18 — ranging/choppy market");
+  scanner.recordReasons(user,d);
+  assertEquals(2,jdbc.queryForObject("SELECT count(*) FROM background_scanner_reasons WHERE username=?",Integer.class,user),"numbers alone do not add rows");
+  assertEquals("ADX 18 — ranging/choppy market",jdbc.queryForObject("SELECT reason FROM background_scanner_reasons WHERE username=? AND strategy='auto'",String.class,user));
+  ((com.fasterxml.jackson.databind.node.ObjectNode)d.path("XAUUSD")).put("auto","1H BULL vs 4H BEAR — no clear higher-timeframe direction");
+  scanner.recordReasons(user,d);
+  assertEquals(2,jdbc.queryForObject("SELECT count(*) FROM background_scanner_reasons WHERE username=? AND strategy='auto'",Integer.class,user),"a new reason adds a row");
+  @SuppressWarnings("unchecked") var history=(List<Map<String,Object>>)scanner.status(user).get("reasonHistory");
+  assertEquals("1H BULL vs 4H BEAR — no clear higher-timeframe direction",history.getFirst().get("reason"));
+  assertEquals("Signal # at #/#",BackgroundScanner.reasonKey("Signal 3.25 at 1,234/100"));
+ }
 }

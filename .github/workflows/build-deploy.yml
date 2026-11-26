@@ -55,6 +55,7 @@ jobs:
           node scripts/check-performance.cjs
           node scripts/check-orbital-ui.cjs
           node scripts/check-background.cjs
+          node scripts/check-htf-lead.cjs
           node scripts/check-engine-recovery.cjs
           node scripts/check-app-regression.cjs
           node scripts/check-calendar.cjs
