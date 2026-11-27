@@ -555,3 +555,6 @@ body:not(.today-view) .today-chart-bar{display:none}
   .cmd-actions .ag-btn.ag-primary{flex-basis:100%}
 }
 @media(prefers-reduced-motion:reduce){.cmd-core,.cmd-core i,.cmd-orbit-b,.cmd-node.cmd-warn i{animation:none!important}}
+
+/* Wake word armed: a quiet green ring on the mic while “Hey Eagle” is listening for its name */
+[data-agent-mic].wake-on{border-color:#22c55e!important;box-shadow:0 0 0 2px rgba(34,197,94,.35)}

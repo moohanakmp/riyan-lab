@@ -45,7 +45,8 @@ public class SecurityHeadersFilter extends OncePerRequestFilter {
         res.setHeader("X-Frame-Options", "DENY");
         res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
         res.setHeader("Content-Security-Policy", CSP);
-        res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+        // The voice assistant (Agents tab, "Hey Eagle") needs the microphone on this site only; camera and location stay off.
+        res.setHeader("Permissions-Policy", "camera=(), microphone=(self), geolocation=()");
         if (req.isSecure()) res.setHeader("Strict-Transport-Security", "max-age=15552000");
 
         long limit = limitFor(req.getRequestURI());
