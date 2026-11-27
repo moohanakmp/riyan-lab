@@ -72,4 +72,24 @@ const octx={console,Math,String,Date,Object,Array,Number,JSON,document:{readySta
 const O=octx.KmrOffice._test;for(const wide of [true,false]){const L=O.makeLayout(11,wide);assert.equal(L.slots.length,11);
   for(const s of L.slots)assert(s.cx+16<=L.w&&s.aisleY<L.h,'every desk fits inside the room');}
 assert.equal(O.short('Scanning. Gold wait.'),'Scanning.');
+
+// Command center (top of the Agents tab): display only, wired into the panel, real data only.
+const cmd=fs.readFileSync(dir+'command.js','utf8');
+assert(!/\beval\s*\(|new Function|riyanApi|fetch\(|XMLHttpRequest|localStorage\.setItem/.test(cmd),'command center only reads page state: no eval, network or saved settings');
+for(const bad of ['/paper/','/broker/','method:'])assert(!cmd.includes(bad),'command center stays read-only: '+bad);
+assert(html.includes('command.js?v=')&&html.includes('id="cmdDeck"')&&html.includes('id="cmdNodes"')&&html.includes('id="agentRollBtn"')&&html.includes('id="agentLead"'),'command center sits on the Agents tab with roll call and lead line');
+assert(html.includes('id="cmdPlanner"')&&html.includes('id="cmdVolumeTrap"'),'command center links to Trade Planner and Volume Trap');
+const cctx={...ctx,KmrAgents:A,allPaperRows:()=>[{outcome:'WIN',pnlUsd:2.5,closedAt:Date.parse('2026-11-20T06:00:00Z')},{outcome:'LOSS',pnlUsd:-4,closedAt:Date.parse('2026-11-20T08:00:00Z')},{outcome:'OPEN',pnlUsd:0}],
+  computeSignal:()=>({smart:{score:73.6,gates:[{key:'htf',ok:true}]}}),sessionSummaryLine:()=>'London session active now'};
+cctx.globalThis=cctx;vm.createContext(cctx);vm.runInContext(cmd,cctx);
+const C=cctx.KmrCommand._test,cm=C.model();
+assert.equal(cm.team.length,reps.length-1,'every agent except the lead is a node around the core');
+assert.equal(cm.open,1,'open paper positions counted');
+const gold=cm.pulses.find(p=>p.sym==='XAUUSD'),silver=cm.pulses.find(p=>p.sym==='XAGUSD');
+assert.equal(gold.score,74,'pulse ring shows the scan quality score');assert.equal(silver.score,null,'no score without a fresh quote');
+const day=C.paperDays()['2026-11-20'];assert(day&&day.n===2&&Math.abs(day.pnl+1.5)<1e-9,'calendar groups closed paper results by IST day');
+assert.equal(C.dayKey(Date.parse('2026-11-26T19:00:00Z')),'2026-11-27','IST day boundary');
+const uid=Object.keys(A.log)[0];A.log[uid].length=0;const t0=Date.now()-60e3;A.log[uid].push({t:t0,state:'ok',line:'a'},{t:t0+45e3,state:'warn',line:'b'});
+assert.equal(C.uptime(uid,t0+60e3),75,'health bar = share of time not needing attention');
+assert(cm.feed.every(e=>e.name&&Number.isFinite(e.t)),'signal log entries are named and timed');
 console.log('agents checks passed');

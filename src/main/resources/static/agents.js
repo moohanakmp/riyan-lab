@@ -282,6 +282,7 @@
     renderPlan();
     document.getElementById('agentVoiceToggle').checked=prefs.voice;document.getElementById('agentRollToggle').checked=prefs.rollcall;
     document.getElementById('agentMicNote').hidden=micSupported();
+    try{root.KmrCommand?.render?.();}catch(e){}
   }
   const hhmm=ms=>{const d=new Date(+ms);return Number.isFinite(d.getTime())?d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Kolkata'}):'';};
   function renderPlan(){
@@ -312,5 +313,5 @@
     if(g('currentUser')){if(document.getElementById('tag')?.style.display==='block')open();maybeRollCall();}
   }
   if(typeof document!=='undefined'){if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',wire);else wire();}
-  root.KmrAgents={AGENTS,reports,tasks,planSummary,answer,ask,rollCall,maybeRollCall,open,render,listen,log,speak,stopSpeaking,refresh:refreshServer,prefs,STATE_LABEL,_test:{assetState,refreshServer,server}};
+  root.KmrAgents={AGENTS,reports,tasks,planSummary,assetState,todayPnl,lead:()=>server.lead,answer,ask,rollCall,maybeRollCall,open,render,listen,log,speak,stopSpeaking,refresh:refreshServer,prefs,STATE_LABEL,_test:{assetState,refreshServer,server}};
 })(typeof window==='undefined'?globalThis:window);
