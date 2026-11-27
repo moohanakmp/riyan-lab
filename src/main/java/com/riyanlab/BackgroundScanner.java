@@ -23,6 +23,8 @@ public class BackgroundScanner {
     private Path runtime;
     private volatile String phase="STARTING",cycleError="";
     private volatile long cycleStartedAt=0,cycleFinishedAt=0;
+    // Latest market snapshot and account count, read by the lead agent (ATLAS) for its market review.
+    private volatile ObjectNode lastSnapshot;private volatile long lastSnapshotAt=0;private volatile int lastAccounts=0;
     @Value("${app.background.enabled:true}") private boolean enabled;
     @Value("${app.background.node:node}") private String node;
     public BackgroundScanner(JdbcTemplate jdbc,ObjectMapper json,BackgroundFeeds feeds,PaperTradingService paper,RecordController records){this.jdbc=jdbc;this.json=json;this.feeds=feeds;this.paper=paper;this.records=records;}
@@ -48,6 +50,7 @@ public class BackgroundScanner {
                 """,owner);
             if(users.isEmpty()){phase="BROWSER_OR_PAUSED";return;}
             phase="LOADING_CALENDAR";var calendar=feeds.calendar();phase="LOADING_MARKETS";var snapshot=feeds.snapshot();
+            lastSnapshot=snapshot;lastSnapshotAt=System.currentTimeMillis();lastAccounts=users.size();
             phase="SCANNING_ACCOUNTS";
             for(var user:users){
                 var identity=new AuthService.Identity(((Number)user.get("id")).longValue(),(String)user.get("username"),(String)user.get("role"));
@@ -158,6 +161,13 @@ public class BackgroundScanner {
         out.put("owner",leases.isEmpty()?"WAITING":((String)leases.getFirst().get("owner")).startsWith("server-")?"SERVER":"BROWSER");
         return out;
     }
+    public ObjectNode lastSnapshot(){return lastSnapshot;}
+    public long lastSnapshotAt(){return lastSnapshotAt;}
+    public int lastAccounts(){return lastAccounts;}
+    public boolean enabled(){return enabled;}
+    public String phase(){return phase;}
+    public String cycleError(){return cycleError;}
+    public long cycleFinishedAt(){return cycleFinishedAt;}
     static String clipText(String s,int max){return s.length()>max?s.substring(0,max):s;}
     @PreDestroy public synchronized void cleanup(){if(runtime!=null)try(var files=Files.walk(runtime)){files.sorted(Comparator.reverseOrder()).forEach(p->{try{Files.deleteIfExists(p);}catch(java.io.IOException ignored){/* best-effort temp cleanup */}});}catch(java.io.IOException|RuntimeException ignored){/* best-effort temp cleanup */}}
 }

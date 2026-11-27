@@ -101,9 +101,14 @@ class OrderFlowCollectorTest {
         assertEquals(1,delta.size(),"closed minute is sent again");assertEquals(true,delta.get(0).get("final"));
     }
 
-    @Test void keepAwakeOnlyInApprovedWeekdayWindow(){
+    @Test void keepAwakeCoversTheMetalsTradingWeekOnly(){
         assertTrue(KeepAwake.inWindow(Instant.parse("2026-11-24T06:30:00Z")));   // Tuesday 12:00 IST
-        assertFalse(KeepAwake.inWindow(Instant.parse("2026-11-24T21:30:00Z")));  // after 21:00 UTC
+        assertTrue(KeepAwake.inWindow(Instant.parse("2026-11-24T21:30:00Z")));  // Asian session overnight stays awake now
+        assertTrue(KeepAwake.inWindow(Instant.parse("2026-11-24T22:30:00Z")));  // daily metals break (17:30 New York)
         assertFalse(KeepAwake.inWindow(Instant.parse("2026-11-28T10:00:00Z")));  // Saturday
+        assertFalse(KeepAwake.inWindow(Instant.parse("2026-11-29T22:30:00Z")));  // Sunday 17:30 New York, before the open
+        assertTrue(KeepAwake.inWindow(Instant.parse("2026-11-29T23:30:00Z")));   // Sunday 18:30 New York, market open
+        assertTrue(KeepAwake.inWindow(Instant.parse("2026-11-27T22:15:00Z")));   // Friday 17:15 New York, last settlements
+        assertFalse(KeepAwake.inWindow(Instant.parse("2026-11-27T22:45:00Z")));  // Friday 17:45 New York, week over
     }
 }

@@ -218,8 +218,14 @@
     body.innerHTML='<div class="ot-l ot-dim">'+esc(r.name.toLowerCase())+'@kmr ~ $ status --watch</div>'+lines.map(l=>
       l.k==='log'?'<div class="ot-l"><span class="ot-t">['+hhmm(l.t)+']</span> <span class="ot-s s-'+l.s+'">'+esc(STATE[l.s].toUpperCase())+'</span> '+esc(l.txt)+'</div>':
       l.k==='q'?'<div class="ot-l ot-q">'+esc(r.name.toLowerCase())+'@kmr ~ $ ask "'+esc(l.txt)+'"</div>':'<div class="ot-l ot-a">'+esc(l.txt)+'</div>').join('')+
-      '<div class="ot-l ot-dim">▍</div>';
+      taskLines(r)+'<div class="ot-l ot-dim">▍</div>';
     if(scroll||atEnd)body.scrollTop=body.scrollHeight;
+  }
+  // Tasks Atlas assigned today (all of them in Atlas's own terminal), with the evidence for each status.
+  function taskLines(r){
+    const all=(A()?.tasks?.()||[]),mine=r.id==='atlas'?all:all.filter(t=>t.agent===r.name);if(!mine.length)return '';
+    const cls={DONE:'ok',BLOCKED:'warn',ASSIGNED:'busy',SKIPPED:'idle'};
+    return '<div class="ot-l ot-dim">'+esc(r.name.toLowerCase())+'@kmr ~ $ tasks --today</div>'+mine.map(t=>'<div class="ot-l"><span class="ot-s s-'+(cls[t.status]||'idle')+'">'+esc(t.status)+'</span> '+(r.id==='atlas'?esc(t.agent)+': ':'')+esc(t.title)+(t.evidence?' <span class="ot-t">— '+esc(t.evidence)+'</span>':'')+'</div>').join('');
   }
   function askTerm(text){
     const K=A();if(!K||!selected)return;const id=selected,now=Date.now(),reply=K.answer(text);
