@@ -92,4 +92,11 @@ assert.equal(C.dayKey(Date.parse('2026-11-26T19:00:00Z')),'2026-11-27','IST day 
 const uid=Object.keys(A.log)[0];A.log[uid].length=0;const t0=Date.now()-60e3;A.log[uid].push({t:t0,state:'ok',line:'a'},{t:t0+45e3,state:'warn',line:'b'});
 assert.equal(C.uptime(uid,t0+60e3),75,'health bar = share of time not needing attention');
 assert(cm.feed.every(e=>e.name&&Number.isFinite(e.t)),'signal log entries are named and timed');
+// Wake word: "Hey Eagle" / "Eagle, listen" / "Eagle, <question>"; ordinary words containing "eagle" do not trigger.
+const wp=A.wakeParse;assert.deepEqual({...wp('hey eagle')},{rest:''});assert.deepEqual({...wp('Eagle, listen')},{rest:''});
+assert.equal(wp('Hey Eagle what is the gold price').rest,'what is the gold price');assert.equal(wp('eagle listen gold price').rest,'gold price');
+assert.equal(wp('the beagle is cute'),null);assert.equal(wp('legal advice'),null);
+assert(html.includes('id="agentWakeToggle"'),'wake word switch on the Agents tab');
+const headers=fs.readFileSync(__dirname+'/../src/main/java/com/riyanlab/SecurityHeadersFilter.java','utf8');
+assert(headers.includes('microphone=(self)')&&!headers.includes('microphone=()'),'the site must allow its own microphone use (voice assistant)');
 console.log('agents checks passed');

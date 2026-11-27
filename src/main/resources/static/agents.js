@@ -152,6 +152,7 @@
 
   // ── Voice ─────────────────────────────────────────────────────────────
   const prefs={get voice(){try{return localStorage.getItem('kmr_agent_voice')!=='off';}catch(e){return true;}},set voice(v){try{localStorage.setItem('kmr_agent_voice',v?'on':'off');}catch(e){}},
+    get wake(){try{return localStorage.getItem('kmr_agent_wake')==='on';}catch(e){return false;}},set wake(v){try{localStorage.setItem('kmr_agent_wake',v?'on':'off');}catch(e){}},
     get rollcall(){try{return localStorage.getItem('kmr_rollcall')!=='off';}catch(e){return true;}},set rollcall(v){try{localStorage.setItem('kmr_rollcall',v?'on':'off');}catch(e){}}};
   function pickVoice(){const vs=root.speechSynthesis?.getVoices?.()||[];return vs.find(v=>/en-IN/i.test(v.lang))||vs.find(v=>/^en/i.test(v.lang))||null;}
   function speak(text){
@@ -177,9 +178,9 @@
     o.querySelector('#rcSkip').onclick=()=>{cancelRoll=true;stopSpeaking();close();};
     return o;
   }
-  function close(){const o=document.getElementById('rollCall');if(o)o.classList.add('rc-out');setTimeout(()=>o?.remove(),350);rolling=false;}
+  function close(){const o=document.getElementById('rollCall');if(o)o.classList.add('rc-out');setTimeout(()=>o?.remove(),350);rolling=false;setTimeout(()=>wakeStart(true),600);}
   async function rollCall(opts={}){
-    if(rolling||!g('currentUser'))return;rolling=true;cancelRoll=false;
+    if(rolling||!g('currentUser'))return;wakeStop();rolling=true;cancelRoll=false;
     const o=overlay();o.classList.remove('rc-out');
     // Browsers only allow speech after a tap. After a fresh login the tap already happened.
     const activated=opts.fromTap||navigator.userActivation?.hasBeenActive!==false;
@@ -246,24 +247,63 @@
   }
   async function ask(text,spoken=false){
     const reply=answer(text);chat.push({who:'you',text},{who:'atlas',text:reply});if(chat.length>40)chat.splice(0,chat.length-40);
-    renderChat();if(spoken||prefs.voice)await speak(reply);
+    renderChat();if(spoken||prefs.voice)await speakQuiet(reply);
     return reply;
   }
   let recog=null,listening=false;
   function micSupported(){return !!(root.SpeechRecognition||root.webkitSpeechRecognition);}
+  const MIC_HELP='Microphone is blocked. In Chrome tap the lock icon next to the address, then Permissions, Microphone, Allow, and reload. If you use the installed app: Android Settings, Apps, Chrome, Permissions, Microphone, Allow.';
+  function micBlocked(silent){
+    wakeOn=false;setMic();const n=document.getElementById('agentMicNote');if(n){n.hidden=false;n.textContent=MIC_HELP;}
+    if(!silent)toast(MIC_HELP);
+  }
   function listen(){
     if(!micSupported()){toast('Voice input is not supported in this browser. Type your question instead.');return;}
     if(listening){try{recog?.stop();}catch(e){}return;}
-    stopSpeaking();
+    stopSpeaking();wakeStop();
     const R=root.SpeechRecognition||root.webkitSpeechRecognition;recog=new R();recog.lang='en-IN';recog.interimResults=false;recog.maxAlternatives=1;
     listening=true;setMic();
     recog.onresult=e=>{const t=e.results?.[0]?.[0]?.transcript||'';if(t)ask(t,true);};
-    recog.onerror=e=>{if(e.error==='not-allowed')toast('Microphone permission is blocked for this site.');};
-    recog.onend=()=>{listening=false;setMic();};
+    recog.onerror=e=>{if(e.error==='not-allowed'||e.error==='service-not-allowed')micBlocked(false);};
+    recog.onend=()=>{listening=false;setMic();setTimeout(wakeStart,400);};
     try{recog.start();}catch(e){listening=false;setMic();}
   }
+
+  // ── Wake word: "Hey Eagle" / "Eagle, listen" / "Eagle, gold price" ─────
+  // Browsers only hear while this page is open and visible with mic permission; nothing listens when the app is closed.
+  // Recognition pauses while an answer is spoken, so the app does not hear itself.
+  const WAKE=/\b(?:hey|hi|ok|okay|hello)?[\s,]*(?:eagle|eagles|egle|iegle)\b[\s,.!?]*(?:(?:please\s+)?listen\b[\s,.!?]*)?(.*)$/i;
+  let wake=null,wakeOn=false,armedUntil=0,handled=-1,quickEnds=0,lastStart=0,paused=false;
+  function wakeWanted(){return prefs.wake&&micSupported()&&!document.hidden&&!listening&&!paused&&!rolling&&!!g('currentUser');}
+  function wakeParse(text){const m=WAKE.exec(String(text||''));return m?{rest:m[1].trim()}:null;}
+  function wakeStart(silent=true){
+    if(wake||!wakeWanted())return;
+    const R=root.SpeechRecognition||root.webkitSpeechRecognition;const r=new R();r.lang='en-IN';r.continuous=true;r.interimResults=true;r.maxAlternatives=1;
+    r.onresult=e=>{
+      for(let i=e.resultIndex;i<e.results.length;i++){
+        const res=e.results[i],text=res[0]?.transcript||'',fin=res.isFinal,key=i+':'+e.timeStamp;
+        if(i<=handled)continue;
+        if(Date.now()<armedUntil){if(fin&&text.trim()){handled=i;armedUntil=0;const w=wakeParse(text);const q=w?w.rest:text.trim();if(q.length>1)ask(q,true);else arm();}continue;}
+        const w=wakeParse(text);if(!w)continue;
+        if(fin){handled=i;if(w.rest.length>2){armedUntil=0;ask(w.rest,true);}else arm();}
+        else if(!armedUntil)setMic(true);// heard "eagle", waiting for the rest of the sentence
+      }
+    };
+    r.onerror=e=>{if(e.error==='not-allowed'||e.error==='service-not-allowed'){prefs.wake=false;syncWakeToggle();micBlocked(silent);}};
+    r.onend=()=>{wake=null;handled=-1;
+      quickEnds=Date.now()-lastStart<1500?quickEnds+1:0;
+      if(quickEnds>=5){wakeOn=false;setMic();toast('Hey Eagle stopped: the browser keeps closing the microphone. Tap the mic to talk.');return;}
+      if(wakeOn&&wakeWanted())setTimeout(()=>wakeStart(true),350);else{wakeOn=false;setMic();}};
+    // Result indexes restart at 0 for every new session, so forget the last session's position.
+    try{handled=-1;wake=r;wakeOn=true;lastStart=Date.now();r.start();setMic();}catch(e){wake=null;wakeOn=false;setMic();}
+  }
+  function arm(){armedUntil=Date.now()+8000;setMic(true);toast('Eagle is listening…');setTimeout(()=>{if(armedUntil&&Date.now()>=armedUntil){armedUntil=0;setMic();}},8200);}
+  function wakeStop(){const r=wake;wake=null;armedUntil=0;if(r){r.onend=null;try{r.abort();}catch(e){}}wakeOn=false;setMic();}
+  function syncWakeToggle(){const t=document.getElementById('agentWakeToggle');if(t)t.checked=prefs.wake;}
+  async function speakQuiet(text){paused=true;wakeStop();try{await speak(text);}finally{paused=false;if(prefs.wake)setTimeout(()=>wakeStart(true),300);}}
   function toast(t){const f=g('showToast');if(typeof f==='function')f(t);}
-  function setMic(){document.querySelectorAll('[data-agent-mic]').forEach(b=>{b.classList.toggle('listening',listening);b.setAttribute('aria-pressed',String(listening));b.querySelector('span')&&(b.querySelector('span').textContent=listening?'Listening…':'Talk');});}
+  function setMic(heard){document.querySelectorAll('[data-agent-mic]').forEach(b=>{const on=listening||heard||Date.now()<armedUntil;b.classList.toggle('listening',on);b.classList.toggle('wake-on',wakeOn&&!on);b.setAttribute('aria-pressed',String(on));
+    b.title=wakeOn?'Say “Hey Eagle” or tap to talk':'Talk to your agents';const sp=b.querySelector('span');if(sp)sp.textContent=on?'Listening…':'Talk';});}
 
   // ── Agents desk (Tools → Agents) ──────────────────────────────────────
   const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -280,7 +320,7 @@
       <div class="ag-head"><div class="ag-orb" aria-hidden="true"><i></i></div><div><h3>${esc(a.name)}</h3><p>${esc(a.role)}</p></div><span class="ag-pill">${STATE_LABEL[a.state]}</span></div>
       <div class="ag-bubble">${esc(a.line)}</div>${a.task?`<p class="ag-task">Task from Atlas: <b>${esc(a.task.title)}</b> · ${esc(TASK_LABEL[a.task.status]||a.task.status)}</p>`:''}</article>`).join('');
     renderPlan();
-    document.getElementById('agentVoiceToggle').checked=prefs.voice;document.getElementById('agentRollToggle').checked=prefs.rollcall;
+    document.getElementById('agentVoiceToggle').checked=prefs.voice;document.getElementById('agentRollToggle').checked=prefs.rollcall;syncWakeToggle();
     document.getElementById('agentMicNote').hidden=micSupported();
     try{root.KmrCommand?.render?.();}catch(e){}
   }
@@ -299,19 +339,21 @@
       (bg.lastScanAgoSeconds>=0&&bg.lastScanAgoSeconds<180?'Server is scanning now (last scan '+bg.lastScanAgoSeconds+' s ago). You can close the app.':'Server scan is not running right now.')+
       (!bg.keepAwakeConfigured?' This server is not kept awake: on free hosting it sleeps after 15 minutes with no visitors.':bg.keepAwake?' Kept awake for the trading week ('+bg.keepAwakeWindow+').':' Weekend: the free server may sleep until someone opens the app.');
   }
-  function open(){refreshServer().then(render);render();renderChat();try{root.KmrPush?.sync?.();}catch(e){}}
+  function open(){refreshServer().then(render);render();renderChat();syncWakeToggle();wakeStart(true);try{root.KmrPush?.sync?.();}catch(e){}}
   function wire(){
     const form=document.getElementById('agentAskForm');
     if(form&&!form.dataset.wired){form.dataset.wired='1';form.addEventListener('submit',e=>{e.preventDefault();const i=document.getElementById('agentAsk');const t=i.value.trim();if(t){i.value='';ask(t);}});}
     document.getElementById('agentVoiceToggle')?.addEventListener('change',e=>{prefs.voice=e.target.checked;if(!e.target.checked)stopSpeaking();});
     document.getElementById('agentRollToggle')?.addEventListener('change',e=>{prefs.rollcall=e.target.checked;});
+    document.getElementById('agentWakeToggle')?.addEventListener('change',e=>{prefs.wake=e.target.checked;if(e.target.checked){if(!micSupported()){toast('Voice input is not supported in this browser.');prefs.wake=false;e.target.checked=false;return;}wakeStart(false);toast('Say “Hey Eagle” and then your question.');}else wakeStop();});
+    document.addEventListener('visibilitychange',()=>{if(document.hidden)wakeStop();else setTimeout(()=>wakeStart(true),500);});
     document.querySelectorAll('[data-agent-mic]').forEach(b=>b.addEventListener('click',listen));
     document.getElementById('agentRollBtn')?.addEventListener('click',()=>rollCall({fromTap:true}));
     setInterval(()=>{if(document.getElementById('tag')?.style.display!=='none'&&!document.hidden){refreshServer().then(render);}},10e3);
 
     // This file is deferred, so sign-in may have finished before it loaded: catch up on the desk and the roll call.
-    if(g('currentUser')){if(document.getElementById('tag')?.style.display==='block')open();maybeRollCall();}
+    if(g('currentUser')){if(document.getElementById('tag')?.style.display==='block')open();maybeRollCall();setTimeout(()=>wakeStart(true),1500);}
   }
   if(typeof document!=='undefined'){if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',wire);else wire();}
-  root.KmrAgents={AGENTS,reports,tasks,planSummary,assetState,todayPnl,lead:()=>server.lead,answer,ask,rollCall,maybeRollCall,open,render,listen,log,speak,stopSpeaking,refresh:refreshServer,prefs,STATE_LABEL,_test:{assetState,refreshServer,server}};
+  root.KmrAgents={AGENTS,reports,tasks,planSummary,assetState,todayPnl,lead:()=>server.lead,answer,ask,rollCall,maybeRollCall,open,render,listen,log,speak:speakQuiet,stopSpeaking,wakeStart,wakeStop,wakeParse,refresh:refreshServer,prefs,STATE_LABEL,_test:{assetState,refreshServer,server}};
 })(typeof window==='undefined'?globalThis:window);
